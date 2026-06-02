@@ -18,8 +18,8 @@ moav-client is a local censorship-circumvention proxy client written in Go with 
 | `proxy-core/plugins/` | Plugin engine (first-match-wins rule list) + TorrentBlocker heuristic |
 | `proxy-core/prober/` | Concurrent TCP latency prober with background loop; 10 parallel goroutines max |
 | `proxy-core/proxy/` | SOCKS5 listener (`armon/go-socks5`) and HTTP CONNECT handler; both call `pluginDecide` then `balancer.DialContext` |
-| `proxy-core/sidecars/` | Maps enabled sidecar entries in config to synthetic `Endpoint` structs with known local ports |
-| `proxy-core/singbox/` | Generates a sing-box config (1 SOCKS5 inbound + 1 protocol outbound per endpoint) and rewrites `Endpoint.Config["socks5_addr"]` to point at the local sing-box port |
+| `proxy-core/sidecars/` | Maps enabled sidecar entries (masterdns / amneziawg / trusttunnel / psiphon / tor / dnstt / slipstream) to synthetic `Endpoint` structs with `socks5_addr` set to `<docker-service>:<port>` + writes per-sidecar config files (`configgen.go`) from `config.yaml` parameters |
+| `proxy-core/singbox/` | Generates a sing-box config (1 SOCKS5 inbound + 1 protocol outbound per endpoint, plus 1 `endpoints[]` block per WireGuard endpoint) and rewrites `Endpoint.Config["socks5_addr"]` to point at the local sing-box port |
 | `proxy-core/state/` | Atomic JSON persistence of probe results to `data/state.json` |
 | `proxy-core/subscription/` | URI parsers for vless/vmess/trojan/ss/hysteria2/wireguard/tuic; base64-subscription decoder; HTTP fetcher |
 | `web-ui/src/` | React 18 dashboard (Vite + TypeScript): `App.tsx` (tabs), `EndpointTable.tsx` (REST + WebSocket live view), `ProbeButton.tsx`, `ConfigEditor.tsx` |
@@ -95,6 +95,22 @@ Field notes:
 
 ---
 
+## 4a. REST + WebSocket API
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/healthz`   | GET    | liveness probe (`{"ok":true}`) |
+| `/api/endpoints` | GET    | current endpoint pool with status/latency/config |
+| `/api/probe`     | POST   | trigger immediate probe pass; updates broadcast over WS |
+| `/api/stats`     | GET    | per-endpoint cumulative counters (dials, errors, failovers, bytes_up/down, last_error) + active strategy |
+| `/api/strategy`  | POST   | switch load-balancing strategy at runtime — body `{"strategy":"latency"\|"priority"\|"weighted"}` |
+| `/api/config`    | GET/POST | in-memory free-form config blob (not parsed yet — see §7) |
+| `/api/ws`        | WS     | streaming endpoint updates (every probe pass) |
+
+All responses include permissive CORS so the dashboard on a different port can fetch directly.
+
+---
+
 ## 5. Config reference
 
 All fields live in `config.yaml`. Defaults are set by `config.Defaults()`.
@@ -124,18 +140,41 @@ plugins:
         value: example.com
       action: direct       # "direct" | "block" | "proxy" (default for no match)
 
+subscription:
+  wireguard_files: []      # list of wg-quick / AmneziaWG .conf paths; each
+                           # becomes one endpoint. Files with Jc/Jmin/Jmax/S1
+                           # etc. are tagged protocol=amneziawg and routed via
+                           # the amneziawg sidecar rather than sing-box.
+
 sidecars:
   masterdns:
-    enabled: false         # bool — expose masterdns sidecar (SOCKS5 on 127.0.0.1:5300)
-    priority: 1            # int  — endpoint Priority field
-  dnstt:
-    enabled: false         # 127.0.0.1:5301, priority 5
-  slipstream:
-    enabled: false         # 127.0.0.1:5302, priority 5
+    enabled: false         # SOCKS5 on masterdns:5300 (docker service name)
+    priority: 1
+    config:
+      domain: ""           # tunnel domain (e.g. "m.t7d.my")
+      method: "5"          # encryption method id (5 = AES-256-GCM)
+      key: ""              # encryption key (hex)
+  amneziawg:
+    enabled: false         # SOCKS5 on amneziawg:5500 (sidecar with awg0 default route)
+    priority: 5
+    config:
+      source_path: ""      # path to .conf file (consumed by configgen.go on startup)
+  trusttunnel:
+    enabled: false         # SOCKS5 on trusttunnel:5600 (needs upstream binary mounted)
+    priority: 5
+    config:
+      source_path: ""      # path to client.toml (consumed by configgen.go)
   psiphon:
-    enabled: false         # 127.0.0.1:5400, priority 5
+    enabled: false         # SOCKS5 on psiphon:5400 (built from psiphon-tunnel-core source)
+    priority: 5
+    config:
+      config_json: ""      # verbatim Psiphon config blob (PropagationChannelId, SponsorId, …)
+  dnstt:
+    enabled: false         # legacy entry (use masterdns for the active MoaV tunnel)
+  slipstream:
+    enabled: false
   tor:
-    enabled: false         # 127.0.0.1:9050, priority 5
+    enabled: false
 
 singbox:
   enabled: true            # bool   — generate data/singbox.json and route endpoints through the sing-box sidecar

@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -113,8 +115,36 @@ func main() {
 		}
 	}
 
-	// Add sidecar endpoints.
+	// Wireguard / AmneziaWG .conf sidecars.
+	for _, wgPath := range cfg.Subscription.WireGuardFiles {
+		raw, readErr := os.ReadFile(wgPath)
+		if readErr != nil {
+			log.Printf("subscription: could not read %s: %v", wgPath, readErr)
+			continue
+		}
+		nameHint := strings.TrimSuffix(filepath.Base(wgPath), filepath.Ext(wgPath))
+		ep, parseErr := subscription.ParseWireGuardConf(string(raw), nameHint)
+		if parseErr != nil {
+			log.Printf("subscription: wg conf %s parse error: %v", wgPath, parseErr)
+			continue
+		}
+		// AmneziaWG can't be dialed by sing-box (no outbound for the
+		// obfuscation params). If the user enabled the amneziawg sidecar,
+		// that's the real dial path — skip this duplicate to keep the
+		// pool clean. The .conf was still consumed by configgen.
+		if ep.Protocol == "amneziawg" && cfg.Sidecars.AmneziaWG.Enabled {
+			log.Printf("subscription: %s endpoint %q from %s superseded by sidecar", ep.Protocol, ep.Name, wgPath)
+			continue
+		}
+		log.Printf("subscription: loaded %s endpoint %q from %s", ep.Protocol, ep.Name, wgPath)
+		addEndpoints([]subscription.Endpoint{ep})
+	}
+
+	// Add sidecar endpoints + write per-sidecar config files.
 	sm := &sidecars.SidecarManager{Config: cfg.Sidecars}
+	if err := sm.GenerateConfigs("data/sidecar-configs"); err != nil {
+		log.Printf("sidecars: configgen: %v", err)
+	}
 	addEndpoints(sm.EnabledEndpoints())
 
 	// Generate sing-box config and rewrite endpoints to dial through local

@@ -31,11 +31,25 @@ type Balancer struct {
 	mu        sync.RWMutex
 	endpoints []subscription.Endpoint
 	strategy  Strategy
+	stats     *Stats
 }
 
 // New creates a Balancer with the given strategy.
 func New(strategy Strategy) *Balancer {
-	return &Balancer{strategy: strategy}
+	return &Balancer{strategy: strategy, stats: NewStats()}
+}
+
+// Stats exposes the live counters for external observers (e.g. /api/stats).
+func (b *Balancer) Stats() *Stats { return b.stats }
+
+// Strategy returns the active strategy name (for /api/stats meta).
+func (b *Balancer) StrategyName() string { return string(b.strategy) }
+
+// SetStrategy switches the load-balancing strategy at runtime.
+func (b *Balancer) SetStrategy(s Strategy) {
+	b.mu.Lock()
+	b.strategy = s
+	b.mu.Unlock()
 }
 
 // SetEndpoints atomically replaces the endpoint pool.
@@ -111,13 +125,15 @@ func (b *Balancer) DialContext(network, addr string) (net.Conn, error) {
 			break
 		}
 		conn, dialErr := dialThrough(ep, network, addr)
+		b.stats.RecordDial(ep.ID, dialErr)
 		if dialErr == nil {
 			if attempt > 0 {
 				log.Printf("balancer: dial %s via %s succeeded after %d failover(s)", addr, ep.ID, attempt)
 			}
-			return conn, nil
+			return &countingConn{Conn: conn, id: ep.ID, stats: b.stats}, nil
 		}
 		b.markError(ep.ID)
+		b.stats.RecordFailover(ep.ID)
 		tried[ep.ID] = struct{}{}
 		log.Printf("balancer: dial through %s failed (%v); trying next endpoint", ep.ID, dialErr)
 	}
@@ -213,6 +229,32 @@ func dialSOCKS5(proxyAddr, network, addr string) (net.Conn, error) {
 		return nil, fmt.Errorf("socks5 dialer for %s: %w", proxyAddr, err)
 	}
 	return dialer.Dial(network, addr)
+}
+
+// countingConn wraps a net.Conn so io.Copy in the SOCKS5/HTTP CONNECT tunnels
+// transparently feeds byte counts into per-endpoint stats. We only count what
+// the local client sent / received — outbound throughput on the moav server
+// is invisible from here.
+type countingConn struct {
+	net.Conn
+	id    string
+	stats *Stats
+}
+
+func (c *countingConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 {
+		c.stats.RecordTraffic(c.id, 0, int64(n))
+	}
+	return n, err
+}
+
+func (c *countingConn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if n > 0 {
+		c.stats.RecordTraffic(c.id, int64(n), 0)
+	}
+	return n, err
 }
 
 // weightedRandom picks an endpoint by weight (stored in Config["upload_weight"]).

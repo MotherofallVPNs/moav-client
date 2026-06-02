@@ -48,12 +48,14 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/probe", s.handleProbe)
 	mux.HandleFunc("/api/healthz", s.handleHealth)
 	mux.HandleFunc("/api/config", s.handleConfig)
+	mux.HandleFunc("/api/stats", s.handleStats)
+	mux.HandleFunc("/api/strategy", s.handleStrategy)
 	mux.Handle("/api/ws", websocket.Handler(s.handleWebSocket))
 
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
 	log.Printf("API listening on %s", addr)
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{Addr: addr, Handler: withCORS(mux)}
 	go func() {
 		<-ctx.Done()
 		srv.Shutdown(context.Background()) //nolint:errcheck
@@ -96,6 +98,67 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 // handleHealth returns a simple health check.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{"ok": true})
+}
+
+// handleStats returns per-endpoint counters + active strategy meta. Joins
+// the endpoint list with the live balancer stats so the UI can render a
+// "Analytics" table without two round-trips.
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	stats := s.balancer.Stats().Snapshot()
+	eps := s.balancer.Endpoints()
+	byID := make(map[string]int, len(eps))
+	for i, ep := range eps {
+		byID[ep.ID] = i
+	}
+
+	type row struct {
+		balancer.EndpointStat
+		Name      string `json:"name"`
+		Protocol  string `json:"protocol"`
+		Address   string `json:"address"`
+		Status    string `json:"status"`
+		LatencyMs int64  `json:"latency_ms"`
+	}
+	rows := make([]row, 0, len(stats))
+	for _, st := range stats {
+		r := row{EndpointStat: st}
+		if i, ok := byID[st.ID]; ok {
+			r.Name = eps[i].Name
+			r.Protocol = eps[i].Protocol
+			r.Address = eps[i].Address
+			r.Status = eps[i].Status
+			r.LatencyMs = eps[i].LatencyMs
+		}
+		rows = append(rows, r)
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"strategy": s.balancer.StrategyName(),
+		"rows":     rows,
+	})
+}
+
+// handleStrategy switches the load-balancing strategy at runtime.
+// POST {"strategy": "latency" | "priority" | "weighted"}.
+func (s *Server) handleStrategy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Strategy string `json:"strategy"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	switch body.Strategy {
+	case "latency", "priority", "weighted":
+		s.balancer.SetStrategy(balancer.Strategy(body.Strategy))
+		writeJSON(w, map[string]interface{}{"ok": true, "strategy": body.Strategy})
+	default:
+		http.Error(w, "strategy must be latency|priority|weighted", http.StatusBadRequest)
+	}
 }
 
 // handleConfig reads or updates the in-memory config.
@@ -172,6 +235,22 @@ func (s *Server) broadcast(eps []subscription.Endpoint) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// withCORS wraps any handler with permissive CORS. moav-client always runs
+// locally and the dashboard is hosted on a different port (3001 in compose,
+// 5173 in vite dev), so we accept any origin and let the browser do the rest.
+func withCORS(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")

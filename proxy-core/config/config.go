@@ -39,8 +39,9 @@ type ProxyConfig struct {
 }
 
 type SubscriptionConfig struct {
-	URL  string `yaml:"url"`
-	File string `yaml:"file"`
+	URL            string   `yaml:"url"`
+	File           string   `yaml:"file"`
+	WireGuardFiles []string `yaml:"wireguard_files"` // wg-quick / AmneziaWG .conf paths
 }
 
 type LoadBalancingConfig struct {
@@ -67,16 +68,19 @@ type PluginsConfig struct {
 }
 
 type SidecarEntry struct {
-	Enabled  bool `yaml:"enabled"`
-	Priority int  `yaml:"priority,omitempty"`
+	Enabled  bool              `yaml:"enabled"`
+	Priority int               `yaml:"priority,omitempty"`
+	Config   map[string]string `yaml:"config,omitempty"` // free-form per-sidecar params
 }
 
 type SidecarsConfig struct {
-	MasterDNS  SidecarEntry `yaml:"masterdns"`
-	DNSTT      SidecarEntry `yaml:"dnstt"`
-	Slipstream SidecarEntry `yaml:"slipstream"`
-	Psiphon    SidecarEntry `yaml:"psiphon"`
-	Tor        SidecarEntry `yaml:"tor"`
+	MasterDNS   SidecarEntry `yaml:"masterdns"`
+	DNSTT       SidecarEntry `yaml:"dnstt"`
+	Slipstream  SidecarEntry `yaml:"slipstream"`
+	Psiphon     SidecarEntry `yaml:"psiphon"`
+	Tor         SidecarEntry `yaml:"tor"`
+	AmneziaWG   SidecarEntry `yaml:"amneziawg"`
+	TrustTunnel SidecarEntry `yaml:"trusttunnel"`
 }
 
 // Defaults returns a Config with sensible defaults.

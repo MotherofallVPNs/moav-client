@@ -60,6 +60,7 @@ func Generate(eps []subscription.Endpoint, cfg Config) (jsonBytes []byte, update
 
 	var inbounds []map[string]any
 	var outbounds []map[string]any
+	var endpointsBlock []map[string]any
 	var routeRules []map[string]any
 
 	port := cfg.BasePort
@@ -70,9 +71,38 @@ func Generate(eps []subscription.Endpoint, cfg Config) (jsonBytes []byte, update
 			continue
 		}
 
+		// WireGuard uses sing-box's newer "endpoints" section, not "outbounds".
+		// (AmneziaWG variants stay outside sing-box — they need a dedicated sidecar.)
+		if ep.Protocol == "wireguard" {
+			wgEp, ok := wireguardEndpointBlock(ep)
+			if !ok {
+				continue
+			}
+			tag := fmt.Sprintf("ep-%d", i)
+			wgEp["tag"] = "wg-" + tag
+			endpointsBlock = append(endpointsBlock, wgEp)
+
+			inbounds = append(inbounds, map[string]any{
+				"type":        "socks",
+				"tag":         "in-" + tag,
+				"listen":      cfg.ListenHost,
+				"listen_port": port,
+			})
+			routeRules = append(routeRules, map[string]any{
+				"inbound":  []string{"in-" + tag},
+				"outbound": "wg-" + tag,
+			})
+
+			updated[i].Config = ensureConfigMap(updated[i].Config)
+			updated[i].Config["socks5_addr"] = net.JoinHostPort(cfg.DialHost, strconv.Itoa(port))
+			port++
+			continue
+		}
+
 		ob, ok := outboundFromEndpoint(ep)
 		if !ok {
-			// Unsupported by sing-box (e.g. wireguard variants we don't handle).
+			// Unsupported by sing-box (xhttp, amneziawg, etc.) — caller may
+			// still expose this endpoint via a sidecar with its own socks5_addr.
 			continue
 		}
 		tag := fmt.Sprintf("ep-%d", i)
@@ -115,6 +145,9 @@ func Generate(eps []subscription.Endpoint, cfg Config) (jsonBytes []byte, update
 			"auto_detect_interface": false,
 		},
 	}
+	if len(endpointsBlock) > 0 {
+		root["endpoints"] = endpointsBlock
+	}
 
 	jsonBytes, err = json.MarshalIndent(root, "", "  ")
 	if err != nil {
@@ -128,6 +161,67 @@ func ensureConfigMap(m map[string]string) map[string]string {
 		return make(map[string]string)
 	}
 	return m
+}
+
+// wireguardEndpointBlock builds a sing-box 1.12+ "endpoints[]" entry for a
+// WireGuard endpoint. We use the modern endpoint shape rather than the
+// deprecated wireguard outbound so the config stays valid going forward.
+func wireguardEndpointBlock(ep subscription.Endpoint) (map[string]any, bool) {
+	host, port, err := splitHostPort(ep.Address)
+	if err != nil {
+		return nil, false
+	}
+	c := ep.Config
+	if c["private_key"] == "" || c["public_key"] == "" {
+		return nil, false
+	}
+
+	addresses := splitNonEmpty(c["address"], ",")
+	if len(addresses) == 0 {
+		// Sensible default that won't clash with anything else inside the
+		// sing-box network namespace.
+		addresses = []string{"172.16.0.2/32"}
+	}
+	allowed := splitNonEmpty(c["allowed_ips"], ",")
+	if len(allowed) == 0 {
+		allowed = []string{"0.0.0.0/0"}
+	}
+	mtu := 1408
+	if v, err := strconv.Atoi(c["mtu"]); err == nil && v > 0 {
+		mtu = v
+	}
+	peer := map[string]any{
+		"address":     host,
+		"port":        port,
+		"public_key":  c["public_key"],
+		"allowed_ips": allowed,
+	}
+	if c["psk"] != "" {
+		peer["pre_shared_key"] = c["psk"]
+	}
+	ep1 := map[string]any{
+		"type":        "wireguard",
+		"address":     addresses,
+		"private_key": c["private_key"],
+		"mtu":         mtu,
+		"peers":       []map[string]any{peer},
+	}
+	return ep1, true
+}
+
+func splitNonEmpty(s, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, sep)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // outboundFromEndpoint maps a parsed subscription endpoint to a sing-box outbound

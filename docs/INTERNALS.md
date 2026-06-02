@@ -62,6 +62,40 @@ connect against `ep.Address`.
 
 ---
 
+## Sidecar config generation
+
+File: `proxy-core/sidecars/configgen.go`
+
+`SidecarManager.GenerateConfigs(baseDir)` writes per-sidecar config files
+under `baseDir` (default `data/sidecar-configs/`) on every serve startup.
+The free-form `config:` map declared per-sidecar in `config.yaml` carries
+the secrets / paths needed:
+
+- **masterdns**: emits `masterdns/client_config.toml` (with `LISTEN_PORT=5300`)
+  and a small `masterdns/client_resolvers.txt` of public 53/udp resolvers.
+- **amneziawg**: copies the file at `config.source_path` (a wg-quick / Amnezia
+  `.conf`) to `amneziawg/awg0.conf`. The sidecar's `entrypoint.sh` reads it,
+  strips wg-quick-only directives (Address/DNS/MTU), feeds the rest to
+  `awg setconf awg0`, brings up the interface, adds a `/32` host route for
+  the wg peer through the original eth0 gateway, swings the default route
+  to awg0, and starts `microsocks` on `:5500`. NET_ADMIN + `/dev/net/tun`
+  are required (set in docker-compose).
+- **trusttunnel**: copies the file at `config.source_path` to
+  `trusttunnel/client.toml`. The sidecar is a stub — it waits for a real
+  `trusttunnel-client` binary to be mounted at `/usr/local/bin/` because
+  the upstream project has no public Linux build yet.
+- **psiphon**: writes either the verbatim `config_json` blob or a minimal
+  default to `psiphon/psiphon.config`. The sidecar builds the
+  `Psiphon-Labs/psiphon-tunnel-core` ConsoleClient from source.
+
+Each sidecar's docker-compose entry mounts the matching subdirectory at the
+container's expected path (e.g. `./data/sidecar-configs/masterdns` →
+`/etc/masterdns`). Sidecars are gated by docker-compose profiles
+(`--profile masterdns`, etc.) so `docker compose up` without flags starts
+only the core stack.
+
+---
+
 ## WebSocket broadcast (channel-based fan-out)
 
 File: `proxy-core/api/api.go`
