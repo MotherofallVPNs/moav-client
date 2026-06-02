@@ -12,10 +12,16 @@ services:
       - "8080:8080"   # HTTP CONNECT
       - "8088:8088"   # REST/WebSocket API
     volumes:
+      - ./data:/app/data
       - ./config.yaml:/app/config.yaml:ro
     networks:
       - moav-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8088/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   web-ui:
     build: ./web-ui
@@ -28,6 +34,11 @@ services:
     restart: unless-stopped
     environment:
       - VITE_API_URL=http://proxy-core:8088
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   dns-tunnels:
     build: ./sidecars/dns-tunnels

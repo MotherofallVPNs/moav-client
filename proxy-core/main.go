@@ -11,6 +11,7 @@ import (
 
 	"github.com/ibeezhan/moav-client/proxy-core/api"
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
+	"github.com/ibeezhan/moav-client/proxy-core/cmd"
 	"github.com/ibeezhan/moav-client/proxy-core/config"
 	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
@@ -24,7 +25,20 @@ const statePath = "data/state.json"
 
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config.yaml")
-	flag.Parse()
+
+	// Parse global flags first (before subcommand dispatch).
+	// We must handle the case where the first arg is a subcommand (not a flag).
+	if len(os.Args) >= 2 && len(os.Args[1]) > 0 && os.Args[1][0] != '-' {
+		// Subcommand present — parse global flags from args after the subcommand.
+		flag.CommandLine.Parse(os.Args[2:]) //nolint:errcheck
+	} else {
+		flag.Parse()
+	}
+
+	subcmd := cmd.ParseAndRun(cfgPath)
+	if subcmd != "serve" {
+		return
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
