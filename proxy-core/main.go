@@ -11,7 +11,9 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/api"
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
 	"github.com/ibeezhan/moav-client/proxy-core/config"
+	"github.com/ibeezhan/moav-client/proxy-core/prober"
 	"github.com/ibeezhan/moav-client/proxy-core/proxy"
+	"github.com/ibeezhan/moav-client/proxy-core/subscription"
 )
 
 func main() {
@@ -35,8 +37,40 @@ func main() {
 	}
 	b := balancer.New(strategy)
 
-	// TODO Phase 2: parse subscription and populate endpoints
-	// prober.New(b).Run(ctx, endpoints)
+	// Parse subscription from file or URL.
+	var endpoints []subscription.Endpoint
+	if cfg.Subscription.File != "" {
+		raw, readErr := os.ReadFile(cfg.Subscription.File)
+		if readErr != nil {
+			log.Printf("subscription: could not read %s: %v", cfg.Subscription.File, readErr)
+		} else {
+			eps, parseErr := subscription.ParseSubscription(string(raw))
+			if parseErr != nil {
+				log.Printf("subscription: parse error: %v", parseErr)
+			} else {
+				log.Printf("subscription: loaded %d endpoints from %s", len(eps), cfg.Subscription.File)
+				endpoints = eps
+			}
+		}
+	}
+
+	b.SetEndpoints(endpoints)
+
+	// Probe endpoints on start if configured.
+	if cfg.LoadBalancing.ProbeOnStart && len(endpoints) > 0 {
+		p := prober.New()
+		go func() {
+			updated := p.ProbeAll(endpoints)
+			b.SetEndpoints(updated)
+			log.Printf("initial probe complete: %d endpoints updated", len(updated))
+
+			// Start background probing loop.
+			ch := p.Run(ctx, updated)
+			for eps := range ch {
+				b.SetEndpoints(eps)
+			}
+		}()
+	}
 
 	proxyServer := proxy.NewServer(cfg.Proxy.SOCKS5Port, cfg.Proxy.HTTPPort, b)
 	apiServer := api.New(cfg.Proxy.APIPort, b)
