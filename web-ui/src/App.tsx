@@ -4,13 +4,17 @@ import ProbeButton from "./components/ProbeButton";
 import ConfigEditor from "./components/ConfigEditor";
 import Analytics from "./components/Analytics";
 import Settings from "./components/Settings";
+import Debug from "./components/Debug";
+import Plugins from "./components/Plugins";
 
-type Tab = "endpoints" | "analytics" | "settings" | "probe" | "config";
+type Tab = "endpoints" | "analytics" | "plugins" | "settings" | "debug" | "probe" | "config";
 
 const TAB_LABELS: Record<Tab, string> = {
   endpoints: "Endpoints",
   analytics: "Analytics",
+  plugins: "Plugins",
   settings: "Settings",
+  debug: "Debug",
   probe: "Probe",
   config: "Config",
 };
@@ -50,7 +54,7 @@ export default function App() {
         </span>
       </header>
 
-      <nav style={{ display: "flex", borderBottom: "1px solid #e2e8f0", marginBottom: "1.5rem" }}>
+      <nav style={{ display: "flex", borderBottom: "1px solid #e2e8f0", marginBottom: "1.5rem", flexWrap: "wrap" }}>
         {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
           <button key={t} style={tabStyle(tab === t)} onClick={() => setTab(t)}>
             {TAB_LABELS[t]}
@@ -63,7 +67,9 @@ export default function App() {
           <EndpointTable onHealthChange={(h, t) => { setHealthy(h); setTotal(t); }} />
         )}
         {tab === "analytics" && <Analytics />}
+        {tab === "plugins" && <Plugins />}
         {tab === "settings" && <Settings />}
+        {tab === "debug" && <Debug />}
         {tab === "probe" && <ProbeButton />}
         {tab === "config" && <ConfigEditor />}
       </div>
