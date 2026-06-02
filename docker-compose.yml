@@ -1,0 +1,54 @@
+version: "3.9"
+
+networks:
+  moav-net:
+    driver: bridge
+
+services:
+  proxy-core:
+    build: ./proxy-core
+    ports:
+      - "1080:1080"   # SOCKS5
+      - "8080:8080"   # HTTP CONNECT
+      - "8088:8088"   # REST/WebSocket API
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    networks:
+      - moav-net
+    restart: unless-stopped
+
+  web-ui:
+    build: ./web-ui
+    ports:
+      - "3000:3000"
+    depends_on:
+      - proxy-core
+    networks:
+      - moav-net
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://proxy-core:8088
+
+  dns-tunnels:
+    build: ./sidecars/dns-tunnels
+    profiles:
+      - dns-tunnels
+    networks:
+      - moav-net
+    restart: unless-stopped
+
+  psiphon:
+    build: ./sidecars/psiphon
+    profiles:
+      - psiphon
+    networks:
+      - moav-net
+    restart: unless-stopped
+
+  tor:
+    image: torproject/arti:latest
+    profiles:
+      - tor
+    networks:
+      - moav-net
+    restart: unless-stopped
