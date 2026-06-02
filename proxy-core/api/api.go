@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
+	"github.com/ibeezhan/moav-client/proxy-core/logbus"
+	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
 	"golang.org/x/net/websocket"
@@ -20,6 +23,7 @@ type Server struct {
 	port     int
 	balancer *balancer.Balancer
 	prober   *prober.Prober
+	engine   *plugins.Engine // hot-swappable plugin engine (Plugins tab)
 
 	// in-memory config store (for POST /api/config).
 	cfgMu  sync.RWMutex
@@ -31,11 +35,12 @@ type Server struct {
 }
 
 // New creates an API Server.
-func New(port int, b *balancer.Balancer) *Server {
+func New(port int, b *balancer.Balancer, eng *plugins.Engine) *Server {
 	return &Server{
 		port:     port,
 		balancer: b,
 		prober:   prober.New(),
+		engine:   eng,
 		config:   map[string]interface{}{},
 		clients:  map[chan []byte]struct{}{},
 	}
@@ -50,6 +55,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/strategy", s.handleStrategy)
+	mux.HandleFunc("/api/logs", s.handleLogs)
+	mux.HandleFunc("/api/plugins", s.handlePlugins)
 	mux.Handle("/api/ws", websocket.Handler(s.handleWebSocket))
 
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
@@ -138,6 +145,54 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handlePlugins reads or replaces the plugin engine rule list.
+// GET  → {rules, templates} for the Plugins tab to render both panes.
+// PUT  → replace entire rule list (atomic via Engine.SetRules).
+//        Body: {"rules": [{...Rule...}]}
+func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, map[string]interface{}{
+			"rules":     s.engine.Rules(),
+			"templates": plugins.Templates,
+		})
+	case http.MethodPut, http.MethodPost:
+		var body struct {
+			Rules []plugins.Rule `json:"rules"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.engine.SetRules(body.Rules)
+		log.Printf("plugins: replaced rule list (%d rules) via API", len(body.Rules))
+		writeJSON(w, map[string]interface{}{"ok": true, "rules": s.engine.Rules()})
+	default:
+		http.Error(w, "GET or PUT required", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleLogs returns the in-memory log ring buffer. Optional ?level=
+// (comma-separated) filters by levels client-side too, but doing it here
+// keeps responses smaller for the initial paint.
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	events := logbus.Default.Snapshot()
+	if want := r.URL.Query().Get("level"); want != "" {
+		allowed := make(map[string]bool, 3)
+		for _, l := range strings.Split(want, ",") {
+			allowed[strings.TrimSpace(l)] = true
+		}
+		filtered := events[:0:0]
+		for _, ev := range events {
+			if allowed[ev.Level] {
+				filtered = append(filtered, ev)
+			}
+		}
+		events = filtered
+	}
+	writeJSON(w, map[string]interface{}{"events": events})
+}
+
 // handleStrategy switches the load-balancing strategy at runtime.
 // POST {"strategy": "latency" | "priority" | "weighted"}.
 func (s *Server) handleStrategy(w http.ResponseWriter, r *http.Request) {
@@ -188,17 +243,22 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleWebSocket streams endpoint updates to the connected client.
+// handleWebSocket streams endpoint updates AND live log events to the
+// connected client. Frames are JSON objects; consumers dispatch on the
+// keys present ("endpoints" vs "log").
 func (s *Server) handleWebSocket(ws *websocket.Conn) {
 	ch := make(chan []byte, 8)
 	s.hubMu.Lock()
 	s.clients[ch] = struct{}{}
 	s.hubMu.Unlock()
 
+	logCh, releaseLog := logbus.Default.Subscribe(64)
+
 	defer func() {
 		s.hubMu.Lock()
 		delete(s.clients, ch)
 		s.hubMu.Unlock()
+		releaseLog()
 		ws.Close()
 	}()
 
@@ -208,9 +268,20 @@ func (s *Server) handleWebSocket(ws *websocket.Conn) {
 		websocket.Message.Send(ws, string(data)) //nolint:errcheck
 	}
 
-	for msg := range ch {
-		if err := websocket.Message.Send(ws, string(msg)); err != nil {
-			return
+	for {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := websocket.Message.Send(ws, string(msg)); err != nil {
+				return
+			}
+		case ev := <-logCh:
+			frame, _ := json.Marshal(map[string]interface{}{"log": ev})
+			if err := websocket.Message.Send(ws, string(frame)); err != nil {
+				return
+			}
 		}
 	}
 }

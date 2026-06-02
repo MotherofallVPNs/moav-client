@@ -15,6 +15,7 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
 	"github.com/ibeezhan/moav-client/proxy-core/cmd"
 	"github.com/ibeezhan/moav-client/proxy-core/config"
+	"github.com/ibeezhan/moav-client/proxy-core/logbus"
 	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
 	"github.com/ibeezhan/moav-client/proxy-core/proxy"
@@ -42,6 +43,10 @@ func main() {
 	if subcmd != "serve" {
 		return
 	}
+
+	// Capture every log.Printf into the bus so the dashboard's Debug tab
+	// can show a live tail. Keep stderr passthrough so `docker logs` works.
+	logbus.CaptureStdLog(logbus.Default, "proxy-core", os.Stderr.Write)
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -217,7 +222,12 @@ func main() {
 		default:
 			action = plugins.DecisionProxy
 		}
-		engineRules = append(engineRules, plugins.Rule{Match: m, Action: action})
+		engineRules = append(engineRules, plugins.Rule{
+			Match:      m,
+			Action:     action,
+			ActionName: plugins.DecisionName(action),
+			Enabled:    true,
+		})
 	}
 	eng := plugins.NewEngine(engineRules)
 	tb := &plugins.TorrentBlocker{Enabled: cfg.Plugins.TorrentBlock}
@@ -226,7 +236,7 @@ func main() {
 	if cfg.Proxy.Auth.Username != "" && cfg.Proxy.Auth.Password != "" {
 		proxyServer = proxyServer.WithAuth(cfg.Proxy.Auth.Username, cfg.Proxy.Auth.Password)
 	}
-	apiServer := api.New(cfg.Proxy.APIPort, b)
+	apiServer := api.New(cfg.Proxy.APIPort, b, eng)
 
 	errCh := make(chan error, 3)
 

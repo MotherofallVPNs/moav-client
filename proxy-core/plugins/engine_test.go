@@ -44,8 +44,8 @@ func TestTorrentBlocker_Disabled(t *testing.T) {
 
 func TestEngine_FirstMatchWins(t *testing.T) {
 	rules := []Rule{
-		{Match: MatchExpr{Type: "domain", Value: "example.com"}, Action: DecisionDirect},
-		{Match: MatchExpr{Type: "domain", Value: "example.com"}, Action: DecisionBlock},
+		{Match: MatchExpr{Type: "domain", Value: "example.com"}, Action: DecisionDirect, Enabled: true},
+		{Match: MatchExpr{Type: "domain", Value: "example.com"}, Action: DecisionBlock, Enabled: true},
 	}
 	eng := NewEngine(rules)
 	got := eng.Evaluate("example.com", 80, "tcp")
