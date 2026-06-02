@@ -2,8 +2,18 @@ import { useState } from "react";
 import EndpointTable from "./components/EndpointTable";
 import ProbeButton from "./components/ProbeButton";
 import ConfigEditor from "./components/ConfigEditor";
+import Analytics from "./components/Analytics";
+import Settings from "./components/Settings";
 
-type Tab = "endpoints" | "probe" | "config";
+type Tab = "endpoints" | "analytics" | "settings" | "probe" | "config";
+
+const TAB_LABELS: Record<Tab, string> = {
+  endpoints: "Endpoints",
+  analytics: "Analytics",
+  settings: "Settings",
+  probe: "Probe",
+  config: "Config",
+};
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
   padding: "0.4rem 1rem",
@@ -22,7 +32,7 @@ export default function App() {
   const [total, setTotal] = useState(0);
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 1000, margin: "0 auto", padding: "2rem 1rem" }}>
+    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 1100, margin: "0 auto", padding: "2rem 1rem" }}>
       <header style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
         <h1 style={{ margin: 0, fontSize: "1.4rem", color: "#0f172a" }}>moav-client</h1>
         <span
@@ -41,9 +51,9 @@ export default function App() {
       </header>
 
       <nav style={{ display: "flex", borderBottom: "1px solid #e2e8f0", marginBottom: "1.5rem" }}>
-        {(["endpoints", "probe", "config"] as Tab[]).map((t) => (
+        {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
           <button key={t} style={tabStyle(tab === t)} onClick={() => setTab(t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </nav>
@@ -52,6 +62,8 @@ export default function App() {
         {tab === "endpoints" && (
           <EndpointTable onHealthChange={(h, t) => { setHealthy(h); setTotal(t); }} />
         )}
+        {tab === "analytics" && <Analytics />}
+        {tab === "settings" && <Settings />}
         {tab === "probe" && <ProbeButton />}
         {tab === "config" && <ConfigEditor />}
       </div>
