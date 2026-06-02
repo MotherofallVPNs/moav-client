@@ -81,15 +81,18 @@ func parseVLESS(uri string) (Endpoint, error) {
 	}
 	q := u.Query()
 	cfg := map[string]string{
-		"uuid":     u.User.Username(),
-		"net":      q.Get("type"),
-		"security": q.Get("security"),
-		"flow":     q.Get("flow"),
-		"pbk":      q.Get("pbk"),
-		"sni":      q.Get("sni"),
-		"fp":       q.Get("fp"),
-		"path":     q.Get("path"),
-		"host":     q.Get("host"),
+		"uuid":       u.User.Username(),
+		"net":        q.Get("type"),
+		"security":   q.Get("security"),
+		"flow":       q.Get("flow"),
+		"pbk":        q.Get("pbk"),
+		"sid":        q.Get("sid"),
+		"sni":        q.Get("sni"),
+		"fp":         q.Get("fp"),
+		"path":       q.Get("path"),
+		"host":       q.Get("host"),
+		"alpn":       q.Get("alpn"),
+		"encryption": q.Get("encryption"),
 	}
 	return Endpoint{
 		ID:        genID("vless", u.Host),
@@ -176,6 +179,9 @@ func parseTrojan(uri string) (Endpoint, error) {
 		"security": q.Get("security"),
 		"type":     q.Get("type"),
 		"path":     q.Get("path"),
+		"host":     q.Get("host"),
+		"alpn":     q.Get("alpn"),
+		"fp":       q.Get("fp"),
 	}
 	return Endpoint{
 		ID:        genID("trojan", u.Host),
@@ -262,10 +268,11 @@ func parseHysteria2(uri string) (Endpoint, error) {
 	}
 	q := u.Query()
 	cfg := map[string]string{
-		"auth":     u.User.Username(),
-		"sni":      q.Get("sni"),
-		"insecure": q.Get("insecure"),
-		"obfs":     q.Get("obfs"),
+		"auth":          u.User.Username(),
+		"sni":           q.Get("sni"),
+		"insecure":      q.Get("insecure"),
+		"obfs":          q.Get("obfs"),
+		"obfs_password": q.Get("obfs-password"),
 	}
 	return Endpoint{
 		ID:        genID("hysteria2", u.Host),

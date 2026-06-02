@@ -3,3 +3,4 @@ proxy-core/proxy-core
 web-ui/node_modules/
 web-ui/dist/
 *.local
+data/

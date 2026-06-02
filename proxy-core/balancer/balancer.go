@@ -95,25 +95,75 @@ func (b *Balancer) Pick() (*subscription.Endpoint, error) {
 	return &ep, nil
 }
 
-// DialContext dials the destination through the selected endpoint.
-// For protocols not directly dialable (hysteria2, wireguard), the endpoint is
-// skipped and an error is returned.
+// maxDialAttempts caps how many endpoints we'll try before falling back to a
+// direct dial. Keeps a single bad request from cycling through every peer.
+const maxDialAttempts = 4
+
+// DialContext dials the destination through the selected endpoint, with
+// automatic failover: on dial error, the failed endpoint is marked errored
+// and the next-best endpoint is picked. Direct dial is the final fallback.
 func (b *Balancer) DialContext(network, addr string) (net.Conn, error) {
-	ep, err := b.Pick()
-	if err != nil {
-		// No healthy proxy — fall back to direct dial.
-		log.Printf("balancer: no healthy endpoint, dialing %s directly", addr)
-		return net.Dial(network, addr)
+	tried := make(map[string]struct{}, maxDialAttempts)
+
+	for attempt := 0; attempt < maxDialAttempts; attempt++ {
+		ep, err := b.pickExcluding(tried)
+		if err != nil {
+			break
+		}
+		conn, dialErr := dialThrough(ep, network, addr)
+		if dialErr == nil {
+			if attempt > 0 {
+				log.Printf("balancer: dial %s via %s succeeded after %d failover(s)", addr, ep.ID, attempt)
+			}
+			return conn, nil
+		}
+		b.markError(ep.ID)
+		tried[ep.ID] = struct{}{}
+		log.Printf("balancer: dial through %s failed (%v); trying next endpoint", ep.ID, dialErr)
 	}
 
-	conn, dialErr := dialThrough(ep, network, addr)
-	if dialErr != nil {
-		// Mark endpoint as error and try direct.
-		b.markError(ep.ID)
-		log.Printf("balancer: dial through %s failed (%v), falling back direct", ep.ID, dialErr)
-		return net.Dial(network, addr)
+	log.Printf("balancer: all candidates failed, dialing %s directly", addr)
+	return net.Dial(network, addr)
+}
+
+// pickExcluding returns the best endpoint not in the excluded set.
+func (b *Balancer) pickExcluding(excluded map[string]struct{}) (*subscription.Endpoint, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	var live []subscription.Endpoint
+	for _, ep := range b.endpoints {
+		if !ep.Enabled || ep.Status != "ok" {
+			continue
+		}
+		if _, skip := excluded[ep.ID]; skip {
+			continue
+		}
+		live = append(live, ep)
 	}
-	return conn, nil
+	if len(live) == 0 {
+		return nil, ErrNoEndpoints
+	}
+
+	var chosen subscription.Endpoint
+	switch b.strategy {
+	case StrategyLatency:
+		sort.Slice(live, func(i, j int) bool {
+			return live[i].LatencyMs < live[j].LatencyMs
+		})
+		chosen = live[0]
+	case StrategyPriority:
+		sort.Slice(live, func(i, j int) bool {
+			return live[i].Priority < live[j].Priority
+		})
+		chosen = live[0]
+	case StrategyWeighted:
+		chosen = weightedRandom(live)
+	default:
+		chosen = live[0]
+	}
+	ep := chosen
+	return &ep, nil
 }
 
 // markError marks the endpoint with the given ID as errored.
@@ -133,26 +183,25 @@ func (b *Balancer) markError(id string) {
 // ---------------------------------------------------------------------------
 
 // dialThrough creates a connection to addr through the given endpoint.
-// Protocols that cannot be dialed directly return an error so the caller
-// can fall back to direct or try another endpoint.
+//
+// If Config["socks5_addr"] is set, we dial through that local SOCKS5 port
+// (this is how sing-box-backed endpoints and sidecars expose themselves).
+// Otherwise we fall back to legacy behaviour: SOCKS5 to ep.Address for
+// protocols that can be naively tunneled that way, error for the rest.
 func dialThrough(ep *subscription.Endpoint, network, addr string) (net.Conn, error) {
+	if socksAddr := ep.Config["socks5_addr"]; socksAddr != "" {
+		return dialSOCKS5(socksAddr, network, addr)
+	}
+
 	switch ep.Protocol {
 	case "hysteria2", "wireguard":
-		return nil, fmt.Errorf("protocol %s not yet directly dialable, skipping", ep.Protocol)
+		return nil, fmt.Errorf("protocol %s requires sing-box (no socks5_addr set)", ep.Protocol)
 
 	case "sidecar":
-		// Sidecar exposes a local SOCKS5 port.
-		socksAddr := ep.Config["socks5_addr"]
-		if socksAddr == "" {
-			socksAddr = "127.0.0.1:1080"
-		}
-		return dialSOCKS5(socksAddr, network, addr)
+		return dialSOCKS5("127.0.0.1:1080", network, addr)
 
 	default:
-		// vless, vmess, trojan, ss, tuic: connect via SOCKS5 upstream.
-		// These protocols require a client-side implementation to fully tunnel;
-		// for now we connect over SOCKS5 assuming the endpoint is a SOCKS5
-		// server (e.g. xray/sing-box sidecar configured on the same host).
+		// Legacy fallback: treat ep.Address as SOCKS5 endpoint.
 		return dialSOCKS5(ep.Address, network, addr)
 	}
 }

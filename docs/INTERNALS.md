@@ -4,6 +4,64 @@ Deep technical reference for agents doing integration, debugging, or extension w
 
 ---
 
+## sing-box dialer bridge
+
+File: `proxy-core/singbox/generator.go`
+
+`Generate(eps, Config)` converts each parsed `subscription.Endpoint` into a
+sing-box outbound block (`vless` w/ Reality + utls, `trojan`, `shadowsocks`,
+`hysteria2` w/ obfs, `vmess`, `tuic`) and pairs it with a SOCKS5 inbound on
+`Config.ListenHost:Config.BasePort+i` plus a 1:1 route rule. The returned
+endpoint slice has `Config["socks5_addr"]` populated with `DialHost:port` —
+which is what `balancer.dialThrough` and `prober.ProbeOne` use to reach the
+endpoint via sing-box.
+
+Endpoints whose **transport** is Xray-only (`xhttp`, `splithttp`, `raw`,
+unknown) are returned unchanged — no `socks5_addr` — so the balancer's
+legacy path tries to SOCKS5 the upstream directly (which usually fails and
+trips the failover loop). They still get probed via raw TCP to ep.Address.
+
+`main.go` writes the generated JSON atomically (`os.WriteFile` to `.tmp` +
+`os.Rename`) to `cfg.Singbox.OutputPath` (default `data/singbox.json`). The
+sing-box sidecar container waits for that file before launching
+(`docker-compose.yml` entrypoint loop).
+
+There is no circular dependency: sing-box's entrypoint spins on
+`[ -s /etc/sing-box/singbox.json ]` so proxy-core can start first, drop the
+file, and sing-box will pick it up within one second.
+
+---
+
+## Balancer failover (multi-attempt)
+
+File: `proxy-core/balancer/balancer.go`
+
+`DialContext` tries up to `maxDialAttempts` (4) different live endpoints before
+falling back to direct dial. `pickExcluding(map[id]struct{})` mirrors `Pick()`
+but skips IDs that already failed this call — preventing the same broken peer
+(e.g. Reality with a server-side handshake bug) from being re-picked just
+because its latency is lowest.
+
+On each dial failure: `markError(ep.ID)` flips its status to "error"
+immediately (write lock), so concurrent SOCKS5 connections seen during the
+retry window also skip it. The next background probe (30 s) restores it if
+the underlying issue resolves.
+
+---
+
+## Prober — real tunnel latency
+
+File: `proxy-core/prober/prober.go`
+
+When `Config["socks5_addr"]` is set, the probe is a SOCKS5 CONNECT through
+that address to `1.1.1.1:443` (overridable via `Prober.Target`). The measured
+latency is wall-clock for the whole chain: client → sing-box inbound → moav
+server → 1.1.1.1. This is what surfaces Reality handshake breakage as
+`status=error`. The fallback (no `socks5_addr`) is the previous raw TCP
+connect against `ep.Address`.
+
+---
+
 ## WebSocket broadcast (channel-based fan-out)
 
 File: `proxy-core/api/api.go`

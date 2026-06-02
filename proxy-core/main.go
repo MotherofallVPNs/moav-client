@@ -17,6 +17,7 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
 	"github.com/ibeezhan/moav-client/proxy-core/proxy"
 	"github.com/ibeezhan/moav-client/proxy-core/sidecars"
+	"github.com/ibeezhan/moav-client/proxy-core/singbox"
 	"github.com/ibeezhan/moav-client/proxy-core/state"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
 )
@@ -115,6 +116,34 @@ func main() {
 	// Add sidecar endpoints.
 	sm := &sidecars.SidecarManager{Config: cfg.Sidecars}
 	addEndpoints(sm.EnabledEndpoints())
+
+	// Generate sing-box config and rewrite endpoints to dial through local
+	// sing-box SOCKS5 ports for real protocol cryptography.
+	if cfg.Singbox.Enabled && len(endpoints) > 0 {
+		sbCfg := singbox.Config{
+			ListenHost: cfg.Singbox.ListenHost,
+			DialHost:   cfg.Singbox.DialHost,
+			BasePort:   cfg.Singbox.BasePort,
+		}
+		jsonBytes, updatedEps, err := singbox.Generate(endpoints, sbCfg)
+		if err != nil {
+			log.Printf("singbox: generate error: %v", err)
+		} else {
+			outPath := cfg.Singbox.OutputPath
+			if outPath == "" {
+				outPath = "data/singbox.json"
+			}
+			tmp := outPath + ".tmp"
+			if err := os.WriteFile(tmp, jsonBytes, 0o644); err != nil {
+				log.Printf("singbox: write %s: %v", tmp, err)
+			} else if err := os.Rename(tmp, outPath); err != nil {
+				log.Printf("singbox: rename %s -> %s: %v", tmp, outPath, err)
+			} else {
+				log.Printf("singbox: wrote %d-endpoint config to %s (dial via %s)", len(endpoints), outPath, cfg.Singbox.DialHost)
+				endpoints = updatedEps
+			}
+		}
+	}
 
 	b.SetEndpoints(endpoints)
 

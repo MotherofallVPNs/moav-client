@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -20,6 +21,7 @@ const (
 // Prober measures latency for a slice of Endpoints.
 type Prober struct {
 	Timeout  time.Duration
+	Target   string // host:port tunneled through SOCKS probes; default 1.1.1.1:443
 	interval time.Duration
 }
 
@@ -53,31 +55,43 @@ func (p *Prober) ProbeAll(endpoints []subscription.Endpoint) []subscription.Endp
 
 // ProbeOne probes a single endpoint and returns a copy with updated
 // LatencyMs and Status fields.
+//
+// When Config["socks5_addr"] is set (sing-box dialer or sidecar mode), we
+// probe that local SOCKS5 port — which validates the whole tunnel reachability
+// through sing-box, not just remote TCP connectivity. Otherwise we fall back
+// to a raw TCP connect against ep.Address.
 func (p *Prober) ProbeOne(ep subscription.Endpoint) subscription.Endpoint {
 	updated := ep // copy
 
-	switch ep.Protocol {
-	case "wireguard":
-		// WireGuard: TCP reachability only (no QUIC/UDP support here).
-		updated.LatencyMs, updated.Status = tcpConnect(ep.Address, p.Timeout)
-	case "hysteria2":
-		// Hysteria2 uses QUIC; fall back to TCP connect for reachability.
-		updated.LatencyMs, updated.Status = tcpConnect(ep.Address, p.Timeout)
-	case "sidecar":
-		// Connect to the local SOCKS5 port exposed by the sidecar.
-		socksAddr := ep.Config["socks5_addr"]
-		if socksAddr == "" {
-			socksAddr = "127.0.0.1:1080"
+	probedAddr := ep.Address
+	if socksAddr := ep.Config["socks5_addr"]; socksAddr != "" {
+		// SOCKS5 probe: send a CONNECT to a well-known target so the
+		// measurement reflects the whole tunnel (sing-box + remote moav
+		// server + reachability of the test target), not just the loopback.
+		probedAddr = socksAddr
+		updated.LatencyMs, updated.Status = socksConnect(socksAddr, p.probeTarget(), p.Timeout)
+	} else {
+		switch ep.Protocol {
+		case "sidecar":
+			probedAddr = "127.0.0.1:1080"
+			updated.LatencyMs, updated.Status = tcpConnect("127.0.0.1:1080", p.Timeout)
+		default:
+			updated.LatencyMs, updated.Status = tcpConnect(ep.Address, p.Timeout)
 		}
-		updated.LatencyMs, updated.Status = tcpConnect(socksAddr, p.Timeout)
-	default:
-		// vless, vmess, trojan, ss, tuic: TCP connect to host:port.
-		updated.LatencyMs, updated.Status = tcpConnect(ep.Address, p.Timeout)
 	}
 
-	log.Printf("probe %s (%s): status=%s latency=%dms",
-		ep.ID, ep.Address, updated.Status, updated.LatencyMs)
+	log.Printf("probe %s via %s: status=%s latency=%dms",
+		ep.ID, probedAddr, updated.Status, updated.LatencyMs)
 	return updated
+}
+
+// probeTarget is the host:port we tunnel to during SOCKS probes. cloudflare-dns
+// over 443 is cheap to dial and tolerates random TLS handshakes.
+func (p *Prober) probeTarget() string {
+	if p.Target != "" {
+		return p.Target
+	}
+	return "1.1.1.1:443"
 }
 
 // Run starts a background loop that probes eps every interval until ctx is done.
@@ -139,4 +153,41 @@ func isTimeout(err error) bool {
 		return netErr.Timeout()
 	}
 	return false
+}
+
+// socksConnect SOCKS5-dials target through proxyAddr and measures end-to-end
+// time. A successful TCP CONNECT through sing-box implies the full chain
+// (sing-box outbound -> moav server -> target) is alive.
+func socksConnect(proxyAddr, target string, timeout time.Duration) (int64, string) {
+	start := time.Now()
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, &net.Dialer{Timeout: timeout})
+	if err != nil {
+		return time.Since(start).Milliseconds(), "error"
+	}
+	cdialer, ok := dialer.(proxy.ContextDialer)
+	if !ok {
+		// Fallback to plain Dial.
+		conn, derr := dialer.Dial("tcp", target)
+		elapsed := time.Since(start).Milliseconds()
+		if derr != nil {
+			if isTimeout(derr) {
+				return elapsed, "timeout"
+			}
+			return elapsed, "error"
+		}
+		conn.Close()
+		return elapsed, "ok"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	conn, derr := cdialer.DialContext(ctx, "tcp", target)
+	elapsed := time.Since(start).Milliseconds()
+	if derr != nil {
+		if isTimeout(derr) {
+			return elapsed, "timeout"
+		}
+		return elapsed, "error"
+	}
+	conn.Close()
+	return elapsed, "ok"
 }

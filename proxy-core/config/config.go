@@ -9,11 +9,21 @@ import (
 
 // Config is the top-level configuration structure.
 type Config struct {
-	Proxy        ProxyConfig        `yaml:"proxy"`
-	Subscription SubscriptionConfig `yaml:"subscription"`
+	Proxy        ProxyConfig         `yaml:"proxy"`
+	Subscription SubscriptionConfig  `yaml:"subscription"`
 	LoadBalancing LoadBalancingConfig `yaml:"load_balancing"`
-	Plugins      PluginsConfig      `yaml:"plugins"`
-	Sidecars     SidecarsConfig     `yaml:"sidecars"`
+	Plugins      PluginsConfig       `yaml:"plugins"`
+	Sidecars     SidecarsConfig      `yaml:"sidecars"`
+	Singbox      SingboxConfig       `yaml:"singbox"`
+}
+
+// SingboxConfig controls the sing-box dialer sidecar integration.
+type SingboxConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ListenHost string `yaml:"listen_host"` // "0.0.0.0" inside Docker
+	DialHost   string `yaml:"dial_host"`   // "singbox" inside compose, "127.0.0.1" on host
+	BasePort   int    `yaml:"base_port"`
+	OutputPath string `yaml:"output_path"` // where to write generated sing-box config
 }
 
 type ProxyAuthConfig struct {
@@ -80,6 +90,13 @@ func Defaults() *Config {
 		LoadBalancing: LoadBalancingConfig{
 			Strategy:     "latency",
 			ProbeOnStart: true,
+		},
+		Singbox: SingboxConfig{
+			Enabled:    false,
+			ListenHost: "0.0.0.0",
+			DialHost:   "singbox",
+			BasePort:   10800,
+			OutputPath: "data/singbox.json",
 		},
 	}
 }

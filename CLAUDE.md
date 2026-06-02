@@ -19,6 +19,7 @@ moav-client is a local censorship-circumvention proxy client written in Go with 
 | `proxy-core/prober/` | Concurrent TCP latency prober with background loop; 10 parallel goroutines max |
 | `proxy-core/proxy/` | SOCKS5 listener (`armon/go-socks5`) and HTTP CONNECT handler; both call `pluginDecide` then `balancer.DialContext` |
 | `proxy-core/sidecars/` | Maps enabled sidecar entries in config to synthetic `Endpoint` structs with known local ports |
+| `proxy-core/singbox/` | Generates a sing-box config (1 SOCKS5 inbound + 1 protocol outbound per endpoint) and rewrites `Endpoint.Config["socks5_addr"]` to point at the local sing-box port |
 | `proxy-core/state/` | Atomic JSON persistence of probe results to `data/state.json` |
 | `proxy-core/subscription/` | URI parsers for vless/vmess/trojan/ss/hysteria2/wireguard/tuic; base64-subscription decoder; HTTP fetcher |
 | `web-ui/src/` | React 18 dashboard (Vite + TypeScript): `App.tsx` (tabs), `EndpointTable.tsx` (REST + WebSocket live view), `ProbeButton.tsx`, `ConfigEditor.tsx` |
@@ -34,10 +35,11 @@ moav-client is a local censorship-circumvention proxy client written in Go with 
 4. Subscription endpoints loaded: file first (`os.ReadFile` → `subscription.ParseSubscription`), then URL (`subscription.FetchSubscription`). Duplicates are deduped by `RawURI`.
 5. Saved state merged into newly parsed endpoints (restores latency without re-probing).
 6. `sidecars.SidecarManager.EnabledEndpoints()` generates synthetic `Endpoint` structs for each enabled sidecar.
-7. All endpoints passed to `balancer.SetEndpoints()`.
-8. If `load_balancing.probe_on_start: true`, `prober.ProbeAll()` runs concurrently in a goroutine; on completion `balancer.SetEndpoints(updated)` and `state.Save()` are called. The background `prober.Run(ctx, eps)` loop then starts, probing every 30 s.
-9. Plugin engine and TorrentBlocker constructed from config.
-10. `proxy.NewServer`, `api.New` created; all three servers (`ListenAndServeSOCKS5`, `ListenAndServeHTTP`, `ListenAndServe`) started in goroutines.
+7. If `singbox.enabled: true`, `singbox.Generate(endpoints, cfg)` is called: writes `data/singbox.json` atomically and replaces the endpoint slice with one whose `Config["socks5_addr"]` points at the sing-box service (e.g. `singbox:10800`). Endpoints whose transport sing-box cannot speak (xhttp etc.) are returned unchanged.
+8. All endpoints passed to `balancer.SetEndpoints()`.
+9. If `load_balancing.probe_on_start: true`, `prober.ProbeAll()` runs concurrently in a goroutine; on completion `balancer.SetEndpoints(updated)` and `state.Save()` are called. The background `prober.Run(ctx, eps)` loop then starts, probing every 30 s.
+10. Plugin engine and TorrentBlocker constructed from config.
+11. `proxy.NewServer`, `api.New` created; all three servers (`ListenAndServeSOCKS5`, `ListenAndServeHTTP`, `ListenAndServe`) started in goroutines.
 
 ### Connection (SOCKS5 or HTTP CONNECT)
 1. Client connects on `:1080` (SOCKS5) or `:8080` (HTTP CONNECT).
@@ -47,15 +49,15 @@ moav-client is a local censorship-circumvention proxy client written in Go with 
 3. On `DecisionBlock`: connection closed immediately.
 4. On `DecisionDirect`: `net.Dial` directly to destination.
 5. On `DecisionProxy`: `balancer.DialContext(network, addr)` called.
-   - `Pick()` selects best endpoint (by strategy) from the `ok` + `Enabled` pool.
-   - `dialThrough(ep, network, addr)` dispatches by protocol: `sidecar` → SOCKS5 to `127.0.0.1:<port>`, all others → SOCKS5 to `ep.Address`. hysteria2 and wireguard return an error and fall back to direct dial.
-   - On dial failure, `markError(ep.ID)` sets endpoint status to "error"; falls back to direct.
+   - Tries up to `maxDialAttempts` (4) different endpoints. `pickExcluding(triedIDs)` selects the best remaining one by strategy.
+   - `dialThrough(ep, network, addr)`: if `Config["socks5_addr"]` is set (sing-box or sidecar), dials via SOCKS5 to that local port. Otherwise: `sidecar` → `127.0.0.1:1080`; vless/vmess/trojan/ss/tuic → legacy SOCKS5 to `ep.Address`; hysteria2/wireguard → error.
+   - On dial failure, `markError(ep.ID)` flips status to "error" and the loop picks the next-best endpoint. If all attempts fail, falls back to direct dial.
 6. Bidirectional `io.Copy` tunnel established.
 
 ### Probe (triggered via API or background loop)
 1. `POST /api/probe` → goroutine calls `prober.ProbeAll(eps)`.
 2. `ProbeAll` fans out up to 10 concurrent goroutines; each calls `ProbeOne(ep)`.
-3. `ProbeOne` does `tcpConnect(ep.Address, timeout)` (or sidecar's local port); measures wall-clock latency; sets `LatencyMs` and `Status` ("ok" / "timeout" / "error").
+3. `ProbeOne`: if `Config["socks5_addr"]` is set, sends a SOCKS5 CONNECT through it to `Prober.Target` (default `1.1.1.1:443`) — measures end-to-end tunnel latency. Otherwise raw `tcpConnect(ep.Address, timeout)` (or `127.0.0.1:1080` for sidecars). Sets `LatencyMs` and `Status` ("ok" / "timeout" / "error").
 4. `balancer.SetEndpoints(updated)` atomically replaces the pool.
 5. `api.Server.broadcast(updated)` marshals endpoints to JSON and fans out to all connected WebSocket clients via buffered channels (slow clients are skipped).
 6. `state.Save()` writes `data/state.json` atomically (write to `.tmp` → `os.Rename`).
@@ -134,6 +136,13 @@ sidecars:
     enabled: false         # 127.0.0.1:5400, priority 5
   tor:
     enabled: false         # 127.0.0.1:9050, priority 5
+
+singbox:
+  enabled: true            # bool   — generate data/singbox.json and route endpoints through the sing-box sidecar
+  listen_host: "0.0.0.0"   # string — what sing-box binds its SOCKS5 inbounds to
+  dial_host: "singbox"     # string — what proxy-core dials (docker service name; "127.0.0.1" for host-mode)
+  base_port: 10800         # int    — first port; endpoint i listens on base_port+i
+  output_path: "data/singbox.json"  # string — atomic-written config consumed by the sidecar
 ```
 
 ---
@@ -172,11 +181,11 @@ sidecars:
 
 ## 7. Known limitations / TODOs
 
-1. **Native protocol dialing**: `balancer.dialThrough` dials all non-sidecar protocols (vless, vmess, trojan, ss, tuic) via SOCKS5 to `ep.Address`. This only works correctly when a real protocol client (Xray, sing-box) is running as a sidecar exposing a local SOCKS5 port, or when the endpoint itself is a SOCKS5 server. Real VLESS/VMess/Trojan/Shadowsocks/Hysteria2/WireGuard client implementations are not built into this binary.
+1. **Native protocol dialing**: Real VLESS/VMess/Trojan/Shadowsocks/Hysteria2/TUIC client cryptography is delegated to **sing-box** (sidecar). `singbox.Generate` produces one outbound per endpoint and rewrites `Endpoint.Config["socks5_addr"]` so the Go balancer dials through the local sing-box port instead. WireGuard is still unimplemented; if `singbox.enabled: false`, the balancer falls back to dialing `ep.Address` as a SOCKS5 server (legacy mode).
 
-2. **GeoIP**: `matchGeoIP` is a file-based stub that reads CIDRs from `geoip/<cc>.txt`. No MaxMind mmdb integration. For production, replace with `github.com/oschwald/maxminddb-golang`.
+2. **xhttp / splithttp transports**: sing-box does not speak Xray's `xhttp` transport, so VLESS+xhttp endpoints get no `socks5_addr` and the balancer's legacy SOCKS5-to-upstream path fails for them. The failover loop absorbs this — they just never get used.
 
-3. **Hysteria2 / WireGuard skipped in balancer**: `dialThrough` returns an error for these protocols, causing automatic fallback to direct dial. They are probed via TCP connect only.
+3. **GeoIP**: `matchGeoIP` is a file-based stub that reads CIDRs from `geoip/<cc>.txt`. No MaxMind mmdb integration. For production, replace with `github.com/oschwald/maxminddb-golang`.
 
 4. **WebSocket library**: Uses `golang.org/x/net/websocket` (older stdlib-adjacent package). Consider migrating to `gorilla/websocket` for production use (ping/pong, more control).
 
