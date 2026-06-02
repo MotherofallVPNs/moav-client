@@ -15,10 +15,12 @@ load_balancing:
 plugins:
   torrent_block: true
   routing_rules:
-    - match: geoip:ir
+    - match: {type: geoip, value: ir}
       action: proxy
-    - match: domain:tracker.thepiratebay.org
+    - match: {type: domain, value: tracker.thepiratebay.org}
       action: block
+    - match: {type: ip_cidr, value: 10.0.0.0/8}
+      action: direct
 
 sidecars:
   masterdns:

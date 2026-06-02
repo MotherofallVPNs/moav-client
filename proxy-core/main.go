@@ -11,6 +11,7 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/api"
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
 	"github.com/ibeezhan/moav-client/proxy-core/config"
+	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
 	"github.com/ibeezhan/moav-client/proxy-core/proxy"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
@@ -72,7 +73,25 @@ func main() {
 		}()
 	}
 
-	proxyServer := proxy.NewServer(cfg.Proxy.SOCKS5Port, cfg.Proxy.HTTPPort, b)
+	// Build plugin engine from config.
+	var engineRules []plugins.Rule
+	for _, rc := range cfg.Plugins.RoutingRules {
+		m := plugins.MatchExpr{Type: rc.Match.Type, Value: rc.Match.Value}
+		var action plugins.Decision
+		switch rc.Action {
+		case "direct":
+			action = plugins.DecisionDirect
+		case "block":
+			action = plugins.DecisionBlock
+		default:
+			action = plugins.DecisionProxy
+		}
+		engineRules = append(engineRules, plugins.Rule{Match: m, Action: action})
+	}
+	eng := plugins.NewEngine(engineRules)
+	tb := &plugins.TorrentBlocker{Enabled: cfg.Plugins.TorrentBlock}
+
+	proxyServer := proxy.NewServer(cfg.Proxy.SOCKS5Port, cfg.Proxy.HTTPPort, b, eng, tb)
 	apiServer := api.New(cfg.Proxy.APIPort, b)
 
 	errCh := make(chan error, 3)

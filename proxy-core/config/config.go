@@ -32,14 +32,22 @@ type LoadBalancingConfig struct {
 	ProbeOnStart bool   `yaml:"probe_on_start"`
 }
 
-type RoutingRule struct {
-	Match  string `yaml:"match"`
-	Action string `yaml:"action"`
+// MatchExprConfig is the YAML representation of a single match expression.
+type MatchExprConfig struct {
+	Type  string `yaml:"type"`
+	Value string `yaml:"value"`
+}
+
+// RoutingRuleConfig is the YAML representation of one routing rule.
+// Match may be a single expression or a list; the parser handles both.
+type RoutingRuleConfig struct {
+	Match  MatchExprConfig `yaml:"match"`
+	Action string          `yaml:"action"`
 }
 
 type PluginsConfig struct {
-	TorrentBlock bool          `yaml:"torrent_block"`
-	RoutingRules []RoutingRule `yaml:"routing_rules"`
+	TorrentBlock bool                `yaml:"torrent_block"`
+	RoutingRules []RoutingRuleConfig `yaml:"routing_rules"`
 }
 
 type SidecarEntry struct {
