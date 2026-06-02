@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ibeezhan/moav-client/proxy-core/api"
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
@@ -14,8 +15,12 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
 	"github.com/ibeezhan/moav-client/proxy-core/proxy"
+	"github.com/ibeezhan/moav-client/proxy-core/sidecars"
+	"github.com/ibeezhan/moav-client/proxy-core/state"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
 )
+
+const statePath = "data/state.json"
 
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config.yaml")
@@ -38,8 +43,36 @@ func main() {
 	}
 	b := balancer.New(strategy)
 
-	// Parse subscription from file or URL.
+	// Load persisted state (restores LatencyMs/Status from last run).
+	savedState, stateErr := state.Load(statePath)
+	if stateErr != nil {
+		log.Printf("state: load error (starting fresh): %v", stateErr)
+		savedState = &state.State{}
+	}
+	stateByURI := make(map[string]subscription.Endpoint, len(savedState.Endpoints))
+	for _, ep := range savedState.Endpoints {
+		stateByURI[ep.RawURI] = ep
+	}
+
+	// Parse subscription from file and/or URL; merge and deduplicate by RawURI.
+	seen := make(map[string]struct{})
 	var endpoints []subscription.Endpoint
+
+	addEndpoints := func(eps []subscription.Endpoint) {
+		for _, ep := range eps {
+			if _, dup := seen[ep.RawURI]; dup {
+				continue
+			}
+			seen[ep.RawURI] = struct{}{}
+			// Restore saved latency/status if available.
+			if saved, ok := stateByURI[ep.RawURI]; ok {
+				ep.LatencyMs = saved.LatencyMs
+				ep.Status = saved.Status
+			}
+			endpoints = append(endpoints, ep)
+		}
+	}
+
 	if cfg.Subscription.File != "" {
 		raw, readErr := os.ReadFile(cfg.Subscription.File)
 		if readErr != nil {
@@ -50,10 +83,24 @@ func main() {
 				log.Printf("subscription: parse error: %v", parseErr)
 			} else {
 				log.Printf("subscription: loaded %d endpoints from %s", len(eps), cfg.Subscription.File)
-				endpoints = eps
+				addEndpoints(eps)
 			}
 		}
 	}
+
+	if cfg.Subscription.URL != "" {
+		eps, fetchErr := subscription.FetchSubscription(cfg.Subscription.URL, 30*time.Second)
+		if fetchErr != nil {
+			log.Printf("subscription: fetch error from %s: %v", cfg.Subscription.URL, fetchErr)
+		} else {
+			log.Printf("subscription: fetched %d endpoints from %s", len(eps), cfg.Subscription.URL)
+			addEndpoints(eps)
+		}
+	}
+
+	// Add sidecar endpoints.
+	sm := &sidecars.SidecarManager{Config: cfg.Sidecars}
+	addEndpoints(sm.EnabledEndpoints())
 
 	b.SetEndpoints(endpoints)
 
@@ -65,10 +112,21 @@ func main() {
 			b.SetEndpoints(updated)
 			log.Printf("initial probe complete: %d endpoints updated", len(updated))
 
+			// Persist state after first probe.
+			s := &state.State{LastProbeAt: time.Now(), Endpoints: updated}
+			if err := s.Save(statePath); err != nil {
+				log.Printf("state: save error: %v", err)
+			}
+
 			// Start background probing loop.
 			ch := p.Run(ctx, updated)
 			for eps := range ch {
 				b.SetEndpoints(eps)
+				// Persist after every background probe cycle.
+				s2 := &state.State{LastProbeAt: time.Now(), Endpoints: eps}
+				if err := s2.Save(statePath); err != nil {
+					log.Printf("state: save error: %v", err)
+				}
 			}
 		}()
 	}
@@ -92,6 +150,9 @@ func main() {
 	tb := &plugins.TorrentBlocker{Enabled: cfg.Plugins.TorrentBlock}
 
 	proxyServer := proxy.NewServer(cfg.Proxy.SOCKS5Port, cfg.Proxy.HTTPPort, b, eng, tb)
+	if cfg.Proxy.Auth.Username != "" && cfg.Proxy.Auth.Password != "" {
+		proxyServer = proxyServer.WithAuth(cfg.Proxy.Auth.Username, cfg.Proxy.Auth.Password)
+	}
 	apiServer := api.New(cfg.Proxy.APIPort, b)
 
 	errCh := make(chan error, 3)

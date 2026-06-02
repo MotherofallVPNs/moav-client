@@ -16,10 +16,16 @@ type Config struct {
 	Sidecars     SidecarsConfig     `yaml:"sidecars"`
 }
 
+type ProxyAuthConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
 type ProxyConfig struct {
-	SOCKS5Port int `yaml:"socks5_port"`
-	HTTPPort   int `yaml:"http_port"`
-	APIPort    int `yaml:"api_port"`
+	SOCKS5Port int             `yaml:"socks5_port"`
+	HTTPPort   int             `yaml:"http_port"`
+	APIPort    int             `yaml:"api_port"`
+	Auth       ProxyAuthConfig `yaml:"auth"`
 }
 
 type SubscriptionConfig struct {

@@ -16,11 +16,13 @@ import (
 
 // Server holds both SOCKS5 and HTTP CONNECT listeners.
 type Server struct {
-	socks5Port int
-	httpPort   int
-	balancer   *balancer.Balancer
-	engine     *plugins.Engine
-	torrent    *plugins.TorrentBlocker
+	socks5Port   int
+	httpPort     int
+	balancer     *balancer.Balancer
+	engine       *plugins.Engine
+	torrent      *plugins.TorrentBlocker
+	authUsername string
+	authPassword string
 }
 
 // NewServer creates a Server.
@@ -34,10 +36,24 @@ func NewServer(socks5Port, httpPort int, b *balancer.Balancer, eng *plugins.Engi
 	}
 }
 
+// WithAuth configures optional username/password authentication on the SOCKS5 server.
+func (s *Server) WithAuth(username, password string) *Server {
+	s.authUsername = username
+	s.authPassword = password
+	return s
+}
+
 // ListenAndServeSOCKS5 starts the SOCKS5 proxy listener.
 func (s *Server) ListenAndServeSOCKS5(ctx context.Context) error {
-	conf := &gosocks5.Config{
-		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+	conf := &gosocks5.Config{}
+
+	if s.authUsername != "" && s.authPassword != "" {
+		creds := gosocks5.StaticCredentials{s.authUsername: s.authPassword}
+		conf.AuthMethods = []gosocks5.Authenticator{gosocks5.UserPassAuthenticator{Credentials: creds}}
+		log.Printf("SOCKS5 auth enabled for user %q", s.authUsername)
+	}
+
+	conf.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, portStr, err := net.SplitHostPort(addr)
 			if err != nil {
 				host = addr
@@ -59,8 +75,7 @@ func (s *Server) ListenAndServeSOCKS5(ctx context.Context) error {
 				return net.Dial(network, addr)
 			default:
 				return s.balancer.DialContext(network, addr)
-			}
-		},
+		}
 	}
 	srv, err := gosocks5.New(conf)
 	if err != nil {

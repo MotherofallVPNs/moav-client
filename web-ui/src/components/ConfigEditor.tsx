@@ -1,25 +1,51 @@
-// TODO Phase 4: load config.yaml from API and POST edits back.
+import { useEffect, useState } from "react";
 
-import { useState } from "react";
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8088";
 
-const placeholder = `proxy:
-  socks5_port: 1080
-  http_port: 8080
-  api_port: 8088
-
-load_balancing:
-  strategy: latency
-  probe_on_start: true
-`;
+type ToastType = "success" | "error" | null;
 
 export default function ConfigEditor() {
-  const [value, setValue] = useState(placeholder);
-  const [saved, setSaved] = useState(false);
+  const [value, setValue] = useState("");
+  const [toast, setToast] = useState<{ msg: string; type: ToastType }>({ msg: "", type: null });
 
-  const handleSave = () => {
-    // TODO: PUT /api/config
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/config`)
+      .then((r) => r.json())
+      .then((data) => {
+        // If the API returns a YAML string under a "yaml" key, use it; otherwise stringify.
+        if (typeof data === "string") {
+          setValue(data);
+        } else if (data.yaml && typeof data.yaml === "string") {
+          setValue(data.yaml);
+        } else {
+          setValue(JSON.stringify(data, null, 2));
+        }
+      })
+      .catch(() => {
+        setValue("# Could not load config from API.");
+      });
+  }, []);
+
+  const showToast = (msg: string, type: ToastType) => {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: "", type: null }), 3000);
+  };
+
+  const handleSave = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yaml: value }),
+      });
+      if (res.ok) {
+        showToast("Config saved.", "success");
+      } else {
+        showToast(`Save failed: ${res.status} ${res.statusText}`, "error");
+      }
+    } catch {
+      showToast("Could not reach proxy-core API.", "error");
+    }
   };
 
   return (
@@ -34,7 +60,7 @@ export default function ConfigEditor() {
           padding: "0.75rem",
           border: "1px solid #e2e8f0",
           borderRadius: 6,
-          minHeight: 200,
+          minHeight: 220,
           resize: "vertical",
         }}
       />
@@ -53,7 +79,16 @@ export default function ConfigEditor() {
         >
           Save
         </button>
-        {saved && <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Saved!</span>}
+        {toast.type && (
+          <span
+            style={{
+              fontSize: "0.875rem",
+              color: toast.type === "success" ? "#16a34a" : "#dc2626",
+            }}
+          >
+            {toast.msg}
+          </span>
+        )}
       </div>
     </div>
   );
