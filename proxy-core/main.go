@@ -67,6 +67,9 @@ func main() {
 
 	// Capture every log.Printf into the bus so the dashboard's Debug tab
 	// can show a live tail. Keep stderr passthrough so `docker logs` works.
+	// Per-level ring of 800 so the user sees plenty of warn/error history
+	// even under heavy INFO traffic.
+	logbus.Default = logbus.New(800)
 	logbus.CaptureStdLog(logbus.Default, "proxy-core", os.Stderr.Write)
 
 	cfg, err := config.Load(*cfgPath)
@@ -334,6 +337,7 @@ func main() {
 			// priority) from the dashboard survive each cycle instead of
 			// being clobbered by the stale slice we started with.
 			ch := p.Run(ctx, b.Endpoints)
+			prevStatus := map[string]string{}
 			for eps := range ch {
 				// Merge probe results into the live pool: copy Status /
 				// LatencyMs from probed copies onto current entries, but
@@ -344,10 +348,28 @@ func main() {
 					probed[ep.ID] = ep
 				}
 				for i := range current {
-					if p2, ok := probed[current[i].ID]; ok {
-						current[i].Status = p2.Status
-						current[i].LatencyMs = p2.LatencyMs
+					p2, ok := probed[current[i].ID]
+					if !ok {
+						continue
 					}
+					// Emit a status-transition event at WARN level so the
+					// Debug tab gets a clear "this endpoint just flipped"
+					// signal — not just the periodic cycle summary.
+					prev := prevStatus[current[i].ID]
+					if prev != "" && prev != p2.Status {
+						name := current[i].Name
+						if name == "" {
+							name = current[i].ID
+						}
+						if p2.Status == "ok" {
+							log.Printf("endpoint %s recovered: %s → ok", name, prev)
+						} else {
+							log.Printf("endpoint %s went unhealthy: %s → %s", name, prev, p2.Status)
+						}
+					}
+					prevStatus[current[i].ID] = p2.Status
+					current[i].Status = p2.Status
+					current[i].LatencyMs = p2.LatencyMs
 				}
 				b.SetEndpoints(current)
 				// Persist after every background probe cycle.

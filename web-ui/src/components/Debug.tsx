@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { theme } from "../theme";
 import { API_BASE, WS_BASE } from "../apiBase";
+import { displayEndpointId } from "../display";
 
 
 type Level = "info" | "warn" | "error";
@@ -314,7 +315,9 @@ function FlowsPane({ refreshTick }: { refreshTick?: number }) {
                   {fl.dest}
                 </span>
                 <span style={{ color: theme.green, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.endpoint_id}>
-                  {fl.protocol} {fl.endpoint_id ? `· ${fl.endpoint_id}` : ""}
+                  {fl.protocol === "sidecar"
+                    ? displayEndpointId(fl.endpoint_id)
+                    : `${fl.protocol}${fl.endpoint_id ? ` · ${displayEndpointId(fl.endpoint_id)}` : ""}`}
                 </span>
                 <span style={{ color: theme.text }}>↑{fmtBytesShort(fl.bytes_up)}</span>
                 <span style={{ color: theme.text }}>↓{fmtBytesShort(fl.bytes_down)}</span>

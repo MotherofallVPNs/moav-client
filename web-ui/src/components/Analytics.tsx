@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { theme, statusColor } from "../theme";
-import { API_BASE, WS_BASE } from "../apiBase";
+import { API_BASE } from "../apiBase";
+import { displayEndpointName } from "../display";
 
 
 interface StatRow {
@@ -232,7 +233,7 @@ export default function Analytics({ refreshTick }: Props) {
       if (!b) {
         b = {
           label,
-          endpointName: row.name || row.id,
+          endpointName: displayEndpointName(row.name, row.id),
           dials: 0,
           errors: 0,
           bytesUp: 0,
@@ -412,7 +413,7 @@ export default function Analytics({ refreshTick }: Props) {
                 .map((row) => (
                   <tr key={row.id} style={{ borderTop: `1px solid ${theme.border}` }}>
                     <td style={td}>
-                      <div>{row.name || row.id}</div>
+                      <div>{displayEndpointName(row.name, row.id)}</div>
                       <div style={{ color: theme.textDim, fontSize: "0.68rem", fontFamily: theme.mono }}>
                         {resolveLabel(row)} · {row.address}{" "}
                         <span style={{ color: statusColor(row.status) }}>● {row.status}</span>

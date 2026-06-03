@@ -31,6 +31,10 @@ func TestClassifyLevel(t *testing.T) {
 		{"moav-client starting — SOCKS5 :1080  HTTP :8080  API :8088", "info"},
 		{"subscription: loaded 6 endpoints from ./data/test-bundle/subscription.txt", "info"},
 		{"plugins: replaced rule list (3 rules) via API", "info"},
+
+		// Status transitions emitted from the probe loop (warn).
+		{"endpoint wireguard went unhealthy: ok → error", "warn"},
+		{"endpoint sidecar-amneziawg recovered: error → ok", "warn"},
 	}
 
 	for _, c := range cases {

@@ -59,6 +59,12 @@ export default function Diagnostics({ refreshTick }: Props) {
         Run a connectivity check from proxy-core itself — useful for
         debugging "does my home router actually reach this host" or "is
         this moav endpoint actually able to reach api.example.com".
+        <br />
+        <span style={{ color: theme.yellow }}>Heads-up:</span> most moav
+        tunnels (WireGuard, AmneziaWG, sidecars) are IPv4-only. Dialing an
+        IPv6-only host (e.g. <code>wimi-api-v6.whatismyip.com</code>) via
+        them surfaces "general SOCKS server failure" / "network
+        unreachable" — that's the tunnel rejecting v6, not a bug.
       </p>
 
       <div

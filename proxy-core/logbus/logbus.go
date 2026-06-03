@@ -21,24 +21,35 @@ type Event struct {
 	Message string `json:"message"`
 }
 
-// Bus is a fan-out hub plus a ring buffer.
+// Bus is a fan-out hub plus per-level ring buffers.
+//
+// Why per-level: under heavy INFO traffic (probe results, sidecar logs)
+// a single shared ring rolls warn/error events out within seconds and
+// the operator misses them when they later open the Debug tab. With
+// separate rings, the most recent N warns and N errors are ALWAYS in
+// scrollback no matter how spammy the INFO stream is.
 type Bus struct {
-	mu       sync.RWMutex
-	ring     []Event
-	maxRing  int
-	subsMu   sync.RWMutex
-	subs     map[chan Event]struct{}
+	mu        sync.RWMutex
+	infoRing  []Event
+	warnRing  []Event
+	errorRing []Event
+	maxPer    int
+	subsMu    sync.RWMutex
+	subs      map[chan Event]struct{}
 }
 
-// New creates a bus retaining ring size events in memory.
+// New creates a bus retaining "ring" events per level (info / warn / error).
+// Total memory cap is ~3 * ring entries.
 func New(ring int) *Bus {
 	if ring <= 0 {
 		ring = 500
 	}
 	return &Bus{
-		ring:    make([]Event, 0, ring),
-		maxRing: ring,
-		subs:    make(map[chan Event]struct{}),
+		infoRing:  make([]Event, 0, ring),
+		warnRing:  make([]Event, 0, ring),
+		errorRing: make([]Event, 0, ring),
+		maxPer:    ring,
+		subs:      make(map[chan Event]struct{}),
 	}
 }
 
@@ -51,11 +62,13 @@ func (b *Bus) Publish(ev Event) {
 		ev.Level = "info"
 	}
 	b.mu.Lock()
-	if len(b.ring) >= b.maxRing {
-		copy(b.ring, b.ring[1:])
-		b.ring[len(b.ring)-1] = ev
-	} else {
-		b.ring = append(b.ring, ev)
+	switch ev.Level {
+	case "error":
+		b.errorRing = pushRing(b.errorRing, ev, b.maxPer)
+	case "warn":
+		b.warnRing = pushRing(b.warnRing, ev, b.maxPer)
+	default:
+		b.infoRing = pushRing(b.infoRing, ev, b.maxPer)
 	}
 	b.mu.Unlock()
 
@@ -69,13 +82,43 @@ func (b *Bus) Publish(ev Event) {
 	b.subsMu.RUnlock()
 }
 
-// Snapshot returns a copy of the current ring (oldest first).
+func pushRing(buf []Event, ev Event, max int) []Event {
+	if len(buf) >= max {
+		copy(buf, buf[1:])
+		buf[len(buf)-1] = ev
+	} else {
+		buf = append(buf, ev)
+	}
+	return buf
+}
+
+// Snapshot returns a copy of every ring, interleaved by timestamp (oldest
+// first). Both newly-arrived warns and a long history of info events are
+// represented; warns/errors don't get crowded out by info spam.
 func (b *Bus) Snapshot() []Event {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	out := make([]Event, len(b.ring))
-	copy(out, b.ring)
-	return out
+	merged := make([]Event, 0, len(b.infoRing)+len(b.warnRing)+len(b.errorRing))
+	merged = append(merged, b.infoRing...)
+	merged = append(merged, b.warnRing...)
+	merged = append(merged, b.errorRing...)
+	// Sort by timestamp ascending. The ring buffers are themselves
+	// time-ordered per-level, but a merge needs a global re-sort.
+	sortEventsByTs(merged)
+	return merged
+}
+
+// sortEventsByTs sorts ev in place by Ts ascending. Inline insertion sort
+// because the slice is already mostly sorted (each ring is ordered) and N
+// is small.
+func sortEventsByTs(ev []Event) {
+	for i := 1; i < len(ev); i++ {
+		j := i
+		for j > 0 && ev[j-1].Ts > ev[j].Ts {
+			ev[j-1], ev[j] = ev[j], ev[j-1]
+			j--
+		}
+	}
 }
 
 // Subscribe returns a channel for incoming events and a function to release it.
@@ -188,6 +231,8 @@ func classifyLevel(s string) string {
 		strings.Contains(low, "skipping") ||
 		strings.Contains(low, "all candidates failed") || // we still try direct after
 		strings.Contains(low, "no healthy endpoint") ||
+		strings.Contains(low, "went unhealthy") || // status transition emitted by main.go
+		strings.Contains(low, "recovered:") ||     // status transition emitted by main.go
 		strings.Contains(low, "dial through ") && strings.Contains(low, "failed"):
 		return "warn"
 

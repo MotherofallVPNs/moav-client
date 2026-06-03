@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { theme, statusColor, statusBg } from "../theme";
+import { displayEndpointName } from "../display";
 import { API_BASE, WS_BASE } from "../apiBase";
 
 export interface Endpoint {
@@ -143,7 +144,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
                 }}
               >
                 <td style={td}>
-                  <div>{ep.Name || ep.ID}</div>
+                  <div>{displayEndpointName(ep.Name, ep.ID)}</div>
                   {ep.Protocol === "sidecar" && (
                     <div style={{ fontSize: "0.65rem", color: theme.textDim, marginTop: 2, fontFamily: theme.mono }}>
                       {ep.Config?.sidecar_kind ?? "?"}
