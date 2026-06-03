@@ -5,10 +5,10 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine
-WORKDIR /app
-RUN npm install -g vite
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
+# nginx:alpine is ~50MB vs node + vite preview at ~340MB. Vite preview was
+# only needed during dev; production just serves the static dist.
+FROM nginx:1.27-alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+# Keep the docker-compose contract — listen on 3000 inside the container.
+RUN sed -i 's/listen\(.*\)80;/listen\1 3000;/' /etc/nginx/conf.d/default.conf
 EXPOSE 3000
-CMD ["npx", "vite", "preview", "--host", "0.0.0.0", "--port", "3000"]

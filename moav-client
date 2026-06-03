@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  moav-client — post-install management wrapper
+#
+#  Drop-in convenience over `docker compose` for the moav-client stack.
+#  Run from the install directory, or symlink to /usr/local/bin/moav-client.
+#
+#  Usage:
+#    moav-client up [--profile <name>...]   start / restart everything
+#    moav-client down                       stop everything
+#    moav-client restart                    rebuild & up proxy-core + web-ui
+#    moav-client status                     show running containers
+#    moav-client ps                         alias for status
+#    moav-client logs [-f] [service]        tail logs
+#    moav-client probe                      trigger an immediate probe via API
+#    moav-client stats                      show /api/stats as JSON
+#    moav-client sidecar add <name>         enable + build + start a sidecar
+#    moav-client sidecar remove <name>      stop + disable a sidecar
+#    moav-client sidecar list               which sidecars are running
+#    moav-client open                       open the dashboard in the default browser
+#    moav-client update                     git pull + rebuild
+#    moav-client version
+# =============================================================================
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
+# If the script was symlinked into PATH, prefer the env var or fall back to
+# its own directory as the install root.
+ROOT="${MOAV_DIR:-$SCRIPT_DIR}"
+cd "$ROOT"
+
+if [[ -t 1 ]]; then
+  CR=$'\033[0m'; BLD=$'\033[1m'; DIM=$'\033[2m'
+  RED=$'\033[31m'; GRN=$'\033[32m'; YLW=$'\033[33m'; BLU=$'\033[34m'; CYN=$'\033[36m'
+else
+  CR= BLD= DIM= RED= GRN= YLW= BLU= CYN=
+fi
+
+API="http://localhost:8088"
+DASHBOARD="http://localhost:3001"
+
+SIDECAR_KINDS=(masterdns amneziawg psiphon trusttunnel tor)
+
+usage() {
+  sed -n '2,/^# ===/p' "$SOURCE" | sed 's/^#//' | head -n 30
+}
+
+compose() { docker compose "$@"; }
+
+# Build "--profile X --profile Y" args for currently-enabled sidecars
+# (those whose config.yaml block says enabled: true).
+enabled_profiles() {
+  python3 - <<'PY'
+import re, pathlib
+src = pathlib.Path("config.yaml").read_text() if pathlib.Path("config.yaml").exists() else ""
+out = []
+for kind in ("masterdns","amneziawg","psiphon","trusttunnel","tor"):
+    m = re.search(r'^\s*' + kind + r':\s*\n(?:\s*#.*\n)*?\s*enabled:\s*(true|false)', src, re.MULTILINE)
+    if m and m.group(1) == "true":
+        out.append(kind)
+print(" ".join(out))
+PY
+}
+
+profile_args() {
+  local args=()
+  for k in $(enabled_profiles); do args+=(--profile "$k"); done
+  printf '%s\n' "${args[@]:-}"
+}
+
+cmd_up() {
+  local args=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && args+=("$line")
+  done < <(profile_args)
+  echo "${CYN}→ starting (${args[*]:-no sidecars})${CR}"
+  compose "${args[@]:-}" up -d "$@"
+  cmd_status
+}
+
+cmd_down() {
+  local args=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && args+=("$line")
+  done < <(profile_args)
+  echo "${CYN}→ stopping${CR}"
+  compose "${args[@]:-}" down "$@"
+}
+
+cmd_restart() {
+  echo "${CYN}→ rebuilding + restarting proxy-core + web-ui${CR}"
+  compose build proxy-core web-ui
+  compose up -d --force-recreate proxy-core web-ui
+  cmd_status
+}
+
+cmd_status() {
+  local args=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && args+=("$line")
+  done < <(profile_args)
+  compose "${args[@]:-}" ps
+}
+
+cmd_logs() {
+  local args=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && args+=("$line")
+  done < <(profile_args)
+  compose "${args[@]:-}" logs --tail=80 "$@"
+}
+
+cmd_probe() {
+  curl -fsS -X POST "$API/api/probe" >/dev/null && echo "${GRN}✓ probing all endpoints${CR}"
+}
+
+cmd_stats() {
+  if command -v jq >/dev/null 2>&1; then
+    curl -fsS "$API/api/stats" | jq .
+  else
+    curl -fsS "$API/api/stats" | python3 -m json.tool
+  fi
+}
+
+is_valid_sidecar() {
+  local s="$1"
+  for k in "${SIDECAR_KINDS[@]}"; do [[ "$s" == "$k" ]] && return 0; done
+  return 1
+}
+
+cmd_sidecar() {
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    list)
+      for kind in "${SIDECAR_KINDS[@]}"; do
+        if docker ps --format '{{.Names}}' | grep -q "moav-client-${kind}-1"; then
+          echo "${GRN}● $kind${CR}    running"
+        else
+          echo "${DIM}○ $kind${CR}    stopped"
+        fi
+      done
+      ;;
+    add)
+      local s="${1:?usage: moav-client sidecar add <name>}"
+      is_valid_sidecar "$s" || { echo "${RED}unknown sidecar: $s${CR} (valid: ${SIDECAR_KINDS[*]})"; exit 1; }
+      python3 - "$s" <<'PY'
+import re, pathlib, sys
+kind = sys.argv[1]
+p = pathlib.Path("config.yaml")
+src = p.read_text()
+pat = re.compile(r'(^\s*' + re.escape(kind) + r':\s*\n(?:\s*#.*\n)*?\s*)enabled:\s*\w+', re.MULTILINE)
+new, n = pat.subn(r'\1enabled: true', src)
+if n: p.write_text(new); print(f"config.yaml: {kind} enabled")
+PY
+      compose --profile "$s" build "$s"
+      compose --profile "$s" up -d "$s"
+      compose restart proxy-core
+      cmd_status
+      ;;
+    remove)
+      local s="${1:?usage: moav-client sidecar remove <name>}"
+      is_valid_sidecar "$s" || { echo "${RED}unknown sidecar: $s${CR}"; exit 1; }
+      compose --profile "$s" stop "$s" || true
+      compose --profile "$s" rm -f "$s" || true
+      python3 - "$s" <<'PY'
+import re, pathlib, sys
+kind = sys.argv[1]
+p = pathlib.Path("config.yaml")
+src = p.read_text()
+pat = re.compile(r'(^\s*' + re.escape(kind) + r':\s*\n(?:\s*#.*\n)*?\s*)enabled:\s*\w+', re.MULTILINE)
+new, n = pat.subn(r'\1enabled: false', src)
+if n: p.write_text(new); print(f"config.yaml: {kind} disabled")
+PY
+      compose restart proxy-core
+      ;;
+    *)
+      echo "${RED}usage: moav-client sidecar {list|add <name>|remove <name>}${CR}"
+      echo "        valid: ${SIDECAR_KINDS[*]}"
+      exit 1
+      ;;
+  esac
+}
+
+cmd_open() {
+  local opener=
+  if command -v xdg-open >/dev/null 2>&1; then opener=xdg-open
+  elif command -v open >/dev/null 2>&1; then opener=open
+  fi
+  if [[ -n "$opener" ]]; then
+    "$opener" "$DASHBOARD"
+  else
+    echo "open this in your browser: ${BLU}$DASHBOARD${CR}"
+  fi
+}
+
+cmd_update() {
+  git pull --ff-only origin "$(git rev-parse --abbrev-ref HEAD)"
+  cmd_restart
+}
+
+cmd_version() {
+  local sha
+  sha=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  echo "moav-client @ $sha"
+  echo "install dir: $ROOT"
+}
+
+case "${1:-help}" in
+  up|start)     shift; cmd_up "$@" ;;
+  down|stop)    shift; cmd_down "$@" ;;
+  restart)      cmd_restart ;;
+  status|ps)    cmd_status ;;
+  logs|log)     shift; cmd_logs "$@" ;;
+  probe)        cmd_probe ;;
+  stats)        cmd_stats ;;
+  sidecar)      shift; cmd_sidecar "$@" ;;
+  open)         cmd_open ;;
+  update)       cmd_update ;;
+  version)      cmd_version ;;
+  help|--help|-h|"") usage ;;
+  *)            echo "${RED}unknown command: $1${CR}"; usage; exit 1 ;;
+esac

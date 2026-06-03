@@ -113,10 +113,11 @@ services:
     restart: unless-stopped
 
   tor:
-    image: torproject/arti:latest
-    profiles: [tor]
+    image: peterdavehello/tor-socks-proxy:latest
+    profiles: [tor, all-sidecars]
     networks: [moav-net]
     restart: unless-stopped
+    # exposes SOCKS5 on 9050 (default). matches SidecarManager.
 
 volumes:
   psiphon-data:

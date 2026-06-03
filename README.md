@@ -8,28 +8,66 @@ A client for **[MoaV — Mother of all VPNs](https://github.com/shayanb/MoaV)** 
 
 ## Quick start
 
+**One-liner install** (recommended):
+
 ```bash
-git clone https://github.com/ibeezhan/moav-client
-cd moav-client
-
-# Drop your MoaV bundle into data/, then point config.yaml at it.
-cp config.yaml.example config.yaml
-$EDITOR config.yaml
-
-docker compose up -d
-# Add sidecars on demand:
-docker compose --profile masterdns up -d
-docker compose --profile amneziawg up -d   # needs NET_ADMIN + /dev/net/tun
-docker compose --profile psiphon   up -d   # needs a Psiphon-issued config
-docker compose --profile trusttunnel up -d
-
-# Dashboard:    http://localhost:3001
-# SOCKS5 proxy: localhost:1080
-# HTTP proxy:   localhost:8081
-# REST API:     localhost:8088
+curl -fsSL https://raw.githubusercontent.com/ibeezhan/moav-client/main/install.sh | bash
 ```
 
-Point your browser or system proxy at `socks5h://localhost:1080`. Every connection is routed through the healthiest moav server endpoint.
+The installer checks prerequisites, clones the repo, walks you through enabling sidecars (with disk-size estimates per choice), seeds `config.yaml`, builds the docker images, and brings the stack up. Works both interactively (TTY) and fully headless (env vars / flags).
+
+**Headless examples:**
+
+```bash
+# Drive everything from env (no prompts).
+MOAV_HEADLESS=1 \
+MOAV_DIR=/opt/moav-client \
+MOAV_SUBSCRIPTION=/etc/moav/subscription.txt \
+MOAV_SIDECARS=masterdns,psiphon \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/ibeezhan/moav-client/main/install.sh)"
+
+# Or via flags after a local clone.
+git clone https://github.com/ibeezhan/moav-client && cd moav-client
+./install.sh --headless --dir /opt/moav-client --sidecars masterdns,psiphon
+```
+
+After install, `./moav-client` is a thin docker-compose wrapper:
+
+```bash
+./moav-client status                # docker compose ps
+./moav-client logs proxy-core       # tail logs
+./moav-client probe                 # trigger probe via API
+./moav-client stats                 # /api/stats JSON
+./moav-client sidecar add tor       # enable + build + start the tor sidecar
+./moav-client sidecar remove psiphon
+./moav-client update                # git pull + rebuild + restart
+```
+
+Endpoints exposed:
+
+| What | Address |
+|---|---|
+| Dashboard | http://localhost:3001 |
+| SOCKS5 proxy | `socks5h://localhost:1080` |
+| HTTP CONNECT | http://localhost:8081 |
+| REST + WS API | http://localhost:8088 |
+
+Point your browser or system proxy at `socks5h://localhost:1080`. Every connection routes through the healthiest moav server endpoint.
+
+### Disk footprint per sidecar
+
+| Service | Image size | Pulls when |
+|---|---|---|
+| **proxy-core** | ~16 MB | always (Go binary on scratch-equivalent) |
+| **web-ui** | ~76 MB | always (nginx-alpine + built dist) |
+| **sing-box** | ~113 MB | always (ghcr.io/sagernet/sing-box:latest) |
+| MasterDNS | ~160 MB | `--profile masterdns` |
+| AmneziaWG | ~180 MB | `--profile amneziawg` |
+| Psiphon | ~195 MB | `--profile psiphon` |
+| TrustTunnel | ~85 MB | `--profile trusttunnel` |
+| Tor | ~15 MB | `--profile tor` (peterdavehello/tor-socks-proxy) |
+
+Bare minimum: **~205 MB**. Full stack: **~840 MB**. Plus ~500 MB of build cache on first run.
 
 ---
 
