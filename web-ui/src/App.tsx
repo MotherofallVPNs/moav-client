@@ -9,6 +9,7 @@ import Sources from "./components/Sources";
 import Footer from "./components/Footer";
 import Diagnostics from "./components/Diagnostics";
 import { theme } from "./theme";
+import { API_BASE } from "./apiBase";
 
 type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "diag" | "config";
 
@@ -52,6 +53,41 @@ const btn: React.CSSProperties = {
   gap: "0.3rem",
   transition: "border-color 0.15s",
 };
+
+function RestartButton() {
+  const [busy, setBusy] = useState(false);
+  const click = async () => {
+    if (!window.confirm("Restart proxy-core?\n\nApplies any pending config / source changes. The dashboard will reconnect in a few seconds.")) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await fetch(`${API_BASE}/api/sources/reload`, { method: "POST" });
+    } catch {
+      // The restart kills the connection mid-flight — that's expected.
+    }
+    setTimeout(() => setBusy(false), 6000);
+  };
+  return (
+    <button
+      onClick={click}
+      disabled={busy}
+      style={{
+        fontFamily: theme.mono,
+        fontSize: "0.7rem",
+        padding: "0.35rem 0.75rem",
+        borderRadius: 4,
+        border: `1px solid ${theme.yellow}`,
+        background: busy ? theme.yellowDim : "transparent",
+        color: theme.yellow,
+        cursor: busy ? "wait" : "pointer",
+      }}
+      title="Restart proxy-core to apply pending config / source changes"
+    >
+      {busy ? "restarting…" : "↻ Apply / restart"}
+    </button>
+  );
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("endpoints");
@@ -97,8 +133,16 @@ export default function App() {
             fontWeight: 600,
             letterSpacing: "-0.02em",
             color: theme.text,
+            display: "flex",
+            alignItems: "center",
+            gap: "0.55rem",
           }}
         >
+          <img
+            src="/logo.png"
+            alt="MoaV"
+            style={{ height: 24, width: "auto", display: "block" }}
+          />
           MoaV<span style={{ color: theme.green }}>-client</span>
           <span
             style={{
@@ -161,10 +205,11 @@ export default function App() {
               borderColor: theme.blue,
               color: theme.blue,
             }}
-            title="Refresh all tabs"
+            title="Refresh all tabs (re-fetch endpoints / stats / logs in place)"
           >
             ↻ Refresh
           </button>
+          <RestartButton />
         </div>
       </header>
 

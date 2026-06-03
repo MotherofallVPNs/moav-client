@@ -3,7 +3,7 @@
 #  moav-client installer
 #
 #  One-liner install:
-#    curl -fsSL https://raw.githubusercontent.com/ibeezhan/moav-client/main/install.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
 #
 #  Interactive mode (default when TTY attached):
 #    bash install.sh
@@ -27,7 +27,7 @@
 # =============================================================================
 set -euo pipefail
 
-REPO_URL="${MOAV_REPO_URL:-https://github.com/ibeezhan/moav-client.git}"
+REPO_URL="${MOAV_REPO_URL:-https://github.com/MotherofallVPNs/moav-client.git}"
 REPO_BRANCH="${MOAV_REPO_BRANCH:-main}"
 DEFAULT_DIR="${HOME:-/root}/moav-client"
 

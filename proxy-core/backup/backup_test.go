@@ -12,8 +12,8 @@ func TestCreate_IncludesExpected_SkipsRuntime(t *testing.T) {
 	// Layout a realistic moav-client install.
 	mustWrite(t, root, "config.yaml", "proxy: {}\n")
 	mustWrite(t, root, ".env", "MOAV_EXPOSURE=loopback\n")
-	mustWrite(t, root, "data/beezhan-t7d/subscription.txt", "vless://...")
-	mustWrite(t, root, "data/beezhan-t7d/wireguard.conf", "[Interface]\n")
+	mustWrite(t, root, "data/test-bundle/subscription.txt", "vless://...")
+	mustWrite(t, root, "data/test-bundle/wireguard.conf", "[Interface]\n")
 	// These should be excluded:
 	mustWrite(t, root, "data/state.json", "{\"endpoints\":[]}")
 	mustWrite(t, root, "data/singbox.json", "{}")
@@ -28,8 +28,8 @@ func TestCreate_IncludesExpected_SkipsRuntime(t *testing.T) {
 	wantIn := []string{
 		"config.yaml",
 		".env",
-		"data/beezhan-t7d/subscription.txt",
-		"data/beezhan-t7d/wireguard.conf",
+		"data/test-bundle/subscription.txt",
+		"data/test-bundle/wireguard.conf",
 	}
 	wantOut := []string{
 		"data/state.json",
@@ -53,7 +53,7 @@ func TestCreate_IncludesExpected_SkipsRuntime(t *testing.T) {
 func TestRoundTrip(t *testing.T) {
 	src := t.TempDir()
 	mustWrite(t, src, "config.yaml", "proxy: {socks5_port: 1080}\n")
-	mustWrite(t, src, "data/beezhan-t7d/subscription.txt", "vless://test")
+	mustWrite(t, src, "data/test-bundle/subscription.txt", "vless://test")
 
 	zipBytes, err := Create(src)
 	if err != nil {

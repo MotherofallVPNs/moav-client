@@ -2,7 +2,7 @@
 
 **Version**: 1
 **Status**: implemented in moav-client (`proxy-core/subscription/moavbundle.go`)
-**Tracking**: [ibeezhan/moav-client#1](https://github.com/ibeezhan/moav-client/issues/1)
+**Tracking**: [MotherofallVPNs/moav-client#1](https://github.com/MotherofallVPNs/moav-client/issues/1)
 
 ## Purpose
 
@@ -72,10 +72,10 @@ the same name. Common per-record keys:
 
 ## Concrete example
 
-The `beezhan-t7d` MoaV bundle (~2.0 KB in legacy 6-URI form) becomes:
+The `<bundle-name>` MoaV bundle (~2.0 KB in legacy 6-URI form) becomes:
 
 ```
-moav://beezhan-t7d@<MOAV-IP>?\
+moav://<bundle-name>@<MOAV-IP>?\
 uuid=<UUID>&\
 pw=<TROJAN-AND-HY2-PASSWORD>&\
 ss_method=2022-blake3-aes-128-gcm&\
@@ -90,7 +90,7 @@ p=vless-xhttp,2096,sni=<XHTTP-SNI>&\
 p=trojan,8443,sni=<TROJAN-SNI>&\
 p=ss,8388&\
 p=hy2,443,sni=<HY2-SNI>,obfs=salamander,obfs_pw=<HY2-OBFS-PW>\
-#MoaV-beezhan-t7d
+#MoaV-bundle
 ```
 
 Whitespace and backslashes are only there for the doc; the wire format is
@@ -108,7 +108,7 @@ expands a bundle by:
 5. Building a canonical single-protocol URI (`vless://…`, `trojan://…`, etc.)
    from `merge(shared, overrides)` and delegating to the existing per-scheme
    parser. The materialised Endpoint inherits the bundle's label name with
-   the protocol suffixed (`MoaV-beezhan-t7d-reality`, etc.).
+   the protocol suffixed (`MoaV-bundle-reality`, etc.).
 6. Each Endpoint's `RawURI` is the rebuilt single-protocol URI so dedup
    (by `RawURI`) keeps working when a user has both legacy URIs and a
    bundle pointing at the same server.

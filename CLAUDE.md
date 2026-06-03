@@ -153,7 +153,7 @@ sidecars:
     enabled: false         # SOCKS5 on masterdns:5300 (docker service name)
     priority: 1
     config:
-      domain: ""           # tunnel domain (e.g. "m.t7d.my")
+      domain: ""           # tunnel domain (e.g. "m.<your-bundle>.<tld>")
       method: "5"          # encryption method id (5 = AES-256-GCM)
       key: ""              # encryption key (hex)
   amneziawg:

@@ -38,7 +38,6 @@ interface Props {
 export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [editingPrio, setEditingPrio] = useState<{ id: string; value: string } | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -106,10 +105,9 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
   };
 
   const commitPriority = (ep: Endpoint, raw: string) => {
-    setEditingPrio(null);
     const n = parseInt(raw, 10);
-    if (Number.isNaN(n) || n < 0 || n > 1000) {
-      flash("Priority must be 0–1000.", false);
+    if (Number.isNaN(n) || n < 0 || n > 10) {
+      flash("Priority must be 0–10.", false);
       return;
     }
     if (n === ep.Priority) return;
@@ -178,47 +176,25 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
                   </span>
                 </td>
                 <td style={td}>
-                  {editingPrio?.id === ep.ID ? (
-                    <input
-                      type="number"
-                      autoFocus
-                      min={0}
-                      max={1000}
-                      value={editingPrio.value}
-                      onChange={(e) => setEditingPrio({ id: ep.ID, value: e.target.value })}
-                      onBlur={() => commitPriority(ep, editingPrio.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitPriority(ep, editingPrio.value);
-                        if (e.key === "Escape") setEditingPrio(null);
-                      }}
-                      style={{
-                        width: 60,
-                        padding: "0.2rem 0.4rem",
-                        borderRadius: 4,
-                        fontSize: "0.82rem",
-                        fontFamily: theme.mono,
-                      }}
-                    />
-                  ) : (
-                    <button
-                      onClick={() => setEditingPrio({ id: ep.ID, value: String(ep.Priority) })}
-                      disabled={pendingId === ep.ID}
-                      title="Click to edit"
-                      style={{
-                        background: "transparent",
-                        border: "1px dashed transparent",
-                        padding: "0.2rem 0.5rem",
-                        borderRadius: 4,
-                        cursor: pendingId === ep.ID ? "wait" : "pointer",
-                        color: theme.text,
-                        fontFamily: theme.mono,
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = theme.border)}
-                      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "transparent")}
-                    >
-                      {ep.Priority}
-                    </button>
-                  )}
+                  <select
+                    value={ep.Priority}
+                    disabled={pendingId === ep.ID}
+                    onChange={(e) => commitPriority(ep, e.target.value)}
+                    title="Under priority strategy: LOWER picked first. Under weighted: HIGHER = more traffic. Ignored under latency."
+                    style={{
+                      padding: "0.2rem 0.4rem",
+                      borderRadius: 4,
+                      fontSize: "0.82rem",
+                      fontFamily: theme.mono,
+                      cursor: pendingId === ep.ID ? "wait" : "pointer",
+                    }}
+                  >
+                    {Array.from({ length: 11 }, (_, i) => (
+                      <option key={i} value={i}>
+                        {i}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td style={td}>
                   <Switch
@@ -234,8 +210,9 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
       </table>
 
       <div style={{ marginTop: "0.75rem", fontSize: "0.7rem", color: theme.textDim, fontFamily: theme.mono }}>
-        Priority is used by the <code>priority</code> and <code>weighted</code> strategies. Toggling sidecar endpoints
-        also stops/starts the docker container if <code>/var/run/docker.sock</code> is mounted.
+        Priority: <strong>lower</strong> is picked first under the <code>priority</code> strategy;
+        <strong> higher</strong> = more traffic under the <code>weighted</code> strategy; ignored under <code>latency</code>.
+        Toggling sidecar endpoints also stops/starts the docker container if <code>/var/run/docker.sock</code> is mounted.
       </div>
 
       {toast && (

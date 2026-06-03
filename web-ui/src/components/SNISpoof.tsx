@@ -14,7 +14,17 @@ interface SpoofState {
   enabled: boolean;
   default_fake_sni: string;
   default_utls: string;
-  active_endpoints: ActiveEndpoint[];
+  // Server may serialise an empty slice as JSON null — coerce on receive.
+  active_endpoints: ActiveEndpoint[] | null;
+}
+
+function normalise(d: any): SpoofState {
+  return {
+    enabled: !!d?.enabled,
+    default_fake_sni: d?.default_fake_sni ?? "",
+    default_utls: d?.default_utls ?? "chrome",
+    active_endpoints: Array.isArray(d?.active_endpoints) ? d.active_endpoints : [],
+  };
 }
 
 const UTLS_OPTIONS = ["chrome", "firefox", "safari", "ios", "android", "edge", "none"];
@@ -27,7 +37,7 @@ export default function SNISpoof() {
   useEffect(() => {
     fetch(`${API_BASE}/api/snispoof`)
       .then((r) => r.json())
-      .then((d) => setState(d as SpoofState))
+      .then((d) => setState(normalise(d)))
       .catch(() => {});
   }, []);
 
@@ -144,9 +154,9 @@ export default function SNISpoof() {
         }}
       >
         <div style={{ fontSize: "0.72rem", color: theme.textDim, fontFamily: theme.mono, marginBottom: 6 }}>
-          currently routed through the spoofer: {state.active_endpoints.length}
+          currently routed through the spoofer: {(state.active_endpoints ?? []).length}
         </div>
-        {state.active_endpoints.length === 0 ? (
+        {(state.active_endpoints ?? []).length === 0 ? (
           <div style={{ fontSize: "0.78rem", color: theme.textDim }}>
             no endpoints active — enable above, set a fake SNI, then{" "}
             <code>./moav-client restart</code> or POST <code>/api/sources/reload</code>.
@@ -154,7 +164,7 @@ export default function SNISpoof() {
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
             <tbody>
-              {state.active_endpoints.map((ep) => (
+              {(state.active_endpoints ?? []).map((ep) => (
                 <tr key={ep.id} style={{ borderTop: `1px solid ${theme.border}` }}>
                   <td style={{ padding: "0.3rem 0", fontFamily: theme.mono, color: theme.text }}>{ep.name || ep.id}</td>
                   <td style={{ padding: "0.3rem 0", fontFamily: theme.mono, color: theme.blue }}>{ep.fake_sni}</td>

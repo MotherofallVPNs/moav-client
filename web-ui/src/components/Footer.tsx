@@ -4,13 +4,17 @@ import { API_BASE } from "../apiBase";
 
 // TODO: when the repo is made public, update GITHUB_URL to the canonical
 // upstream — currently points at the private fork used during development.
-const GITHUB_URL = "https://github.com/ibeezhan/moav-client";
+const GITHUB_URL = "https://github.com/MotherofallVPNs/moav-client";
 
 interface VersionResp {
   version: string;
   commit: string;
   uptime_sec: number;
-  public_ip: string;
+  public_ip: string;        // kept for back-compat with older builds
+  direct_ip: string;
+  direct_country: string;
+  proxy_ip: string;
+  proxy_country: string;
 }
 
 function fmtUptime(sec: number): string {
@@ -18,6 +22,20 @@ function fmtUptime(sec: number): string {
   if (sec < 3600) return `${Math.floor(sec / 60)}m`;
   if (sec < 86400) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
   return `${Math.floor(sec / 86400)}d ${Math.floor((sec % 86400) / 3600)}h`;
+}
+
+// Two-letter ISO country code → 🇫🇷 etc. Browsers without regional indicator
+// support render the letters in a box; that's still readable.
+function flag(cc?: string): string {
+  if (!cc || cc.length !== 2) return "";
+  const base = 0x1f1e6 - "A".charCodeAt(0);
+  const a = cc.toUpperCase().charCodeAt(0) + base;
+  const b = cc.toUpperCase().charCodeAt(1) + base;
+  try {
+    return String.fromCodePoint(a, b);
+  } catch {
+    return "";
+  }
 }
 
 export default function Footer() {
@@ -34,7 +52,7 @@ export default function Footer() {
         .catch(() => {});
     };
     fetchOnce();
-    const id = setInterval(fetchOnce, 30000); // refresh uptime every 30s
+    const id = setInterval(fetchOnce, 60000); // hourly is fine; lookup is rate-limited upstream
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -46,6 +64,16 @@ export default function Footer() {
     textDecoration: "none",
     fontFamily: theme.mono,
   };
+
+  const ipChip = (label: string, ip?: string, cc?: string) =>
+    ip ? (
+      <span title={`${label} egress · ${cc || "??"}`}>
+        {label} <span style={{ color: theme.text }}>{ip}</span>
+        {cc && <span style={{ marginLeft: 4 }}>{flag(cc)}</span>}
+      </span>
+    ) : (
+      <span style={{ opacity: 0.5 }}>{label} —</span>
+    );
 
   return (
     <footer
@@ -74,11 +102,8 @@ export default function Footer() {
             </span>
           )}
         </span>
-        {info?.public_ip && (
-          <span>
-            public ip <span style={{ color: theme.text }}>{info.public_ip}</span>
-          </span>
-        )}
+        {ipChip("direct", info?.direct_ip ?? info?.public_ip, info?.direct_country)}
+        {ipChip("proxy", info?.proxy_ip, info?.proxy_country)}
         {info && (
           <span>
             up <span style={{ color: theme.text }}>{fmtUptime(info.uptime_sec)}</span>

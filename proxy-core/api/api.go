@@ -242,13 +242,22 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleVersion is used by the dashboard footer. Returns build version,
-// observed public egress IP (when reachable), uptime.
+// the install host's WAN IP (what someone reaching out to proxy-core's
+// own egress sees), the proxy egress IP (what a SOCKS5 client routed
+// through localhost:1080 sees), and best-effort country annotations for
+// each. Both lookups are cached for ~5 min.
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	directIP, directCC := observedDirectIP()
+	proxyIP, proxyCC := observedProxyIP(s.balancer)
 	writeJSON(w, map[string]interface{}{
-		"version":    cmd.Version,
-		"commit":     buildCommit,
-		"uptime_sec": int(time.Since(startedAt).Seconds()),
-		"public_ip":  observedPublicIP(),
+		"version":         cmd.Version,
+		"commit":          buildCommit,
+		"uptime_sec":      int(time.Since(startedAt).Seconds()),
+		"public_ip":       directIP, // alias kept for the older footer fetch
+		"direct_ip":       directIP,
+		"direct_country":  directCC,
+		"proxy_ip":        proxyIP,
+		"proxy_country":   proxyCC,
 	})
 }
 
@@ -260,32 +269,95 @@ var buildCommit = "dev"
 // startedAt records process start so /api/version can report uptime.
 var startedAt = time.Now()
 
-// observedPublicIP caches the result of an HTTP fetch to ifconfig.me /
-// api.ipify.org from THIS process — i.e. the IP someone reaching out to
-// proxy-core directly would see. It's the install host's WAN IP, NOT the
-// moav-server egress (that's what the dashboard's SOCKS5 traffic uses).
-//
-// We use it in the footer as "your install's public IP" so users know
-// what to point external clients at when exposure is set to lan/public.
-func observedPublicIP() string {
-	publicIPOnce.Do(func() {
+// observedDirectIP returns (ip, country) for the install host's WAN egress —
+// i.e. the IP someone reaching out to proxy-core directly would see. Cached
+// for ~5 min. Used in the footer as "your install's public IP".
+func observedDirectIP() (string, string) {
+	return cachedIPLookup(&directIPCache, &directIPMu, func() (string, string) {
 		c := &http.Client{Timeout: 4 * time.Second}
-		resp, err := c.Get("https://api.ipify.org")
-		if err != nil {
-			return
-		}
-		defer resp.Body.Close()
-		b, err := io.ReadAll(io.LimitReader(resp.Body, 64))
-		if err == nil {
-			publicIP = strings.TrimSpace(string(b))
-		}
+		return lookupIPCountry(c, "")
 	})
-	return publicIP
+}
+
+// observedProxyIP returns (ip, country) as seen via the balancer — the IP
+// world sees when traffic is routed through the SOCKS5 listener. We dial
+// the local SOCKS5 on 127.0.0.1:1080 so the lookup goes through whatever
+// endpoint the balancer would pick right now.
+func observedProxyIP(b *balancer.Balancer) (string, string) {
+	return cachedIPLookup(&proxyIPCache, &proxyIPMu, func() (string, string) {
+		dialer, err := proxy.SOCKS5("tcp", "127.0.0.1:1080", nil, &net.Dialer{Timeout: 6 * time.Second})
+		if err != nil {
+			return "", ""
+		}
+		c := &http.Client{
+			Timeout: 8 * time.Second,
+			Transport: &http.Transport{
+				Dial: dialer.Dial,
+			},
+		}
+		_ = b // reserved for future per-endpoint pinning
+		return lookupIPCountry(c, "")
+	})
+}
+
+// lookupIPCountry calls Cloudflare's free trace endpoint
+// (https://www.cloudflare.com/cdn-cgi/trace). It's friendly to proxied
+// requests, doesn't rate-limit, and returns the country code in the
+// `loc=XX` line — exactly what we need for the footer flag emoji.
+//
+// Response format (text/plain):
+//   fl=...
+//   ip=1.2.3.4
+//   loc=US
+//   ...
+func lookupIPCountry(c *http.Client, _ string) (string, string) {
+	resp, err := c.Get("https://www.cloudflare.com/cdn-cgi/trace")
+	if err != nil {
+		return "", ""
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return "", ""
+	}
+	var ip, cc string
+	for _, line := range strings.Split(string(body), "\n") {
+		switch {
+		case strings.HasPrefix(line, "ip="):
+			ip = strings.TrimSpace(strings.TrimPrefix(line, "ip="))
+		case strings.HasPrefix(line, "loc="):
+			cc = strings.TrimSpace(strings.TrimPrefix(line, "loc="))
+		}
+	}
+	return ip, strings.ToUpper(cc)
+}
+
+type ipCacheEntry struct {
+	ip      string
+	country string
+	at      time.Time
+}
+
+func cachedIPLookup(cache *ipCacheEntry, mu *sync.Mutex, refresh func() (string, string)) (string, string) {
+	mu.Lock()
+	defer mu.Unlock()
+	if time.Since(cache.at) < 5*time.Minute && cache.ip != "" {
+		return cache.ip, cache.country
+	}
+	ip, cc := refresh()
+	if ip != "" {
+		cache.ip = ip
+		cache.country = cc
+		cache.at = time.Now()
+	}
+	return cache.ip, cache.country
 }
 
 var (
-	publicIPOnce sync.Once
-	publicIP     string
+	directIPCache ipCacheEntry
+	directIPMu    sync.Mutex
+	proxyIPCache  ipCacheEntry
+	proxyIPMu     sync.Mutex
 )
 
 // handleStats returns per-endpoint counters + active strategy meta. Joins
@@ -648,7 +720,7 @@ func (s *Server) handleFlows(w http.ResponseWriter, r *http.Request) {
 //	   that endpoint's SOCKS5 inbound first (so you can ask "is the moav
 //	   server reaching api.example.com?").
 func (s *Server) handleDiag(w http.ResponseWriter, r *http.Request) {
-	target := r.URL.Query().Get("target")
+	target := strings.TrimSpace(r.URL.Query().Get("target"))
 	if target == "" {
 		http.Error(w, "target query required", http.StatusBadRequest)
 		return
@@ -656,11 +728,25 @@ func (s *Server) handleDiag(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("type")
 	via := r.URL.Query().Get("via")
 
+	// For TCP / trace we need host:port. If the user only typed a host or
+	// IP, default to :443 (covers 95% of "debug the tunnel" cases) instead
+	// of blowing up with net.SplitHostPort "missing port in address".
+	if kind == "" || kind == "tcp" || kind == "trace" {
+		if _, _, err := net.SplitHostPort(target); err != nil {
+			target = target + ":443"
+		}
+	}
+
 	switch kind {
 	case "", "tcp":
 		s.diagTCP(w, target, via)
 	case "dns":
-		s.diagDNS(w, target)
+		// DNS only wants the hostname.
+		host := target
+		if h, _, err := net.SplitHostPort(target); err == nil {
+			host = h
+		}
+		s.diagDNS(w, host)
 	case "trace":
 		s.diagTrace(w, target)
 	default:

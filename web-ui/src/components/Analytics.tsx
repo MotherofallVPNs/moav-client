@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { theme, statusColor } from "../theme";
 import { API_BASE, WS_BASE } from "../apiBase";
 
@@ -64,6 +64,14 @@ const HISTORY_LEN = 60; // 2-min window @ 2s sample
 type HistoryEntry = { up: number; down: number };
 type History = HistoryEntry[];
 
+// History lives at module scope so it survives Analytics tab unmounts /
+// remounts (otherwise navigating away and back wipes the chart). prev[]
+// tracks the absolute byte counters per-endpoint so each tick can compute
+// a delta.
+const globalHistory: Record<string, History> = {};
+const globalPrev: Record<string, { up: number; down: number }> = {};
+const seenEndpoint: Record<string, boolean> = {};
+
 function colorForProtocol(p: string): string {
   // Stable per-protocol hue using a small static palette.
   const palette = [theme.green, theme.blue, theme.yellow, theme.orange, theme.red, "#a78bfa", "#34d399"];
@@ -117,9 +125,6 @@ interface Props {
 
 export default function Analytics({ refreshTick }: Props) {
   const [stats, setStats] = useState<StatsResp>({ strategy: "", rows: [] });
-  // Per-endpoint history of delta-per-sample (so we can graph throughput).
-  const historyRef = useRef<Record<string, History>>({});
-  const prevRef = useRef<Record<string, { up: number; down: number }>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -128,19 +133,28 @@ export default function Analytics({ refreshTick }: Props) {
         const r = await fetch(`${API_BASE}/api/stats`);
         const data: StatsResp = await r.json();
         if (cancelled) return;
-        const prev = prevRef.current;
         const next: Record<string, { up: number; down: number }> = {};
         for (const row of data.rows) {
-          const p = prev[row.id] || { up: 0, down: 0 };
-          const dU = Math.max(0, row.bytes_up - p.up);
-          const dD = Math.max(0, row.bytes_down - p.down);
+          const p = globalPrev[row.id];
           next[row.id] = { up: row.bytes_up, down: row.bytes_down };
-          const hist = historyRef.current[row.id] || [];
+
+          if (!seenEndpoint[row.id]) {
+            // First time we see this endpoint — just record the baseline.
+            // DON'T push a delta this tick; otherwise the chart spikes
+            // because (current - 0) is the full cumulative count.
+            seenEndpoint[row.id] = true;
+            globalHistory[row.id] = globalHistory[row.id] ?? [];
+            continue;
+          }
+
+          const dU = p ? Math.max(0, row.bytes_up - p.up) : 0;
+          const dD = p ? Math.max(0, row.bytes_down - p.down) : 0;
+          const hist = globalHistory[row.id] ?? [];
           hist.push({ up: dU, down: dD });
           while (hist.length > HISTORY_LEN) hist.shift();
-          historyRef.current[row.id] = hist;
+          globalHistory[row.id] = hist;
         }
-        prevRef.current = next;
+        Object.assign(globalPrev, next);
         setStats(data);
       } catch {
         // ignore
@@ -182,7 +196,7 @@ export default function Analytics({ refreshTick }: Props) {
       b.errors += row.dial_errors;
       b.bytesUp += row.bytes_up;
       b.bytesDown += row.bytes_down;
-      const hist = historyRef.current[row.id] || [];
+      const hist = globalHistory[row.id] || [];
       // Add this endpoint's history into the protocol bucket (align by tail).
       for (let i = 0; i < HISTORY_LEN; i++) {
         const j = hist.length - HISTORY_LEN + i;

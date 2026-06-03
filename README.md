@@ -11,7 +11,7 @@ A client for **[MoaV — Mother of all VPNs](https://github.com/shayanb/MoaV)** 
 **One-liner install** (recommended):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ibeezhan/moav-client/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
 ```
 
 The installer checks prerequisites, clones the repo, walks you through enabling sidecars (with disk-size estimates per choice), seeds `config.yaml`, builds the docker images, and brings the stack up. Works both interactively (TTY) and fully headless (env vars / flags).
@@ -24,10 +24,10 @@ MOAV_HEADLESS=1 \
 MOAV_DIR=/opt/moav-client \
 MOAV_SUBSCRIPTION=/etc/moav/subscription.txt \
 MOAV_SIDECARS=masterdns,psiphon \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/ibeezhan/moav-client/main/install.sh)"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh)"
 
 # Or via flags after a local clone.
-git clone https://github.com/ibeezhan/moav-client && cd moav-client
+git clone https://github.com/MotherofallVPNs/moav-client && cd moav-client
 ./install.sh --headless --dir /opt/moav-client --sidecars masterdns,psiphon
 ```
 
@@ -151,7 +151,7 @@ singbox:
   output_path: "data/singbox.json"
 
 sidecars:
-  masterdns:                           # m.t7d.my MoaV DNS tunnel
+  masterdns:                           # m.<your-bundle>.<tld> MoaV DNS tunnel
     enabled: true
     priority: 2
     config:
@@ -302,7 +302,7 @@ For implementation details (sing-box bridge, balancer failover, prober tunnel-aw
 
 ## Bundle format
 
-To compress one server's full protocol surface into a single transferable URL instead of N protocol-specific URIs, see the proposal at **[docs/MOAV_BUNDLE.md](docs/MOAV_BUNDLE.md)** and tracking issue [#1](https://github.com/ibeezhan/moav-client/issues/1).
+To compress one server's full protocol surface into a single transferable URL instead of N protocol-specific URIs, see the proposal at **[docs/MOAV_BUNDLE.md](docs/MOAV_BUNDLE.md)** and tracking issue [#1](https://github.com/MotherofallVPNs/moav-client/issues/1).
 
 ---
 
