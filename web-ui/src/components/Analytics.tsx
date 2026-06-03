@@ -7,6 +7,8 @@ interface StatRow {
   id: string;
   name: string;
   protocol: string;
+  sidecar_kind?: string;
+  source?: string;
   address: string;
   status: string;
   latency_ms: number;
@@ -18,6 +20,15 @@ interface StatRow {
   last_dial_unix: number;
   last_error_unix: number;
   last_error?: string;
+}
+
+// A sidecar endpoint's protocol field is just "sidecar"; the meaningful
+// label is the sidecar_kind ("psiphon", "masterdns", …). resolveLabel
+// makes the chart legend + per-protocol cards show the actual transport
+// instead of the generic "sidecar" bucket.
+function resolveLabel(r: StatRow): string {
+  if (r.protocol === "sidecar" && r.sidecar_kind) return r.sidecar_kind;
+  return r.protocol;
 }
 
 interface StatsResp {
@@ -72,12 +83,43 @@ const globalHistory: Record<string, History> = {};
 const globalPrev: Record<string, { up: number; down: number }> = {};
 const seenEndpoint: Record<string, boolean> = {};
 
+// Hand-picked palette: each known protocol / sidecar-kind gets a fixed,
+// visually-distinct color. We do NOT hash — hashes routinely collided
+// (e.g. "sidecar" and "vless" both landed on red in the old build),
+// rendering the stacked chart unreadable.
+const PROTOCOL_COLORS: Record<string, string> = {
+  // Main protocols (sing-box / xray outbounds).
+  vless:        "#58a6ff", // blue
+  trojan:       "#d29922", // amber
+  ss:           "#db6d28", // orange
+  shadowsocks:  "#db6d28",
+  hysteria2:    "#3fb950", // green
+  vmess:        "#a78bfa", // purple
+  tuic:         "#34d399", // teal
+  wireguard:    "#f97171", // red-pink
+  amneziawg:    "#fda4af", // soft pink
+  mtproxy:      "#fb7185", // rose
+
+  // Resolved sidecar kinds (after resolveLabel maps "sidecar" → kind).
+  psiphon:      "#a3e635", // lime
+  masterdns:    "#2dd4bf", // cyan-teal
+  tor:          "#818cf8", // indigo
+  trusttunnel:  "#c084fc", // violet
+  dnstt:        "#facc15", // yellow
+  slipstream:   "#fb923c", // bright orange
+
+  // Catch-all for legacy / unknown.
+  sidecar:      "#94a3b8", // slate
+  direct:       theme.textDim,
+};
+
+const FALLBACK_COLORS = ["#22d3ee", "#fbbf24", "#a78bfa", "#84cc16", "#fb7185", "#38bdf8"];
+
 function colorForProtocol(p: string): string {
-  // Stable per-protocol hue using a small static palette.
-  const palette = [theme.green, theme.blue, theme.yellow, theme.orange, theme.red, "#a78bfa", "#34d399"];
+  if (PROTOCOL_COLORS[p]) return PROTOCOL_COLORS[p];
   let h = 0;
   for (const ch of p) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return palette[h % palette.length];
+  return FALLBACK_COLORS[h % FALLBACK_COLORS.length];
 }
 
 interface AreaChartProps {
@@ -168,10 +210,15 @@ export default function Analytics({ refreshTick }: Props) {
     };
   }, [refreshTick]);
 
-  // Aggregate by protocol.
+  // Aggregate by RESOLVED label — sidecars are split into their kind
+  // ("psiphon" / "masterdns") instead of all collapsing into "sidecar".
+  // We also tag each bucket with a representative endpoint name so the
+  // per-protocol card can show "sidecar-psiphon" instead of just "psiphon"
+  // when the user wants to see which configured endpoint is doing the work.
   const byProtocol = useMemo(() => {
     type Bucket = {
-      protocol: string;
+      label: string;        // chart-legend label ("psiphon", "vless", ...)
+      endpointName: string; // representative ep.Name for the card header
       dials: number;
       errors: number;
       bytesUp: number;
@@ -180,24 +227,26 @@ export default function Analytics({ refreshTick }: Props) {
     };
     const map = new Map<string, Bucket>();
     for (const row of stats.rows) {
-      let b = map.get(row.protocol);
+      const label = resolveLabel(row);
+      let b = map.get(label);
       if (!b) {
         b = {
-          protocol: row.protocol,
+          label,
+          endpointName: row.name || row.id,
           dials: 0,
           errors: 0,
           bytesUp: 0,
           bytesDown: 0,
           history: Array.from({ length: HISTORY_LEN }, () => ({ up: 0, down: 0 })),
         };
-        map.set(row.protocol, b);
+        map.set(label, b);
       }
       b.dials += row.dials;
       b.errors += row.dial_errors;
       b.bytesUp += row.bytes_up;
       b.bytesDown += row.bytes_down;
       const hist = globalHistory[row.id] || [];
-      // Add this endpoint's history into the protocol bucket (align by tail).
+      // Add this endpoint's history into the bucket (align by tail).
       for (let i = 0; i < HISTORY_LEN; i++) {
         const j = hist.length - HISTORY_LEN + i;
         if (j >= 0 && j < hist.length) {
@@ -214,20 +263,18 @@ export default function Analytics({ refreshTick }: Props) {
   const totalBytesUp = stats.rows.reduce((a, r) => a + r.bytes_up, 0);
   const totalBytesDown = stats.rows.reduce((a, r) => a + r.bytes_down, 0);
 
-  // Stacked area for ALL protocols, last HISTORY_LEN samples.
-  const totalSeries = useMemo(() => {
-    const out: { up: number; down: number; perProtocol: { color: string; up: number; down: number; label: string }[] }[] = [];
-    for (let i = 0; i < HISTORY_LEN; i++) {
-      const entry: (typeof out)[number] = { up: 0, down: 0, perProtocol: [] };
-      for (const b of byProtocol) {
-        const h = b.history[i];
-        entry.up += h.up;
-        entry.down += h.down;
-        entry.perProtocol.push({ color: colorForProtocol(b.protocol), up: h.up, down: h.down, label: b.protocol });
-      }
-      out.push(entry);
-    }
-    return out;
+  // Per-protocol series for the overlay chart — total bytes (up+down)
+  // sampled at HISTORY_LEN ticks. Sorted so the largest protocol renders
+  // FIRST (i.e. underneath), letting smaller series sit visibly on top.
+  const overlaySeries = useMemo(() => {
+    return byProtocol
+      .map((b) => ({
+        label: b.label,
+        color: colorForProtocol(b.label),
+        samples: b.history.map((h) => h.up + h.down),
+        peak: Math.max(0, ...b.history.map((h) => h.up + h.down)),
+      }))
+      .sort((a, b) => b.peak - a.peak);
   }, [byProtocol]);
 
   return (
@@ -248,9 +295,9 @@ export default function Analytics({ refreshTick }: Props) {
         <Card label="Download" value={fmtBytes(totalBytesDown)} color={theme.blue} />
       </div>
 
-      {/* Stacked overall chart */}
+      {/* Overlay chart — each protocol filled from 0 in its own color. */}
       <Section title="Throughput by protocol (rolling 2-min window @ 2s)">
-        <StackedAreaChart series={totalSeries} byProtocol={byProtocol} />
+        <OverlayAreaChart series={overlaySeries} />
       </Section>
 
       {/* Per-protocol cards */}
@@ -270,27 +317,55 @@ export default function Analytics({ refreshTick }: Props) {
             byProtocol.map((b) => {
               const upSeries = b.history.map((h) => h.up);
               const downSeries = b.history.map((h) => h.down);
-              const color = colorForProtocol(b.protocol);
+              const color = colorForProtocol(b.label);
               return (
                 <div
-                  key={b.protocol}
+                  key={b.label}
                   style={{
                     background: theme.surface2,
+                    // Subtle colored left border so the user can scan-link
+                    // the card to its line in the overlay chart above.
+                    borderLeft: `3px solid ${color}`,
                     border: `1px solid ${theme.border}`,
+                    borderLeftWidth: 3,
+                    borderLeftColor: color,
                     borderRadius: 6,
                     padding: "0.75rem",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div
-                      style={{
-                        fontFamily: theme.mono,
-                        fontSize: "0.78rem",
-                        color,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {b.protocol}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <div>
+                      <div
+                        style={{
+                          fontFamily: theme.mono,
+                          fontSize: "0.78rem",
+                          color,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {b.endpointName}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontFamily: theme.mono,
+                          fontSize: "0.65rem",
+                          color: theme.textDim,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        <span
+                          style={{
+                            padding: "1px 5px",
+                            border: `1px solid ${color}55`,
+                            borderRadius: 3,
+                            color,
+                          }}
+                        >
+                          {b.label}
+                        </span>
+                      </div>
                     </div>
                     <div style={{ fontSize: "0.7rem", color: theme.textDim, fontFamily: theme.mono }}>
                       {b.dials} dials
@@ -339,7 +414,7 @@ export default function Analytics({ refreshTick }: Props) {
                     <td style={td}>
                       <div>{row.name || row.id}</div>
                       <div style={{ color: theme.textDim, fontSize: "0.68rem", fontFamily: theme.mono }}>
-                        {row.protocol} · {row.address}{" "}
+                        {resolveLabel(row)} · {row.address}{" "}
                         <span style={{ color: statusColor(row.status) }}>● {row.status}</span>
                       </div>
                     </td>
@@ -446,21 +521,28 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-interface StackedProps {
-  series: { up: number; down: number; perProtocol: { color: string; up: number; down: number; label: string }[] }[];
-  byProtocol: { protocol: string }[];
+// OverlayAreaChart draws each protocol as its OWN translucent area from
+// zero — overlaid, not stacked. Cleaner than stacked when one protocol
+// (e.g. psiphon) dwarfs another (vless) — the smaller series doesn't
+// vanish into a thin sliver at the top of the stack.
+//
+// Series are pre-sorted so the LARGEST renders first (underneath); smaller
+// series draw on top with the same translucent fill + 1px stroke, so they
+// remain visible against the bigger one.
+interface OverlayProps {
+  series: { label: string; color: string; samples: number[]; peak: number }[];
 }
-function StackedAreaChart({ series, byProtocol }: StackedProps) {
+function OverlayAreaChart({ series }: OverlayProps) {
   const width = 900;
   const height = 140;
-  const padLeft = 48; // y-axis labels
+  const padLeft = 52; // y-axis labels
   const padBottom = 18; // x-axis labels
   const innerW = width - padLeft;
   const innerH = height - padBottom;
-  const max = Math.max(1, ...series.map((s) => s.up + s.down));
-  const hasTraffic = series.some((s) => s.up + s.down > 0);
 
-  if (byProtocol.length === 0 || !hasTraffic) {
+  const max = Math.max(1, ...series.map((s) => s.peak));
+  const hasTraffic = series.some((s) => s.peak > 0);
+  if (series.length === 0 || !hasTraffic) {
     return (
       <div
         style={{
@@ -480,10 +562,21 @@ function StackedAreaChart({ series, byProtocol }: StackedProps) {
     );
   }
 
-  const protocols = byProtocol.map((b) => b.protocol);
-
-  // Y-axis ticks: 0, max/2, max.
   const ticks = [0, max / 2, max];
+  const N = series[0]?.samples.length ?? 0;
+
+  // Build SVG paths for one series.
+  const pathFor = (samples: number[]) => {
+    const pts: string[] = [];
+    for (let i = 0; i < samples.length; i++) {
+      const x = padLeft + (i / (samples.length - 1)) * innerW;
+      const y = innerH - (samples[i] / max) * innerH;
+      pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+    const fill = `M ${padLeft},${innerH} L ${pts.join(" L ")} L ${(padLeft + innerW).toFixed(1)},${innerH} Z`;
+    const line = `M ${pts.join(" L ")}`;
+    return { fill, line };
+  };
 
   return (
     <div
@@ -508,42 +601,19 @@ function StackedAreaChart({ series, byProtocol }: StackedProps) {
           );
         })}
 
-        {/* Build stacked layers — one per protocol */}
-        {protocols.map((p, pi) => {
-          const color = colorForProtocol(p);
-          const points: string[] = [];
-          const baseTop: number[] = [];
-
-          for (let i = 0; i < series.length; i++) {
-            let base = 0;
-            for (let q = 0; q < pi; q++) {
-              const prior = series[i].perProtocol[q];
-              if (prior) base += prior.up + prior.down;
-            }
-            const me = series[i].perProtocol[pi];
-            const meTotal = (me?.up || 0) + (me?.down || 0);
-            const top = base + meTotal;
-            const x = padLeft + (i / (series.length - 1)) * innerW;
-            const yTop = innerH - (top / max) * innerH;
-            points.push(`${x.toFixed(1)},${yTop.toFixed(1)}`);
-            baseTop.push(innerH - (base / max) * innerH);
-          }
-          const reversed = baseTop
-            .map((y, i) => `${(padLeft + ((series.length - 1 - i) / (series.length - 1)) * innerW).toFixed(1)},${y.toFixed(1)}`)
-            .reverse();
+        {/* Overlay each protocol's own area from 0 — LARGEST first (under). */}
+        {series.map((s) => {
+          if (s.peak === 0) return null;
+          const { fill, line } = pathFor(s.samples);
           return (
-            <polygon
-              key={p}
-              points={[...points, ...reversed].join(" ")}
-              fill={color}
-              fillOpacity={0.45}
-              stroke={color}
-              strokeWidth={1}
-            />
+            <g key={s.label}>
+              <path d={fill} fill={s.color} fillOpacity={0.18} />
+              <path d={line} fill="none" stroke={s.color} strokeWidth={1.5} strokeLinejoin="round" />
+            </g>
           );
         })}
 
-        {/* X-axis labels: now / -1m / -2m markers */}
+        {/* X-axis labels */}
         <text x={padLeft} y={innerH + 12} textAnchor="start" fontSize={9} fontFamily="monospace" fill="#6e7681">
           -2m
         </text>
@@ -554,26 +624,44 @@ function StackedAreaChart({ series, byProtocol }: StackedProps) {
           now
         </text>
       </svg>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginTop: "0.6rem" }}>
-        {protocols.map((p) => (
+
+      {/* Legend — protocol name + peak throughput, one per series. */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginTop: "0.6rem" }}>
+        {series.map((s) => (
           <div
-            key={p}
+            key={s.label}
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 4,
-              fontSize: "0.7rem",
+              gap: 6,
+              fontSize: "0.72rem",
               fontFamily: theme.mono,
               color: theme.text,
             }}
+            title={`peak ${fmtBytes(s.peak)}/s`}
           >
             <span
-              style={{ width: 10, height: 10, background: colorForProtocol(p), display: "inline-block", borderRadius: 2 }}
+              style={{
+                width: 12,
+                height: 4,
+                background: s.color,
+                display: "inline-block",
+                borderRadius: 2,
+              }}
             />
-            {p}
+            <span>{s.label}</span>
+            <span style={{ color: theme.textDim }}>
+              peak {fmtBytes(s.peak)}/s
+            </span>
           </div>
         ))}
       </div>
+      {/* Sample-count hint when we don't have a full window yet. */}
+      {N > 0 && N < HISTORY_LEN && (
+        <div style={{ marginTop: 4, fontSize: "0.66rem", color: theme.textDim, fontFamily: theme.mono }}>
+          collecting samples · {N}/{HISTORY_LEN}
+        </div>
+      )}
     </div>
   );
 }

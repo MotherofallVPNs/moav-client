@@ -373,11 +373,13 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	type row struct {
 		balancer.EndpointStat
-		Name      string `json:"name"`
-		Protocol  string `json:"protocol"`
-		Address   string `json:"address"`
-		Status    string `json:"status"`
-		LatencyMs int64  `json:"latency_ms"`
+		Name        string `json:"name"`
+		Protocol    string `json:"protocol"`
+		SidecarKind string `json:"sidecar_kind,omitempty"` // for sidecar endpoints — "psiphon", "masterdns", …
+		Source      string `json:"source,omitempty"`       // which subscription source this came from
+		Address     string `json:"address"`
+		Status      string `json:"status"`
+		LatencyMs   int64  `json:"latency_ms"`
 	}
 	rows := make([]row, 0, len(stats))
 	for _, st := range stats {
@@ -385,6 +387,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		if i, ok := byID[st.ID]; ok {
 			r.Name = eps[i].Name
 			r.Protocol = eps[i].Protocol
+			r.SidecarKind = eps[i].Config["sidecar_kind"]
+			r.Source = eps[i].Source
 			r.Address = eps[i].Address
 			r.Status = eps[i].Status
 			r.LatencyMs = eps[i].LatencyMs
