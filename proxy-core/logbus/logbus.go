@@ -142,29 +142,60 @@ func (w *CapturingWriter) Write(p []byte) (int, error) {
 }
 
 // classifyLevel inspects an unstructured log line and returns info/warn/error.
-// Stdlib log lines don't carry a level, so we sniff for the canonical English
-// words plus the few prefixes our code uses.
+//
+// Rules of thumb:
+//   - **error** is reserved for SYSTEM-level failures (fatal/panic, no
+//     healthy endpoints anywhere, can't load config, can't bind a listener).
+//     A single endpoint being unhealthy in a probe pass is NOT an error —
+//     the balancer just routes around it.
+//   - **warn** covers transient / recoverable conditions the operator
+//     should notice (one dial failed and we're retrying, fall-back to
+//     direct, deprecation notices).
+//   - everything else (probe results, normal lifecycle, traffic) is **info**.
+//
+// Heuristics order matters — we check the most specific patterns first.
 func classifyLevel(s string) string {
 	low := strings.ToLower(s)
+
+	// Probe lines are always info, regardless of the per-endpoint status.
+	// They report on a peer's health, not on proxy-core's own health.
+	if strings.HasPrefix(low, "probe ") || strings.Contains(low, " probe ") &&
+		(strings.Contains(low, "status=ok") || strings.Contains(low, "status=error") ||
+			strings.Contains(low, "status=timeout")) {
+		return "info"
+	}
+
 	switch {
-	case strings.Contains(low, "fatal") || strings.Contains(low, "panic"):
-		return "error"
-	case strings.Contains(low, "error") ||
-		strings.Contains(low, "failed") ||
-		strings.Contains(low, "refused") ||
-		strings.Contains(low, "no such") ||
-		strings.Contains(low, "unreachable") ||
-		strings.Contains(low, "all candidates failed") ||
-		strings.Contains(low, " err=") ||
-		strings.Contains(low, "status=error") ||
-		strings.Contains(low, "status=timeout"):
-		return "error"
+	// Transient / recoverable conditions are warns even if they mention
+	// "fail" / "no healthy" etc. — check these FIRST so the fallback log
+	// lines don't bubble up to error.
 	case strings.Contains(low, "warn") ||
 		strings.Contains(low, "deprecat") ||
-		strings.Contains(low, "fall back") ||
 		strings.Contains(low, "falling back") ||
-		strings.Contains(low, "trying next"):
+		strings.Contains(low, "fall back") ||
+		strings.Contains(low, "trying next endpoint") ||
+		strings.Contains(low, "failover") ||
+		strings.Contains(low, "succeeded after") ||
+		strings.Contains(low, "skipping") ||
+		strings.Contains(low, "all candidates failed") || // we still try direct after
+		strings.Contains(low, "no healthy endpoint") ||
+		strings.Contains(low, "dial through ") && strings.Contains(low, "failed"):
 		return "warn"
+
+	// True system-level failures: process can't proceed.
+	case strings.HasPrefix(low, "fatal:") ||
+		strings.Contains(low, " fatal:") ||
+		strings.HasPrefix(low, "panic:") ||
+		strings.Contains(low, " panic:") ||
+		strings.HasPrefix(low, "load config:") ||
+		strings.HasPrefix(low, "could not load") ||
+		strings.Contains(low, "listen:") && strings.Contains(low, "address already in use") ||
+		strings.Contains(low, "listen:") && strings.Contains(low, "permission denied") ||
+		strings.HasPrefix(low, "http listen:") ||
+		strings.HasPrefix(low, "socks5 listen:") ||
+		strings.HasPrefix(low, "api listen:"):
+		return "error"
+
 	default:
 		return "info"
 	}

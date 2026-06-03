@@ -59,6 +59,36 @@ func (b *Balancer) SetEndpoints(eps []subscription.Endpoint) {
 	b.endpoints = eps
 }
 
+// PatchEndpoint mutates the named endpoint in-place. patch contains fields the
+// caller wants to update; only non-nil fields are applied. Returns the updated
+// snapshot, or false if no endpoint matched the given id.
+type EndpointPatch struct {
+	Enabled  *bool
+	Priority *int
+}
+
+// PatchEndpoint applies the patch and returns whether a match was found.
+// Triggers no probe, no docker action — the caller decides what side effects
+// are appropriate (typically: republish via SetEndpoints, optionally stop a
+// sidecar container).
+func (b *Balancer) PatchEndpoint(id string, p EndpointPatch) (subscription.Endpoint, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := range b.endpoints {
+		if b.endpoints[i].ID != id {
+			continue
+		}
+		if p.Enabled != nil {
+			b.endpoints[i].Enabled = *p.Enabled
+		}
+		if p.Priority != nil {
+			b.endpoints[i].Priority = *p.Priority
+		}
+		return b.endpoints[i], true
+	}
+	return subscription.Endpoint{}, false
+}
+
 // Endpoints returns a snapshot of the current endpoint pool.
 func (b *Balancer) Endpoints() []subscription.Endpoint {
 	b.mu.RLock()

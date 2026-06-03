@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
+	"github.com/ibeezhan/moav-client/proxy-core/dockerctl"
 	"github.com/ibeezhan/moav-client/proxy-core/logbus"
 	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
@@ -50,6 +52,7 @@ func New(port int, b *balancer.Balancer, eng *plugins.Engine) *Server {
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/endpoints", s.handleEndpoints)
+	mux.HandleFunc("/api/endpoints/", s.handleEndpointPatch) // PATCH /api/endpoints/<id>
 	mux.HandleFunc("/api/probe", s.handleProbe)
 	mux.HandleFunc("/api/healthz", s.handleHealth)
 	mux.HandleFunc("/api/config", s.handleConfig)
@@ -82,6 +85,91 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 func (s *Server) handleEndpoints(w http.ResponseWriter, r *http.Request) {
 	eps := s.balancer.Endpoints()
 	writeJSON(w, map[string]interface{}{"endpoints": eps})
+}
+
+// handleEndpointPatch updates a single endpoint's enabled / priority. For
+// endpoints whose protocol is "sidecar", we also try to stop / (re)start the
+// matching docker-compose service via the docker socket. The socket mount is
+// optional; if it's missing, the dial-pool change still applies and the
+// container is left alone.
+//
+//	PATCH /api/endpoints/<id>
+//	body: {"enabled": true|false, "priority": 1..N}
+func (s *Server) handleEndpointPatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch && r.Method != http.MethodPost {
+		http.Error(w, "PATCH required", http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/endpoints/")
+	if id == "" {
+		http.Error(w, "id required", http.StatusBadRequest)
+		return
+	}
+
+	var body struct {
+		Enabled  *bool `json:"enabled"`
+		Priority *int  `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	updated, ok := s.balancer.PatchEndpoint(id, balancer.EndpointPatch{
+		Enabled:  body.Enabled,
+		Priority: body.Priority,
+	})
+	if !ok {
+		http.Error(w, "no such endpoint", http.StatusNotFound)
+		return
+	}
+	log.Printf("api: patched endpoint %s enabled=%v priority=%d", updated.ID, updated.Enabled, updated.Priority)
+
+	// Side effect: for sidecar endpoints, also stop/start the container.
+	if updated.Protocol == "sidecar" && body.Enabled != nil {
+		kind := updated.Config["sidecar_kind"]
+		go s.controlSidecarContainer(kind, *body.Enabled)
+	}
+
+	// Push updated pool to anyone listening.
+	s.broadcast(s.balancer.Endpoints())
+	writeJSON(w, map[string]interface{}{"ok": true, "endpoint": updated})
+}
+
+// controlSidecarContainer is best-effort: failures are logged but don't fail
+// the API call (the pool change is what matters for routing correctness).
+func (s *Server) controlSidecarContainer(kind string, enable bool) {
+	if !dockerctl.Available() {
+		log.Printf("dockerctl: socket unavailable; %s container left as-is", kind)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	c := dockerctl.New()
+	service := dockerctl.SidecarDockerService(kind)
+	containerID, err := c.FindContainerByService(ctx, service)
+	if err != nil {
+		log.Printf("dockerctl: find %s: %v", service, err)
+		return
+	}
+	if containerID == "" {
+		log.Printf("dockerctl: no container labelled %q (run docker compose --profile %s up to create it)", service, kind)
+		return
+	}
+	if enable {
+		if err := c.Start(ctx, containerID); err != nil {
+			log.Printf("dockerctl: start %s (%s): %v", service, containerID[:12], err)
+			return
+		}
+		log.Printf("dockerctl: started %s container %s", service, containerID[:12])
+	} else {
+		if err := c.Stop(ctx, containerID); err != nil {
+			log.Printf("dockerctl: stop %s (%s): %v", service, containerID[:12], err)
+			return
+		}
+		log.Printf("dockerctl: stopped %s container %s", service, containerID[:12])
+	}
 }
 
 // handleProbe triggers an immediate probe pass and returns updated endpoints.
@@ -313,7 +401,7 @@ func (s *Server) broadcast(eps []subscription.Endpoint) {
 func withCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

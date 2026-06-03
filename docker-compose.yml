@@ -12,6 +12,10 @@ services:
     volumes:
       - ./data:/app/data
       - ./config.yaml:/app/config.yaml:ro
+      # Mount docker socket so the dashboard can stop/start sidecar containers
+      # when the user toggles a sidecar endpoint on/off. Read-only access is
+      # enough for query, RW for start/stop. Comment out for a hardened setup.
+      - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /app
     networks:
       - moav-net
