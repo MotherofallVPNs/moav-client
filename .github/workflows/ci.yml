@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  proxy-core:
+    name: proxy-core (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ["1.25"]
+    defaults:
+      run:
+        working-directory: proxy-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: proxy-core/go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (race)
+        run: go test -race -count=1 ./...
+
+      - name: go build
+        run: go build ./...
+
+  web-ui:
+    name: web-ui
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web-ui/package-lock.json
+
+      - run: npm ci
+
+      - name: tsc + vite build
+        run: npm run build
+
+  scripts:
+    name: scripts (shellcheck + syntax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n syntax check
+        run: |
+          for f in install.sh moav-client; do
+            bash -n "$f" && echo "syntax ok: $f"
+          done
+
+      - name: shellcheck (warn-only)
+        # We don't fail the build on shellcheck — it's noisy on heredocs —
+        # but we surface findings.
+        continue-on-error: true
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck --severity=warning install.sh moav-client || true

@@ -23,6 +23,7 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/singbox"
 	"github.com/ibeezhan/moav-client/proxy-core/state"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/ibeezhan/moav-client/proxy-core/xray"
 )
 
 const statePath = "data/state.json"
@@ -92,6 +93,12 @@ func main() {
 			if saved, ok := stateByURI[ep.RawURI]; ok {
 				ep.LatencyMs = saved.LatencyMs
 				ep.Status = saved.Status
+				// Restore user overrides (Enabled / Priority) so toggles
+				// made from the dashboard survive restart.
+				ep.Enabled = saved.Enabled
+				if saved.Priority != 0 {
+					ep.Priority = saved.Priority
+				}
 			}
 			endpoints = append(endpoints, ep)
 		}
@@ -187,6 +194,43 @@ func main() {
 		}
 	}
 
+	// Then Xray for the leftovers — endpoints whose transport sing-box doesn't
+	// speak (xhttp / splithttp / raw). Endpoints already pinned to sing-box
+	// stay untouched because xray.Generate's HandlesEndpoint filter is exclusive.
+	if cfg.Xray.Enabled && len(endpoints) > 0 {
+		xCfg := xray.Config{
+			ListenHost: cfg.Xray.ListenHost,
+			DialHost:   cfg.Xray.DialHost,
+			BasePort:   cfg.Xray.BasePort,
+		}
+		jsonBytes, updatedEps, err := xray.Generate(endpoints, xCfg)
+		if err != nil {
+			log.Printf("xray: generate error: %v", err)
+		} else if jsonBytes == nil {
+			log.Printf("xray: no Xray-only endpoints found; not writing %s", cfg.Xray.OutputPath)
+		} else {
+			outPath := cfg.Xray.OutputPath
+			if outPath == "" {
+				outPath = "data/xray.json"
+			}
+			tmp := outPath + ".tmp"
+			if err := os.WriteFile(tmp, jsonBytes, 0o644); err != nil {
+				log.Printf("xray: write %s: %v", tmp, err)
+			} else if err := os.Rename(tmp, outPath); err != nil {
+				log.Printf("xray: rename %s -> %s: %v", tmp, outPath, err)
+			} else {
+				count := 0
+				for _, ep := range updatedEps {
+					if strings.HasPrefix(ep.Config["socks5_addr"], cfg.Xray.DialHost+":") {
+						count++
+					}
+				}
+				log.Printf("xray: wrote %d-endpoint config to %s (dial via %s)", count, outPath, cfg.Xray.DialHost)
+				endpoints = updatedEps
+			}
+		}
+	}
+
 	b.SetEndpoints(endpoints)
 
 	// Probe endpoints on start if configured.
@@ -240,10 +284,20 @@ func main() {
 	tb := &plugins.TorrentBlocker{Enabled: cfg.Plugins.TorrentBlock}
 
 	proxyServer := proxy.NewServer(cfg.Proxy.SOCKS5Port, cfg.Proxy.HTTPPort, b, eng, tb)
-	if cfg.Proxy.Auth.Username != "" && cfg.Proxy.Auth.Password != "" {
-		proxyServer = proxyServer.WithAuth(cfg.Proxy.Auth.Username, cfg.Proxy.Auth.Password)
+	// SOCKS5 auth: prefer .env vars (set by the dashboard's Network exposure
+	// tab) over config.yaml; this way users who flip exposure→LAN in the UI
+	// don't have to re-edit YAML to get auth applied.
+	socksUser, socksPass := cfg.Proxy.Auth.Username, cfg.Proxy.Auth.Password
+	if v := os.Getenv("SOCKS5_USERNAME"); v != "" {
+		socksUser = v
 	}
-	apiServer := api.New(cfg.Proxy.APIPort, *cfgPath, b, eng)
+	if v := os.Getenv("SOCKS5_PASSWORD"); v != "" {
+		socksPass = v
+	}
+	if socksUser != "" && socksPass != "" {
+		proxyServer = proxyServer.WithAuth(socksUser, socksPass)
+	}
+	apiServer := api.New(cfg.Proxy.APIPort, *cfgPath, statePath, b, eng)
 
 	errCh := make(chan error, 3)
 

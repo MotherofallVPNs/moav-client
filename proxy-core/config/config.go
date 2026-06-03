@@ -15,6 +15,7 @@ type Config struct {
 	Plugins      PluginsConfig       `yaml:"plugins"`
 	Sidecars     SidecarsConfig      `yaml:"sidecars"`
 	Singbox      SingboxConfig       `yaml:"singbox"`
+	Xray         XrayConfig          `yaml:"xray"`
 }
 
 // SingboxConfig controls the sing-box dialer sidecar integration.
@@ -24,6 +25,16 @@ type SingboxConfig struct {
 	DialHost   string `yaml:"dial_host"`   // "singbox" inside compose, "127.0.0.1" on host
 	BasePort   int    `yaml:"base_port"`
 	OutputPath string `yaml:"output_path"` // where to write generated sing-box config
+}
+
+// XrayConfig controls the Xray-core dialer sidecar — handles transports
+// sing-box can't speak (xhttp, splithttp, etc.).
+type XrayConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ListenHost string `yaml:"listen_host"`
+	DialHost   string `yaml:"dial_host"`
+	BasePort   int    `yaml:"base_port"`
+	OutputPath string `yaml:"output_path"`
 }
 
 type ProxyAuthConfig struct {
@@ -138,6 +149,13 @@ func Defaults() *Config {
 			DialHost:   "singbox",
 			BasePort:   10800,
 			OutputPath: "data/singbox.json",
+		},
+		Xray: XrayConfig{
+			Enabled:    false,
+			ListenHost: "0.0.0.0",
+			DialHost:   "xray",
+			BasePort:   11800,
+			OutputPath: "data/xray.json",
 		},
 	}
 }

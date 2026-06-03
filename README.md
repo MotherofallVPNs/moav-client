@@ -61,6 +61,7 @@ Point your browser or system proxy at `socks5h://localhost:1080`. Every connecti
 | **proxy-core** | ~16 MB | always (Go binary on scratch-equivalent) |
 | **web-ui** | ~76 MB | always (nginx-alpine + built dist) |
 | **sing-box** | ~113 MB | always (ghcr.io/sagernet/sing-box:latest) |
+| **xray** | ~85 MB | always (teddysun/xray for xhttp / splithttp transports) |
 | MasterDNS | ~160 MB | `--profile masterdns` |
 | AmneziaWG | ~180 MB | `--profile amneziawg` |
 | Psiphon | ~195 MB | `--profile psiphon` |
@@ -82,7 +83,7 @@ The bundle parser accepts the standard MoaV subscription format (base64-encoded 
 | Trojan + TLS | sing-box outbound | uTLS fingerprint, SNI |
 | Shadowsocks-2022 | sing-box outbound | 2022-blake3-aes-128-gcm |
 | Hysteria 2 (+obfs) | sing-box outbound | salamander obfs |
-| VLESS + XHTTP + Reality | _skipped_ | xhttp is Xray-only; sing-box can't speak it |
+| VLESS + XHTTP + Reality | xray outbound | xhttp is Xray-only; the xray sidecar handles it on 11800+ |
 | WireGuard | sing-box `endpoints[]` | parsed from `wireguard.conf` |
 | AmneziaWG | `amneziawg` sidecar | userspace `amneziawg-go` + `awg setconf` + microsocks on awg0 default route |
 | TrustTunnel | `trusttunnel` sidecar | placeholder — mount the upstream client binary to activate |
@@ -183,6 +184,18 @@ sidecars:
   slipstream:
     enabled: false
 ```
+
+---
+
+## Known limitations
+
+Things that are *not* bugs in moav-client but will show up as red rows in the dashboard until you act on them:
+
+- **Psiphon needs Psiphon-issued credentials.** The sidecar builds and runs the real `psiphon-tunnel-core` ConsoleClient and exposes SOCKS5 on `psiphon:5400`, but no tunnel establishes until you provide `PropagationChannelId` / `SponsorId` / signing pubkey under `sidecars.psiphon.config` (or paste a verbatim Psiphon-issued config blob via `config_json`). Sources: [psiphon.ca/en/license.html](https://psiphon.ca/en/license.html), or extracted from an open-source Psiphon Pro release.
+- **TrustTunnel has no public Linux client.** The sidecar Dockerfile accepts a binary mounted at `/usr/local/bin/trusttunnel-client` plus a `client.toml`. Until upstream ships one, this entry stays errored.
+- **Reality keypair validity is server-side.** If `pbk` / `sid` in the bundle no longer match the moav server's private key, you'll see `connection: EOF` (sing-box) or `received real certificate (potential MITM or redirection)` (xray) — the server is fall-through-proxying to the configured `dest` instead of completing the Reality handshake. moav-client's failover loop routes around it; if every Reality endpoint is broken simultaneously, ask the operator to rotate. See [shayanb/MoaV#115](https://github.com/shayanb/MoaV/issues/115).
+- **Reality + XHTTP requires xray.** sing-box doesn't support Xray's `xhttp` / `splithttp` transports. The bundled xray sidecar handles them; if you want to slim the install, disable `xray.enabled` in `config.yaml` and those endpoints will go silent.
+- **AmneziaWG needs container privileges.** The userspace `amneziawg-go` + `awg setconf` + microsocks chain requires `cap_add: NET_ADMIN` and `/dev/net/tun` (already set in `docker-compose.yml`). On strictly hardened hosts this may need a relaxed seccomp profile.
 
 ---
 

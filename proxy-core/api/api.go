@@ -20,6 +20,7 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/logbus"
 	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
+	"github.com/ibeezhan/moav-client/proxy-core/state"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
 	"gopkg.in/yaml.v3"
 	"golang.org/x/net/websocket"
@@ -27,11 +28,12 @@ import (
 
 // Server is the API HTTP server.
 type Server struct {
-	port     int
-	cfgPath  string
-	balancer *balancer.Balancer
-	prober   *prober.Prober
-	engine   *plugins.Engine // hot-swappable plugin engine (Plugins tab)
+	port      int
+	cfgPath   string
+	statePath string
+	balancer  *balancer.Balancer
+	prober    *prober.Prober
+	engine    *plugins.Engine // hot-swappable plugin engine (Plugins tab)
 
 	// in-memory config store (for POST /api/config).
 	cfgMu  sync.RWMutex
@@ -43,15 +45,32 @@ type Server struct {
 }
 
 // New creates an API Server.
-func New(port int, cfgPath string, b *balancer.Balancer, eng *plugins.Engine) *Server {
+func New(port int, cfgPath, statePath string, b *balancer.Balancer, eng *plugins.Engine) *Server {
 	return &Server{
-		port:     port,
-		cfgPath:  cfgPath,
-		balancer: b,
-		prober:   prober.New(),
-		engine:   eng,
-		config:   map[string]interface{}{},
-		clients:  map[chan []byte]struct{}{},
+		port:      port,
+		cfgPath:   cfgPath,
+		statePath: statePath,
+		balancer:  b,
+		prober:    prober.New(),
+		engine:    eng,
+		config:    map[string]interface{}{},
+		clients:   map[chan []byte]struct{}{},
+	}
+}
+
+// persistEndpointState writes the current balancer pool to state.json so the
+// user's Enabled / Priority overrides survive a restart. Called from any
+// handler that mutates an endpoint.
+func (s *Server) persistEndpointState() {
+	if s.statePath == "" {
+		return
+	}
+	st := &state.State{
+		LastProbeAt: time.Now(),
+		Endpoints:   s.balancer.Endpoints(),
+	}
+	if err := st.Save(s.statePath); err != nil {
+		log.Printf("api: state save: %v", err)
 	}
 }
 
@@ -68,6 +87,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/logs", s.handleLogs)
 	mux.HandleFunc("/api/plugins", s.handlePlugins)
 	mux.HandleFunc("/api/sources", s.handleSources)
+	mux.HandleFunc("/api/sources/", s.handleSourceByName) // DELETE /api/sources/<name>
+	mux.HandleFunc("/api/sources/reload", s.handleSourcesReload)
 	mux.HandleFunc("/api/bundles", s.handleBundleUpload)
 	mux.HandleFunc("/api/exposure", s.handleExposure)
 	mux.Handle("/api/ws", websocket.Handler(s.handleWebSocket))
@@ -75,7 +96,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
 	log.Printf("API listening on %s", addr)
 
-	srv := &http.Server{Addr: addr, Handler: withCORS(mux)}
+	srv := &http.Server{Addr: addr, Handler: withCORS(withBasicAuth(mux))}
 	go func() {
 		<-ctx.Done()
 		srv.Shutdown(context.Background()) //nolint:errcheck
@@ -141,6 +162,8 @@ func (s *Server) handleEndpointPatch(w http.ResponseWriter, r *http.Request) {
 		go s.controlSidecarContainer(kind, *body.Enabled)
 	}
 
+	// Persist so the override survives a restart.
+	s.persistEndpointState()
 	// Push updated pool to anyone listening.
 	s.broadcast(s.balancer.Endpoints())
 	writeJSON(w, map[string]interface{}{"ok": true, "endpoint": updated})
@@ -316,6 +339,130 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleSourceByName supports DELETE /api/sources/<name>. Drops the source
+// from config.yaml's subscription.sources list (or clears the legacy
+// single-source fields if name=="default"). The caller is told to hit
+// /api/sources/reload (or restart proxy-core) to actually unload the
+// endpoints from the live pool.
+func (s *Server) handleSourceByName(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/api/sources/")
+	if name == "" || name == "reload" {
+		http.Error(w, "name required", http.StatusBadRequest)
+		return
+	}
+	if r.Method != http.MethodDelete {
+		http.Error(w, "DELETE required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	raw, err := os.ReadFile(s.configPath())
+	if err != nil {
+		http.Error(w, "read config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var root map[string]any
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		http.Error(w, "parse config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sub, _ := root["subscription"].(map[string]any)
+	if sub == nil {
+		http.Error(w, "no subscription block in config", http.StatusNotFound)
+		return
+	}
+
+	removed := false
+	if name == "default" {
+		// Clear the legacy single-source fields.
+		if _, ok := sub["file"]; ok {
+			sub["file"] = ""
+			removed = true
+		}
+		if _, ok := sub["url"]; ok {
+			sub["url"] = ""
+			removed = true
+		}
+		if _, ok := sub["wireguard_files"]; ok {
+			sub["wireguard_files"] = []any{}
+			removed = true
+		}
+	} else {
+		srcs, _ := sub["sources"].([]any)
+		var kept []any
+		for _, entry := range srcs {
+			m, _ := entry.(map[string]any)
+			if m == nil {
+				kept = append(kept, entry)
+				continue
+			}
+			if n, _ := m["name"].(string); n == name {
+				removed = true
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		sub["sources"] = kept
+	}
+	if !removed {
+		http.Error(w, "no such source: "+name, http.StatusNotFound)
+		return
+	}
+
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		http.Error(w, "marshal: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := os.WriteFile(s.configPath(), out, 0o644); err != nil {
+		http.Error(w, "write config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("api: removed source %q from config.yaml — restart to unload its endpoints", name)
+	writeJSON(w, map[string]interface{}{
+		"ok":      true,
+		"removed": name,
+		"note":    "Source removed from config.yaml. POST /api/sources/reload (or restart proxy-core) to unload its endpoints.",
+	})
+}
+
+// handleSourcesReload triggers a self-restart of proxy-core via the docker
+// socket so the new subscription state takes effect. Falls back to "user
+// needs to restart manually" if the socket isn't mounted.
+//
+// We respond BEFORE issuing the restart so the dashboard gets a clean 200;
+// the actual restart happens in a goroutine ~500ms later.
+func (s *Server) handleSourcesReload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	if !dockerctl.Available() {
+		writeJSON(w, map[string]interface{}{
+			"ok":   false,
+			"note": "docker socket not mounted; restart proxy-core manually (./moav-client restart) to pick up subscription changes.",
+		})
+		return
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":   true,
+		"note": "Restarting proxy-core to reload subscriptions. The dashboard will reconnect in a few seconds.",
+	})
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		c := dockerctl.New()
+		id, err := c.FindContainerByService(ctx, "proxy-core")
+		if err != nil || id == "" {
+			log.Printf("api: reload: couldn't find proxy-core container: %v", err)
+			return
+		}
+		if err := c.Restart(ctx, id); err != nil {
+			log.Printf("api: reload: restart failed: %v", err)
+		}
+	}()
+}
+
 // handleBundleUpload accepts a multipart .zip upload, extracts it under
 // data/<name>/ via the bundles package, and patches config.yaml to add a
 // new subscription source. Caller's responsibility to restart moav-client
@@ -458,12 +605,14 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		cur := readEnvKV(envPath)
 		writeJSON(w, map[string]interface{}{
-			"exposure":      defaultStr(cur["MOAV_EXPOSURE"], "loopback"),
-			"socks5_bind":   defaultStr(cur["SOCKS5_BIND"], "127.0.0.1"),
-			"http_bind":     defaultStr(cur["HTTP_BIND"], "127.0.0.1"),
-			"auth_username": cur["SOCKS5_USERNAME"],
-			"auth_password": maskSecret(cur["SOCKS5_PASSWORD"]),
-			"note": "After changing exposure, run: docker compose up -d --force-recreate proxy-core",
+			"exposure":          defaultStr(cur["MOAV_EXPOSURE"], "loopback"),
+			"socks5_bind":       defaultStr(cur["SOCKS5_BIND"], "127.0.0.1"),
+			"http_bind":         defaultStr(cur["HTTP_BIND"], "127.0.0.1"),
+			"auth_username":     cur["SOCKS5_USERNAME"],
+			"auth_password":     maskSecret(cur["SOCKS5_PASSWORD"]),
+			"dashboard_user":    cur["MOAV_DASHBOARD_USER"],
+			"dashboard_pass":    maskSecret(cur["MOAV_DASHBOARD_PASS"]),
+			"note":              "After changing exposure, run: docker compose up -d --force-recreate proxy-core",
 		})
 
 	case http.MethodPost, http.MethodPut:
@@ -473,6 +622,10 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 				Username string `json:"username"`
 				Password string `json:"password"`
 			} `json:"auth"`
+			Dashboard struct {
+				Username string `json:"username"`
+				Password string `json:"password"`
+			} `json:"dashboard"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -493,11 +646,18 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 		kv["MOAV_EXPOSURE"] = body.Exposure
 		kv["SOCKS5_BIND"] = bindAddr
 		kv["HTTP_BIND"] = bindAddr
+		kv["UI_BIND"] = bindAddr
 		if body.Auth.Username != "" {
 			kv["SOCKS5_USERNAME"] = body.Auth.Username
 		}
 		if body.Auth.Password != "" {
 			kv["SOCKS5_PASSWORD"] = body.Auth.Password
+		}
+		if body.Dashboard.Username != "" {
+			kv["MOAV_DASHBOARD_USER"] = body.Dashboard.Username
+		}
+		if body.Dashboard.Password != "" {
+			kv["MOAV_DASHBOARD_PASS"] = body.Dashboard.Password
 		}
 		if err := writeEnvKV(envPath, kv); err != nil {
 			http.Error(w, "write .env: "+err.Error(), http.StatusInternalServerError)
@@ -508,7 +668,7 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 			"ok":       true,
 			"exposure": body.Exposure,
 			"bind":     bindAddr,
-			"note":     "Run: docker compose up -d --force-recreate proxy-core to apply.",
+			"note":     "Run: docker compose up -d --force-recreate proxy-core web-ui to apply.",
 		})
 	default:
 		http.Error(w, "GET or PUT required", http.StatusMethodNotAllowed)
@@ -538,7 +698,7 @@ func readEnvKV(path string) map[string]string {
 func writeEnvKV(path string, kv map[string]string) error {
 	var sb strings.Builder
 	sb.WriteString("# moav-client environment — managed by /api/exposure. Edit by hand if you prefer.\n")
-	for _, k := range []string{"MOAV_EXPOSURE", "SOCKS5_BIND", "HTTP_BIND", "API_BIND", "UI_BIND", "SOCKS5_USERNAME", "SOCKS5_PASSWORD"} {
+	for _, k := range []string{"MOAV_EXPOSURE", "SOCKS5_BIND", "HTTP_BIND", "API_BIND", "UI_BIND", "SOCKS5_USERNAME", "SOCKS5_PASSWORD", "MOAV_DASHBOARD_USER", "MOAV_DASHBOARD_PASS"} {
 		if v, ok := kv[k]; ok && v != "" {
 			sb.WriteString(k)
 			sb.WriteByte('=')
@@ -769,6 +929,32 @@ func (s *Server) broadcast(eps []subscription.Endpoint) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// withBasicAuth gates the API behind HTTP basic auth when MOAV_DASHBOARD_USER
+// + MOAV_DASHBOARD_PASS are set. When unset (the default for loopback
+// installs) every request passes through. /api/healthz is always reachable
+// so liveness probes from outside don't break.
+func withBasicAuth(h http.Handler) http.Handler {
+	user := os.Getenv("MOAV_DASHBOARD_USER")
+	pass := os.Getenv("MOAV_DASHBOARD_PASS")
+	if user == "" || pass == "" {
+		return h
+	}
+	expected := user + ":" + pass
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/healthz" || r.Method == http.MethodOptions {
+			h.ServeHTTP(w, r)
+			return
+		}
+		u, p, ok := r.BasicAuth()
+		if !ok || (u+":"+p) != expected {
+			w.Header().Set("WWW-Authenticate", `Basic realm="moav-client"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
 
 // withCORS wraps any handler with permissive CORS. moav-client always runs
 // locally and the dashboard is hosted on a different port (3001 in compose,

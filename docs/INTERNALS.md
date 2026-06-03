@@ -4,6 +4,31 @@ Deep technical reference for agents doing integration, debugging, or extension w
 
 ---
 
+## Two dialer bridges (sing-box and xray)
+
+moav-client splits real protocol cryptography across two upstream dialers so
+each one only has to do what it's good at:
+
+- **sing-box** speaks VLESS / Reality / Trojan / SS-2022 / Hy2 / WireGuard.
+  Generator: `proxy-core/singbox/generator.go`. Inbound port range: `10800+`.
+- **xray** speaks Xray-only transports — currently `xhttp`, `splithttp`, `raw`.
+  Generator: `proxy-core/xray/generator.go`. Inbound port range: `11800+`.
+
+The two generators are mutually exclusive: `xray.HandlesEndpoint(ep)` only
+matches endpoints sing-box would have rejected, so each parsed endpoint is
+claimed by exactly one of them. main.go runs sing-box's `Generate` first
+(handles the common case), then xray's `Generate` over the leftovers; the
+balancer just dials whichever `socks5_addr` the generator pinned and doesn't
+need to know which dialer is on the other side.
+
+Both sidecars wait for their config file before launching
+(`/etc/sing-box/singbox.json` and `/etc/xray/xray.json`), so there's no
+circular dependency with proxy-core. If a config file is never written
+(e.g. xray.enabled=false, or no xhttp endpoints in the bundle), the sidecar
+just idles in the wait loop.
+
+---
+
 ## sing-box dialer bridge
 
 File: `proxy-core/singbox/generator.go`

@@ -66,6 +66,18 @@ func Extract(zipBytes []byte, baseDir, requestedName string) (*Result, error) {
 		if f.FileInfo().IsDir() {
 			continue
 		}
+		// First defang: reject any entry name that's absolute or contains a
+		// parent-directory component. We do this BEFORE stripping the
+		// leading directory so a crafted "../escape.txt" entry can't survive
+		// strip-then-look-safe.
+		if filepath.IsAbs(f.Name) ||
+			strings.HasPrefix(f.Name, "../") ||
+			strings.HasPrefix(f.Name, "..\\") ||
+			strings.Contains(f.Name, "/../") ||
+			strings.Contains(f.Name, "\\..\\") {
+			continue
+		}
+
 		// Strip the archive's leading directory (if any) so files land
 		// directly under data/<name>/ instead of data/<name>/<name>/.
 		relPath := f.Name
@@ -75,7 +87,7 @@ func Extract(zipBytes []byte, baseDir, requestedName string) (*Result, error) {
 		if relPath == "" {
 			continue
 		}
-		// Reject anything that would escape via "..".
+		// Belt + braces: clean and re-check.
 		clean := filepath.Clean(relPath)
 		if strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
 			continue
@@ -146,7 +158,8 @@ func parseMasterDNSInstructions(body string) (domain, key, method string) {
 			if j := i + 1; j < len(lines) {
 				domain = firstWord(lines[j])
 			}
-		case strings.Contains(strings.ToLower(l), "data encryption method"):
+		case strings.Contains(strings.ToLower(l), "data encryption method"),
+			strings.Contains(strings.ToLower(l), "encryption method"):
 			if j := i + 1; j < len(lines) {
 				method = firstWord(lines[j])
 			}

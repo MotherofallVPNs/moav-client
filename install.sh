@@ -110,7 +110,7 @@ sidecar_meta() {
       echo "85|TrustTunnel|HTTP/2 + HTTP/3 tunnel. Placeholder — mount the upstream client binary to activate."
       ;;
     tor)
-      echo "15|Tor|peterdavehello/tor-socks-proxy — Tor SOCKS5 on :9050. No credentials required."
+      echo "15|Tor|peterdavehello/tor-socks-proxy — Tor SOCKS5 on :9150. No credentials required."
       ;;
   esac
 }

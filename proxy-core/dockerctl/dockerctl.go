@@ -117,6 +117,24 @@ func (c *Client) Start(ctx context.Context, id string) error {
 	return fmt.Errorf("docker start %s: %s", id, resp.Status)
 }
 
+// Restart issues a stop+start in one Engine API call. Used by handle reload
+// to hot-cycle proxy-core / singbox / xray after config edits.
+func (c *Client) Restart(ctx context.Context, id string) error {
+	if !Available() {
+		return ErrSocketUnavailable
+	}
+	req, _ := http.NewRequestWithContext(ctx, "POST", "http://docker/containers/"+id+"/restart?t=5", nil)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 204 {
+		return nil
+	}
+	return fmt.Errorf("docker restart %s: %s", id, resp.Status)
+}
+
 // SidecarDockerService maps a SidecarManager "sidecar_kind" to its
 // docker-compose service name. Keep this in lock-step with the services
 // declared in docker-compose.yml.

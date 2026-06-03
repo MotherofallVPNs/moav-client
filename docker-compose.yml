@@ -5,6 +5,10 @@ networks:
 services:
   proxy-core:
     build: ./proxy-core
+    env_file:
+      # Picks up SOCKS5_USERNAME / SOCKS5_PASSWORD / MOAV_DASHBOARD_USER /
+      # MOAV_DASHBOARD_PASS for the listener and API basic-auth.
+      - .env
     ports:
       # Host-side bind address is .env-driven so the dashboard's Network tab
       # can flip between loopback (default) and LAN/public exposure without
@@ -50,6 +54,26 @@ services:
         exec /usr/local/bin/sing-box run -c /etc/sing-box/singbox.json
     volumes:
       - ./data:/etc/sing-box
+    networks:
+      - moav-net
+    restart: unless-stopped
+
+  # Xray-core handles transports sing-box can't speak — currently xhttp
+  # and splithttp (Xray-specific VLESS transports). proxy-core generates
+  # data/xray.json only when there are endpoints in the bundle that need
+  # it; otherwise xray idles in its config-wait loop.
+  xray:
+    image: teddysun/xray:latest
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "[xray] waiting for /etc/xray/xray.json ..."
+        while [ ! -s /etc/xray/xray.json ]; do sleep 1; done
+        echo "[xray] config detected, starting"
+        exec /usr/bin/xray run -c /etc/xray/xray.json
+    volumes:
+      - ./data:/etc/xray
     networks:
       - moav-net
     restart: unless-stopped
