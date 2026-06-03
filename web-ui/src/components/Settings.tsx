@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { theme } from "../theme";
 import { API_BASE } from "../apiBase";
+import SNISpoof from "./SNISpoof";
 
 type Strategy = "latency" | "priority" | "weighted";
 type Exposure = "loopback" | "lan" | "public";
@@ -336,6 +337,11 @@ export default function Settings({ refreshTick }: Props) {
           <code>docker compose up -d --force-recreate proxy-core web-ui</code> (or{" "}
           <code>./moav-client restart</code>) to apply the new bind.
         </div>
+      </section>
+
+      <section style={{ marginBottom: "1.5rem" }}>
+        <h3 style={section()}>SNI spoofing</h3>
+        <SNISpoof />
       </section>
 
       <section style={{ marginBottom: "1.5rem" }}>

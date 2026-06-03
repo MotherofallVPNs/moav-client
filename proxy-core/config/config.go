@@ -16,6 +16,7 @@ type Config struct {
 	Sidecars     SidecarsConfig      `yaml:"sidecars"`
 	Singbox      SingboxConfig       `yaml:"singbox"`
 	Xray         XrayConfig          `yaml:"xray"`
+	SNISpoof     SNISpoofConfig      `yaml:"sni_spoof"`
 }
 
 // SingboxConfig controls the sing-box dialer sidecar integration.
@@ -35,6 +36,28 @@ type XrayConfig struct {
 	DialHost   string `yaml:"dial_host"`
 	BasePort   int    `yaml:"base_port"`
 	OutputPath string `yaml:"output_path"`
+}
+
+// SNISpoofConfig controls the optional SNI-spoofing sidecar
+// (aleskxyz/SNI-Spoofing-Go wrapper). When enabled, every endpoint whose
+// Config["fake_sni"] is set gets routed via the sidecar — sing-box / xray
+// dial sni-spoof:port instead of the real upstream, the sidecar slips a
+// decoy ClientHello onto the wire, then forwards the real TLS bytes.
+//
+// Reality is automatically excluded (its handshake auth doesn't survive a
+// faked CH).
+type SNISpoofConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ListenHost string `yaml:"listen_host"`
+	DialHost   string `yaml:"dial_host"`
+	BasePort   int    `yaml:"base_port"`
+	OutputPath string `yaml:"output_path"`
+
+	// Defaults applied to any endpoint without an explicit per-endpoint
+	// fake_sni / utls. If DefaultFakeSNI is empty AND no endpoint has its
+	// own fake_sni set, the sidecar idles (mappings file is never written).
+	DefaultFakeSNI string `yaml:"default_fake_sni"`
+	DefaultUTLS    string `yaml:"default_utls"`
 }
 
 type ProxyAuthConfig struct {
@@ -156,6 +179,14 @@ func Defaults() *Config {
 			DialHost:   "xray",
 			BasePort:   11800,
 			OutputPath: "data/xray.json",
+		},
+		SNISpoof: SNISpoofConfig{
+			Enabled:        false,
+			ListenHost:     "0.0.0.0",
+			DialHost:       "sni-spoof",
+			BasePort:       12800,
+			OutputPath:     "data/sni-spoof.json",
+			DefaultUTLS:    "chrome",
 		},
 	}
 }

@@ -102,6 +102,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/restore", s.handleRestore)
 	mux.HandleFunc("/api/flows", s.handleFlows)
 	mux.HandleFunc("/api/diag", s.handleDiag)
+	mux.HandleFunc("/api/snispoof", s.handleSNISpoof)
 	mux.HandleFunc("/api/exposure", s.handleExposure)
 	mux.Handle("/api/ws", websocket.Handler(s.handleWebSocket))
 
@@ -520,6 +521,115 @@ func (s *Server) handleSourcesReload(w http.ResponseWriter, r *http.Request) {
 			log.Printf("api: reload: restart failed: %v", err)
 		}
 	}()
+}
+
+// handleSNISpoof reads / patches the sni_spoof block in config.yaml.
+//
+//	GET  → {enabled, default_fake_sni, default_utls, ports_used, endpoints[]}
+//	PUT  → body any subset of {enabled, default_fake_sni, default_utls}
+//	       writes the change to config.yaml; caller needs to /api/sources/reload
+//	       (or restart) for it to bind on the wire.
+func (s *Server) handleSNISpoof(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		raw, err := os.ReadFile(s.configPath())
+		if err != nil {
+			http.Error(w, "read config: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		var root map[string]any
+		yaml.Unmarshal(raw, &root)
+		section, _ := root["sni_spoof"].(map[string]any)
+		if section == nil {
+			section = map[string]any{}
+		}
+
+		// Tally which live endpoints are currently being routed via the
+		// spoofer so the UI shows what's actually active.
+		var spoofed []map[string]any
+		for _, ep := range s.balancer.Endpoints() {
+			if ep.Config["spoof_via"] != "" {
+				spoofed = append(spoofed, map[string]any{
+					"id":        ep.ID,
+					"name":      ep.Name,
+					"fake_sni":  ep.Config["fake_sni"],
+					"utls":      ep.Config["utls"],
+					"spoof_via": ep.Config["spoof_via"],
+				})
+			}
+		}
+		writeJSON(w, map[string]any{
+			"enabled":          boolOr(section["enabled"], false),
+			"default_fake_sni": strOr(section["default_fake_sni"], ""),
+			"default_utls":     strOr(section["default_utls"], "chrome"),
+			"active_endpoints": spoofed,
+		})
+
+	case http.MethodPut, http.MethodPost:
+		var body struct {
+			Enabled        *bool   `json:"enabled,omitempty"`
+			DefaultFakeSNI *string `json:"default_fake_sni,omitempty"`
+			DefaultUTLS    *string `json:"default_utls,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		raw, err := os.ReadFile(s.configPath())
+		if err != nil {
+			http.Error(w, "read config: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		var root map[string]any
+		if err := yaml.Unmarshal(raw, &root); err != nil {
+			http.Error(w, "parse config: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		section, _ := root["sni_spoof"].(map[string]any)
+		if section == nil {
+			section = map[string]any{
+				"listen_host": "0.0.0.0",
+				"dial_host":   "sni-spoof",
+				"base_port":   12800,
+				"output_path": "data/sni-spoof.json",
+			}
+			root["sni_spoof"] = section
+		}
+		if body.Enabled != nil {
+			section["enabled"] = *body.Enabled
+		}
+		if body.DefaultFakeSNI != nil {
+			section["default_fake_sni"] = *body.DefaultFakeSNI
+		}
+		if body.DefaultUTLS != nil {
+			section["default_utls"] = *body.DefaultUTLS
+		}
+		out, _ := yaml.Marshal(root)
+		if err := os.WriteFile(s.configPath(), out, 0o644); err != nil {
+			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("api: sni_spoof updated (enabled=%v default_fake_sni=%v)", section["enabled"], section["default_fake_sni"])
+		writeJSON(w, map[string]any{
+			"ok":   true,
+			"note": "config.yaml updated. POST /api/sources/reload (or ./moav-client restart) to apply.",
+		})
+	default:
+		http.Error(w, "GET or PUT required", http.StatusMethodNotAllowed)
+	}
+}
+
+func boolOr(v any, dflt bool) bool {
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return dflt
+}
+func strOr(v any, dflt string) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return dflt
 }
 
 // handleFlows returns the live ring buffer of per-connection records.

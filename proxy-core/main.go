@@ -21,12 +21,32 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/proxy"
 	"github.com/ibeezhan/moav-client/proxy-core/sidecars"
 	"github.com/ibeezhan/moav-client/proxy-core/singbox"
+	"github.com/ibeezhan/moav-client/proxy-core/snispoof"
 	"github.com/ibeezhan/moav-client/proxy-core/state"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
 	"github.com/ibeezhan/moav-client/proxy-core/xray"
 )
 
 const statePath = "data/state.json"
+
+// endpointEligibleForSNISpoof returns true for endpoints that actually do
+// a TCP+TLS handshake on the wire — the only case where injecting a fake
+// ClientHello is meaningful. Reality, Shadowsocks (own crypto), UDP/QUIC
+// protocols, and sidecar endpoints are excluded.
+func endpointEligibleForSNISpoof(ep subscription.Endpoint) bool {
+	if ep.Protocol == "sidecar" {
+		return false
+	}
+	if ep.Config["security"] == "reality" {
+		return false
+	}
+	switch ep.Protocol {
+	case "vless", "trojan", "vmess":
+		// Only when TLS is actually in play.
+		return ep.Config["security"] == "tls"
+	}
+	return false
+}
 
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config.yaml")
@@ -165,6 +185,68 @@ func main() {
 		log.Printf("sidecars: configgen: %v", err)
 	}
 	addEndpoints(sm.EnabledEndpoints(), "sidecars")
+
+	// Apply SNI-spoof config first (before sing-box / xray). For every
+	// endpoint with fake_sni set, allocate a sniproof port and rewrite
+	// Config["spoof_via"] so the downstream generator points sing-box /
+	// xray at the spoofer rather than the real upstream. Reality is
+	// auto-excluded — its handshake auth breaks under a faked CH.
+	if cfg.SNISpoof.Enabled && len(endpoints) > 0 {
+		// Promote DefaultFakeSNI / DefaultUTLS onto every endpoint that's
+		// actually doing a TCP+TLS handshake — i.e. where slipping a fake
+		// CH onto the wire is meaningful. Excludes:
+		//   - Reality (handshake auth doesn't survive a faked CH)
+		//   - Hysteria2 + WireGuard + AmneziaWG + TUIC (UDP/QUIC, not TLS)
+		//   - Shadowsocks (own crypto, no TLS hello on the wire)
+		//   - sidecar endpoints (the sidecar itself is the dial target)
+		if cfg.SNISpoof.DefaultFakeSNI != "" {
+			for i := range endpoints {
+				if endpoints[i].Config == nil {
+					endpoints[i].Config = map[string]string{}
+				}
+				if !endpointEligibleForSNISpoof(endpoints[i]) {
+					continue
+				}
+				if endpoints[i].Config["fake_sni"] == "" {
+					endpoints[i].Config["fake_sni"] = cfg.SNISpoof.DefaultFakeSNI
+				}
+				if endpoints[i].Config["utls"] == "" && cfg.SNISpoof.DefaultUTLS != "" {
+					endpoints[i].Config["utls"] = cfg.SNISpoof.DefaultUTLS
+				}
+			}
+		}
+		ssCfg := snispoof.Config{
+			ListenHost: cfg.SNISpoof.ListenHost,
+			DialHost:   cfg.SNISpoof.DialHost,
+			BasePort:   cfg.SNISpoof.BasePort,
+		}
+		jsonBytes, updatedEps, err := snispoof.Generate(endpoints, ssCfg)
+		if err != nil {
+			log.Printf("snispoof: generate error: %v", err)
+		} else if jsonBytes == nil {
+			log.Printf("snispoof: no endpoints carry fake_sni; sidecar will idle")
+		} else {
+			outPath := cfg.SNISpoof.OutputPath
+			if outPath == "" {
+				outPath = "data/sni-spoof.json"
+			}
+			tmp := outPath + ".tmp"
+			if err := os.WriteFile(tmp, jsonBytes, 0o644); err != nil {
+				log.Printf("snispoof: write %s: %v", tmp, err)
+			} else if err := os.Rename(tmp, outPath); err != nil {
+				log.Printf("snispoof: rename %s -> %s: %v", tmp, outPath, err)
+			} else {
+				count := 0
+				for _, ep := range updatedEps {
+					if ep.Config["spoof_via"] != "" {
+						count++
+					}
+				}
+				log.Printf("snispoof: wrote %d-mapping config to %s (dial via %s)", count, outPath, cfg.SNISpoof.DialHost)
+				endpoints = updatedEps
+			}
+		}
+	}
 
 	// Generate sing-box config and rewrite endpoints to dial through local
 	// sing-box SOCKS5 ports for real protocol cryptography.

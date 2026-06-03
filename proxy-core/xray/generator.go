@@ -160,13 +160,53 @@ func outboundFromEndpoint(ep subscription.Endpoint) (map[string]any, bool) {
 	if err != nil {
 		return nil, false
 	}
+	var ob map[string]any
 	switch ep.Protocol {
 	case "vless":
-		return vlessOutbound(ep, host, port), true
+		ob = vlessOutbound(ep, host, port)
 	case "mtproxy":
-		return mtproxyOutbound(ep, host, port), true
+		ob = mtproxyOutbound(ep, host, port)
+	default:
+		return nil, false
 	}
-	return nil, false
+	applySpoof(ob, ep)
+	return ob, true
+}
+
+// applySpoof rewrites a vless outbound's vnext[0].address/port to the
+// sni-spoof sidecar when Endpoint.Config["spoof_via"] is set. Same
+// caveats as singbox.applySpoof — Reality is skipped because the
+// fake CH breaks Reality auth.
+func applySpoof(ob map[string]any, ep subscription.Endpoint) {
+	via := ep.Config["spoof_via"]
+	if via == "" {
+		return
+	}
+	if ep.Config["security"] == "reality" {
+		return
+	}
+	host, port, err := splitHostPort(via)
+	if err != nil {
+		return
+	}
+	settings, _ := ob["settings"].(map[string]any)
+	if settings == nil {
+		return
+	}
+	// vless outbound shape: settings.vnext[0].address/port
+	if vnext, _ := settings["vnext"].([]any); len(vnext) > 0 {
+		if first, _ := vnext[0].(map[string]any); first != nil {
+			first["address"] = host
+			first["port"] = port
+		}
+	}
+	// mtproto outbound shape: settings.servers[0].address/port
+	if servers, _ := settings["servers"].([]any); len(servers) > 0 {
+		if first, _ := servers[0].(map[string]any); first != nil {
+			first["address"] = host
+			first["port"] = port
+		}
+	}
 }
 
 // mtproxyOutbound builds the Xray mtproto outbound entry.

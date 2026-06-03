@@ -224,6 +224,31 @@ func splitNonEmpty(s, sep string) []string {
 	return out
 }
 
+// applySpoof rewrites the outbound's server / server_port to point at the
+// sni-spoof sidecar when Endpoint.Config["spoof_via"] is set. The TLS
+// server_name (the real SNI) is preserved — the spoofer just slips a decoy
+// CH onto the wire first. Compatible with VLESS+TLS, Trojan-TLS, VMess-TLS,
+// VLESS+WS+TLS — NOT Reality (it has handshake-level crypto that breaks
+// when the first CH is faked) or QUIC protocols.
+func applySpoof(ob map[string]any, ep subscription.Endpoint) {
+	via := ep.Config["spoof_via"]
+	if via == "" {
+		return
+	}
+	// Reality is incompatible — the spoofer's fake CH breaks the Reality
+	// auth state machine. Skip silently; main.go also filters Reality
+	// before generating the spoof mappings, this is just belt-and-braces.
+	if ep.Config["security"] == "reality" {
+		return
+	}
+	host, port, err := splitHostPort(via)
+	if err != nil {
+		return
+	}
+	ob["server"] = host
+	ob["server_port"] = port
+}
+
 // outboundFromEndpoint maps a parsed subscription endpoint to a sing-box outbound
 // block. Returns ok=false for protocols we can't express.
 func outboundFromEndpoint(ep subscription.Endpoint) (map[string]any, bool) {
@@ -232,22 +257,29 @@ func outboundFromEndpoint(ep subscription.Endpoint) (map[string]any, bool) {
 		return nil, false
 	}
 
+	var (
+		ob map[string]any
+		ok bool
+	)
 	switch ep.Protocol {
 	case "vless":
-		return vlessOutbound(ep, host, port)
+		ob, ok = vlessOutbound(ep, host, port)
 	case "trojan":
-		return trojanOutbound(ep, host, port)
+		ob, ok = trojanOutbound(ep, host, port)
 	case "ss":
-		return ssOutbound(ep, host, port)
+		ob, ok = ssOutbound(ep, host, port)
 	case "hysteria2":
-		return hysteria2Outbound(ep, host, port)
+		ob, ok = hysteria2Outbound(ep, host, port)
 	case "vmess":
-		return vmessOutbound(ep, host, port)
+		ob, ok = vmessOutbound(ep, host, port)
 	case "tuic":
-		return tuicOutbound(ep, host, port)
-	default:
+		ob, ok = tuicOutbound(ep, host, port)
+	}
+	if !ok {
 		return nil, false
 	}
+	applySpoof(ob, ep)
+	return ob, true
 }
 
 func vlessOutbound(ep subscription.Endpoint, host string, port int) (map[string]any, bool) {

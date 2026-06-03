@@ -58,6 +58,20 @@ services:
       - moav-net
     restart: unless-stopped
 
+  # SNI spoofing sidecar — slips a decoy ClientHello onto the wire BEFORE
+  # the real TLS handshake, so DPI sees the fake SNI on the connection.
+  # Only activates when at least one endpoint in the bundle has fake_sni
+  # set (or sni_spoof.default_fake_sni applies one globally).
+  # Requires NET_ADMIN (sets BPF / raw sockets for CH injection).
+  sni-spoof:
+    build: ./sidecars/sni-spoof
+    profiles: [sni-spoof, all-sidecars]
+    cap_add: [NET_ADMIN, NET_RAW]
+    volumes:
+      - ./data:/etc/sni-spoof
+    networks: [moav-net]
+    restart: unless-stopped
+
   # Xray-core handles transports sing-box can't speak — currently xhttp
   # and splithttp (Xray-specific VLESS transports). proxy-core generates
   # data/xray.json only when there are endpoints in the bundle that need
