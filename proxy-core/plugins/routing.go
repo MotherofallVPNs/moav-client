@@ -39,6 +39,12 @@ func matchExpr(m MatchExpr, host string, port int, protocolHint string) bool {
 	case "geoip":
 		return matchGeoIP(host, strings.ToUpper(m.Value))
 
+	case "domain_list":
+		return matchDomainList(host, m.Value)
+
+	case "ip_list":
+		return matchIPList(host, m.Value)
+
 	case "port":
 		return matchPort(port, m.Value)
 

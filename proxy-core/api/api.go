@@ -7,13 +7,19 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
+	"golang.org/x/net/proxy"
+
+	"github.com/ibeezhan/moav-client/proxy-core/backup"
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
 	"github.com/ibeezhan/moav-client/proxy-core/bundles"
 	"github.com/ibeezhan/moav-client/proxy-core/cmd"
@@ -92,6 +98,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/sources/", s.handleSourceByName) // DELETE /api/sources/<name>
 	mux.HandleFunc("/api/sources/reload", s.handleSourcesReload)
 	mux.HandleFunc("/api/bundles", s.handleBundleUpload)
+	mux.HandleFunc("/api/backup", s.handleBackup)
+	mux.HandleFunc("/api/restore", s.handleRestore)
+	mux.HandleFunc("/api/flows", s.handleFlows)
+	mux.HandleFunc("/api/diag", s.handleDiag)
 	mux.HandleFunc("/api/exposure", s.handleExposure)
 	mux.Handle("/api/ws", websocket.Handler(s.handleWebSocket))
 
@@ -510,6 +520,238 @@ func (s *Server) handleSourcesReload(w http.ResponseWriter, r *http.Request) {
 			log.Printf("api: reload: restart failed: %v", err)
 		}
 	}()
+}
+
+// handleFlows returns the live ring buffer of per-connection records.
+func (s *Server) handleFlows(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]interface{}{"flows": s.balancer.Flows().Snapshot()})
+}
+
+// handleDiag runs a connectivity check from proxy-core. Three sub-modes:
+//
+//	?type=tcp&target=<host:port>             — net.Dial, report success / RTT
+//	?type=dns&target=<host>                  — net.LookupHost
+//	?type=trace&target=<host:port>           — best-effort traceroute via
+//	   shelling out to /usr/sbin/traceroute or /bin/tracepath; falls back
+//	   to a series of TCP dials with increasing TTLs if neither is present.
+//	?via=<endpoint-id>                       — route the TCP test through
+//	   that endpoint's SOCKS5 inbound first (so you can ask "is the moav
+//	   server reaching api.example.com?").
+func (s *Server) handleDiag(w http.ResponseWriter, r *http.Request) {
+	target := r.URL.Query().Get("target")
+	if target == "" {
+		http.Error(w, "target query required", http.StatusBadRequest)
+		return
+	}
+	kind := r.URL.Query().Get("type")
+	via := r.URL.Query().Get("via")
+
+	switch kind {
+	case "", "tcp":
+		s.diagTCP(w, target, via)
+	case "dns":
+		s.diagDNS(w, target)
+	case "trace":
+		s.diagTrace(w, target)
+	default:
+		http.Error(w, "type must be tcp|dns|trace", http.StatusBadRequest)
+	}
+}
+
+func (s *Server) diagTCP(w http.ResponseWriter, target, via string) {
+	start := time.Now()
+	var conn net.Conn
+	var err error
+	if via != "" {
+		// Find endpoint, dial through its socks5_addr.
+		var pin *subscription.Endpoint
+		for _, ep := range s.balancer.Endpoints() {
+			if ep.ID == via {
+				epCopy := ep
+				pin = &epCopy
+				break
+			}
+		}
+		if pin == nil {
+			http.Error(w, "no such endpoint: "+via, http.StatusNotFound)
+			return
+		}
+		socksAddr := pin.Config["socks5_addr"]
+		if socksAddr == "" {
+			http.Error(w, "endpoint has no socks5_addr (can't dial through it)", http.StatusBadRequest)
+			return
+		}
+		d, dialErr := proxy.SOCKS5("tcp", socksAddr, nil, &net.Dialer{Timeout: 8 * time.Second})
+		if dialErr != nil {
+			http.Error(w, "build SOCKS5 dialer: "+dialErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		conn, err = d.Dial("tcp", target)
+	} else {
+		conn, err = net.DialTimeout("tcp", target, 8*time.Second)
+	}
+	elapsed := time.Since(start)
+	res := map[string]interface{}{
+		"type":   "tcp",
+		"target": target,
+		"via":    via,
+		"rtt_ms": elapsed.Milliseconds(),
+	}
+	if err != nil {
+		res["ok"] = false
+		res["error"] = err.Error()
+	} else {
+		conn.Close()
+		res["ok"] = true
+	}
+	writeJSON(w, res)
+}
+
+func (s *Server) diagDNS(w http.ResponseWriter, host string) {
+	start := time.Now()
+	ips, err := net.DefaultResolver.LookupHost(context.Background(), host)
+	elapsed := time.Since(start)
+	res := map[string]interface{}{
+		"type":   "dns",
+		"target": host,
+		"rtt_ms": elapsed.Milliseconds(),
+		"ips":    ips,
+	}
+	if err != nil {
+		res["ok"] = false
+		res["error"] = err.Error()
+	} else {
+		res["ok"] = true
+	}
+	writeJSON(w, res)
+}
+
+func (s *Server) diagTrace(w http.ResponseWriter, target string) {
+	host, _, err := net.SplitHostPort(target)
+	if err != nil {
+		host = target
+	}
+	// Try /usr/bin/traceroute or /bin/tracepath if present in the container.
+	for _, bin := range []string{"/usr/bin/traceroute", "/usr/sbin/traceroute", "/bin/tracepath", "/usr/bin/tracepath"} {
+		if _, statErr := os.Stat(bin); statErr == nil {
+			cmd := exec.CommandContext(context.Background(), bin, "-m", "12", host)
+			out, runErr := cmd.CombinedOutput()
+			writeJSON(w, map[string]interface{}{
+				"type":   "trace",
+				"target": target,
+				"binary": bin,
+				"output": string(out),
+				"ok":     runErr == nil,
+				"error": func() string {
+					if runErr != nil {
+						return runErr.Error()
+					}
+					return ""
+				}(),
+			})
+			return
+		}
+	}
+	// Fallback: TCP-based "trace" via increasing TTLs. We just do TCP probes
+	// at TTL=1..8 to surface which hops are reachable from us.
+	results := []map[string]interface{}{}
+	for ttl := 1; ttl <= 8; ttl++ {
+		start := time.Now()
+		d := net.Dialer{Timeout: 1500 * time.Millisecond, Control: makeTTLControl(ttl)}
+		c, err := d.Dial("tcp", target)
+		row := map[string]interface{}{
+			"ttl":    ttl,
+			"rtt_ms": time.Since(start).Milliseconds(),
+		}
+		if err != nil {
+			row["error"] = err.Error()
+		} else {
+			row["ok"] = true
+			row["peer"] = c.RemoteAddr().String()
+			c.Close()
+		}
+		results = append(results, row)
+	}
+	writeJSON(w, map[string]interface{}{
+		"type":     "trace",
+		"target":   target,
+		"binary":   "(none — using TCP-TTL fallback)",
+		"hops":     results,
+	})
+}
+
+// makeTTLControl sets the IP_TTL socket option before connect so we can do a
+// crude traceroute by hand when no traceroute binary is on PATH.
+func makeTTLControl(ttl int) func(string, string, syscall.RawConn) error {
+	return func(network, address string, c syscall.RawConn) error {
+		var sockerr error
+		err := c.Control(func(fd uintptr) {
+			sockerr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, ttl)
+		})
+		if err != nil {
+			return err
+		}
+		return sockerr
+	}
+}
+
+// handleBackup writes a zip of config.yaml + data/ + .env to the response.
+// Runtime artifacts (state.json, generated sing-box/xray configs, sidecar
+// configs) are excluded — they regenerate on startup. The result is suitable
+// for moving an install to another box: drop it into the target and start.
+func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET required", http.StatusMethodNotAllowed)
+		return
+	}
+	cwd, _ := os.Getwd()
+	zipBytes, err := backup.Create(cwd)
+	if err != nil {
+		http.Error(w, "backup: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf("attachment; filename=moav-client-backup-%s.zip", time.Now().UTC().Format("20060102-150405")))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(zipBytes)))
+	w.Write(zipBytes) //nolint:errcheck
+}
+
+// handleRestore accepts a multipart upload of a backup zip and extracts it
+// over the current install. Caller is told to restart for the new
+// config.yaml to take effect.
+func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	file, _, err := r.FormFile("backup")
+	if err != nil {
+		http.Error(w, "missing 'backup' file field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	zipBytes, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "read upload: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cwd, _ := os.Getwd()
+	n, err := backup.Restore(cwd, zipBytes)
+	if err != nil {
+		http.Error(w, "restore: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	log.Printf("api: restored %d files from backup zip — restart to apply", n)
+	writeJSON(w, map[string]interface{}{
+		"ok":            true,
+		"files_restored": n,
+		"note":           "Run /api/sources/reload (or ./moav-client restart) to load the restored config.",
+	})
 }
 
 // handleBundleUpload accepts a multipart .zip upload, extracts it under

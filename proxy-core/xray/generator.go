@@ -44,6 +44,10 @@ func HandlesEndpoint(ep subscription.Endpoint) bool {
 	if ep.Protocol == "sidecar" {
 		return false
 	}
+	// Telegram MTProxy lives only on Xray (sing-box has no mtproto outbound).
+	if ep.Protocol == "mtproxy" {
+		return true
+	}
 	c := ep.Config
 	net := c["net"]
 	if net == "" {
@@ -159,8 +163,29 @@ func outboundFromEndpoint(ep subscription.Endpoint) (map[string]any, bool) {
 	switch ep.Protocol {
 	case "vless":
 		return vlessOutbound(ep, host, port), true
+	case "mtproxy":
+		return mtproxyOutbound(ep, host, port), true
 	}
 	return nil, false
+}
+
+// mtproxyOutbound builds the Xray mtproto outbound entry.
+func mtproxyOutbound(ep subscription.Endpoint, host string, port int) map[string]any {
+	secret := ep.Config["secret"]
+	return map[string]any{
+		"protocol": "mtproto",
+		"settings": map[string]any{
+			"servers": []any{
+				map[string]any{
+					"address": host,
+					"port":    port,
+					"users": []any{
+						map[string]any{"secret": secret},
+					},
+				},
+			},
+		},
+	}
 }
 
 func vlessOutbound(ep subscription.Endpoint, host string, port int) map[string]any {

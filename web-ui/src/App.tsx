@@ -7,9 +7,10 @@ import Debug from "./components/Debug";
 import Plugins from "./components/Plugins";
 import Sources from "./components/Sources";
 import Footer from "./components/Footer";
+import Diagnostics from "./components/Diagnostics";
 import { theme } from "./theme";
 
-type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "config";
+type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "diag" | "config";
 
 const TAB_LABELS: Record<Tab, string> = {
   endpoints: "Endpoints",
@@ -18,6 +19,7 @@ const TAB_LABELS: Record<Tab, string> = {
   plugins: "Plugins",
   settings: "Settings",
   debug: "Debug",
+  diag: "Diagnostics",
   config: "Config",
 };
 
@@ -205,6 +207,7 @@ export default function App() {
         {tab === "plugins" && <Plugins refreshTick={refreshTick} />}
         {tab === "settings" && <Settings refreshTick={refreshTick} />}
         {tab === "debug" && <Debug refreshTick={refreshTick} />}
+        {tab === "diag" && <Diagnostics refreshTick={refreshTick} />}
         {tab === "config" && <ConfigEditor refreshTick={refreshTick} />}
       </div>
 

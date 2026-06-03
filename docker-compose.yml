@@ -96,6 +96,32 @@ services:
       retries: 3
 
   # ---------------------------------------------------------------------------
+  # Caddy reverse proxy → HTTPS termination for the dashboard + API.
+  # Self-signed cert by default (Caddy's internal CA); set MOAV_DOMAIN to a
+  # real hostname and MOAV_TLS_ISSUER=acme to get Let's Encrypt.
+  # Enable with `docker compose --profile https up -d caddy`.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2
+    profiles: [https, all-sidecars]
+    ports:
+      # Default to high ports so we don't fight any other web server on 80/443.
+      # Flip CADDY_HTTP_PORT / CADDY_HTTPS_PORT to "80" / "443" once you're
+      # sure nothing else is binding them.
+      - "${HTTPS_BIND:-127.0.0.1}:${CADDY_HTTP_PORT:-8443}:80"
+      - "${HTTPS_BIND:-127.0.0.1}:${CADDY_HTTPS_PORT:-8444}:443"
+    volumes:
+      - ./sidecars/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      - MOAV_DOMAIN=${MOAV_DOMAIN:-localhost}
+      - MOAV_TLS_ISSUER=${MOAV_TLS_ISSUER:-internal}
+      - MOAV_ACME_EMAIL=${MOAV_ACME_EMAIL:-admin@localhost}
+    networks: [moav-net]
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
   # Sidecars — each exposes a SOCKS5 inbound at a well-known port on moav-net,
   # consumed via Endpoint.Config["socks5_addr"]. Enable individually in
   # config.yaml -> sidecars; the matching --profile flag runs the container.
@@ -153,3 +179,5 @@ services:
 
 volumes:
   psiphon-data:
+  caddy-data:
+  caddy-config:

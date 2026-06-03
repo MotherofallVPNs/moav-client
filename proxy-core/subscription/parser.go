@@ -40,6 +40,15 @@ func ParseSubscription(raw string) ([]Endpoint, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		// moav:// is a multi-endpoint bundle URL — expand into N entries.
+		if strings.HasPrefix(line, "moav://") {
+			eps, err := ParseMoaVBundle(line)
+			if err != nil {
+				continue
+			}
+			endpoints = append(endpoints, eps...)
+			continue
+		}
 		ep, err := ParseURI(line)
 		if err != nil {
 			continue // skip unrecognised lines
@@ -50,6 +59,10 @@ func ParseSubscription(raw string) ([]Endpoint, error) {
 }
 
 // ParseURI dispatches a single proxy URI to the correct scheme parser.
+//
+// Note: moav:// is multi-endpoint by design, so it isn't dispatched here.
+// ParseSubscription handles it as a special case before falling through
+// to ParseURI for the per-line entries.
 func ParseURI(uri string) (Endpoint, error) {
 	switch {
 	case strings.HasPrefix(uri, "vless://"):
@@ -66,6 +79,8 @@ func ParseURI(uri string) (Endpoint, error) {
 		return parseWireGuard(uri)
 	case strings.HasPrefix(uri, "tuic://"):
 		return parseTUIC(uri)
+	case strings.HasPrefix(uri, "tg://"), strings.HasPrefix(uri, "mtproxy://"), strings.HasPrefix(uri, "https://t.me/proxy"):
+		return parseMTProxy(uri)
 	default:
 		return Endpoint{}, fmt.Errorf("unsupported scheme: %s", uri)
 	}

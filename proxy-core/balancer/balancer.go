@@ -32,15 +32,19 @@ type Balancer struct {
 	endpoints []subscription.Endpoint
 	strategy  Strategy
 	stats     *Stats
+	flows     *Flows
 }
 
 // New creates a Balancer with the given strategy.
 func New(strategy Strategy) *Balancer {
-	return &Balancer{strategy: strategy, stats: NewStats()}
+	return &Balancer{strategy: strategy, stats: NewStats(), flows: NewFlows(200)}
 }
 
 // Stats exposes the live counters for external observers (e.g. /api/stats).
 func (b *Balancer) Stats() *Stats { return b.stats }
+
+// Flows exposes the per-connection ring buffer for /api/flows.
+func (b *Balancer) Flows() *Flows { return b.flows }
 
 // Strategy returns the active strategy name (for /api/stats meta).
 func (b *Balancer) StrategyName() string { return string(b.strategy) }
@@ -160,7 +164,8 @@ func (b *Balancer) DialContext(network, addr string) (net.Conn, error) {
 			if attempt > 0 {
 				log.Printf("balancer: dial %s via %s succeeded after %d failover(s)", addr, ep.ID, attempt)
 			}
-			return &countingConn{Conn: conn, id: ep.ID, stats: b.stats}, nil
+			fl := b.flows.Begin("", addr, ep.ID, ep.Protocol)
+			return &countingConn{Conn: conn, id: ep.ID, stats: b.stats, flow: fl}, nil
 		}
 		b.markError(ep.ID)
 		b.stats.RecordFailover(ep.ID)
@@ -169,7 +174,12 @@ func (b *Balancer) DialContext(network, addr string) (net.Conn, error) {
 	}
 
 	log.Printf("balancer: all candidates failed, dialing %s directly", addr)
-	return net.Dial(network, addr)
+	c, err := net.Dial(network, addr)
+	if err == nil {
+		fl := b.flows.Begin("", addr, "", "direct")
+		return &countingConn{Conn: c, id: "direct", stats: b.stats, flow: fl}, nil
+	}
+	return c, err
 }
 
 // pickExcluding returns the best endpoint not in the excluded set.
@@ -269,12 +279,16 @@ type countingConn struct {
 	net.Conn
 	id    string
 	stats *Stats
+	flow  *Flow
 }
 
 func (c *countingConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
 	if n > 0 {
 		c.stats.RecordTraffic(c.id, 0, int64(n))
+		if c.flow != nil {
+			c.flow.Add(0, int64(n))
+		}
 	}
 	return n, err
 }
@@ -283,8 +297,19 @@ func (c *countingConn) Write(b []byte) (int, error) {
 	n, err := c.Conn.Write(b)
 	if n > 0 {
 		c.stats.RecordTraffic(c.id, int64(n), 0)
+		if c.flow != nil {
+			c.flow.Add(int64(n), 0)
+		}
 	}
 	return n, err
+}
+
+func (c *countingConn) Close() error {
+	err := c.Conn.Close()
+	if c.flow != nil {
+		c.flow.End(nil)
+	}
+	return err
 }
 
 // weightedRandom picks an endpoint by weight (stored in Config["upload_weight"]).

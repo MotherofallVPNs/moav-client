@@ -1,0 +1,43 @@
+# moav-client — Caddy reverse proxy for HTTPS in front of proxy-core + web-ui
+#
+# Two listeners:
+#   :443  → terminates TLS. Caddy auto-generates a self-signed cert via its
+#           internal CA (browsers will warn; user accepts once). Set
+#           MOAV_TLS_ISSUER=acme + MOAV_DOMAIN=your.domain.com to switch
+#           to Let's Encrypt.
+#   :80   → automatic redirect to https://
+#
+# Routes:
+#   /api/* and /api/ws → proxy-core:8088
+#   everything else    → web-ui:3000
+
+{
+	email {$MOAV_ACME_EMAIL:admin@localhost}
+	auto_https disable_redirects
+}
+
+{$MOAV_DOMAIN:localhost} {
+	tls {
+		issuer {$MOAV_TLS_ISSUER:internal}
+	}
+
+	# Match the API + WebSocket paths first.
+	handle /api/* {
+		reverse_proxy proxy-core:8088 {
+			flush_interval -1
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Everything else → the dashboard.
+	handle {
+		reverse_proxy web-ui:3000
+	}
+}
+
+# Plain HTTP redirector. Always-on, even when MOAV_DOMAIN is "localhost".
+:80 {
+	redir https://{host}{uri} 308
+}

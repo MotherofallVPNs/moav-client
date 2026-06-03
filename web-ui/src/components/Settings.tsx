@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { theme } from "../theme";
 import { API_BASE } from "../apiBase";
 
@@ -338,6 +338,37 @@ export default function Settings({ refreshTick }: Props) {
         </div>
       </section>
 
+      <section style={{ marginBottom: "1.5rem" }}>
+        <h3 style={section()}>backup &amp; restore</h3>
+        <p style={blurb()}>
+          Download a <code>.zip</code> of <code>config.yaml</code> + <code>data/</code> +{" "}
+          <code>.env</code> — everything you need to migrate to another box. Restore overwrites the
+          current install; restart proxy-core afterwards.
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <a
+            href={`${API_BASE}/api/backup`}
+            style={{
+              padding: "0.45rem 1rem",
+              background: theme.green,
+              color: theme.bg,
+              border: "none",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontFamily: theme.mono,
+              fontSize: "0.72rem",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              textDecoration: "none",
+            }}
+          >
+            ↓ download backup
+          </a>
+          <RestoreButton onResult={(ok, msg) => flash(msg, ok)} />
+        </div>
+      </section>
+
       {toast && (
         <div
           style={{
@@ -368,6 +399,54 @@ const section = (): React.CSSProperties => ({
   textTransform: "uppercase" as const,
   letterSpacing: "0.04em",
 });
+function RestoreButton({ onResult }: { onResult: (ok: boolean, msg: string) => void }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".zip"
+        style={{ display: "none" }}
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          if (!window.confirm(`Restore from ${f.name}? This overwrites config.yaml + data/.`)) return;
+          try {
+            const fd = new FormData();
+            fd.append("backup", f);
+            const r = await fetch(`${API_BASE}/api/restore`, { method: "POST", body: fd });
+            const data = await r.json();
+            onResult(r.ok, data.note ?? `${data.files_restored} files restored.`);
+          } catch (err) {
+            onResult(false, `Restore failed: ${(err as Error).message}`);
+          } finally {
+            e.target.value = "";
+          }
+        }}
+      />
+      <button
+        onClick={() => inputRef.current?.click()}
+        style={{
+          padding: "0.45rem 1rem",
+          background: "transparent",
+          color: theme.yellow,
+          border: `1px solid ${theme.yellow}`,
+          borderRadius: 4,
+          cursor: "pointer",
+          fontFamily: theme.mono,
+          fontSize: "0.72rem",
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
+      >
+        ↑ restore from zip
+      </button>
+    </>
+  );
+}
+
 const blurb = (): React.CSSProperties => ({
   margin: "0 0 0.75rem",
   color: theme.textDim,

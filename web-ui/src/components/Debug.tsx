@@ -206,6 +206,125 @@ export default function Debug({ refreshTick }: Props) {
       <div style={{ fontSize: "0.7rem", color: theme.textDim, fontFamily: theme.mono }}>
         showing {filtered.length} of {events.length} events · server ring buffer holds the last {RING_LIMIT}
       </div>
+
+      <FlowsPane refreshTick={refreshTick} />
+    </div>
+  );
+}
+
+interface Flow {
+  id: number;
+  opened_unix: number;
+  closed_unix?: number;
+  client: string;
+  dest: string;
+  endpoint_id: string;
+  protocol: string;
+  bytes_up: number;
+  bytes_down: number;
+  result: string;
+}
+
+function fmtBytesShort(n: number): string {
+  if (!n) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)}${units[i]}`;
+}
+
+function FlowsPane({ refreshTick }: { refreshTick?: number }) {
+  const [flows, setFlows] = useState<Flow[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOnce = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/flows`);
+        const d = await r.json();
+        if (!cancelled) setFlows((d.flows ?? []) as Flow[]);
+      } catch {
+        // ignore
+      }
+    };
+    fetchOnce();
+    const id = setInterval(fetchOnce, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [refreshTick]);
+
+  return (
+    <div
+      style={{
+        marginTop: "1rem",
+        border: `1px solid ${theme.border}`,
+        borderRadius: 6,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          padding: "0.5rem 0.75rem",
+          background: theme.surface2,
+          color: theme.textDim,
+          fontFamily: theme.mono,
+          fontSize: "0.7rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
+      >
+        per-connection flows · last {flows.length}
+      </div>
+      {flows.length === 0 ? (
+        <div style={{ padding: "0.75rem", fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>
+          no connections recorded yet — send some traffic through the SOCKS5 proxy.
+        </div>
+      ) : (
+        <div
+          style={{
+            maxHeight: 200,
+            overflowY: "auto",
+            fontFamily: theme.mono,
+            fontSize: "0.72rem",
+          }}
+        >
+          {flows
+            .slice()
+            .reverse()
+            .map((fl) => (
+              <div
+                key={fl.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "60px 1fr 1fr 70px 70px 80px",
+                  gap: "0.5rem",
+                  padding: "4px 0.75rem",
+                  borderTop: `1px solid ${theme.border}`,
+                  color: fl.result.startsWith("error") ? theme.red : theme.text,
+                }}
+              >
+                <span style={{ color: theme.textDim }}>#{fl.id}</span>
+                <span style={{ color: theme.blue, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.dest}>
+                  {fl.dest}
+                </span>
+                <span style={{ color: theme.green, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.endpoint_id}>
+                  {fl.protocol} {fl.endpoint_id ? `· ${fl.endpoint_id}` : ""}
+                </span>
+                <span style={{ color: theme.text }}>↑{fmtBytesShort(fl.bytes_up)}</span>
+                <span style={{ color: theme.text }}>↓{fmtBytesShort(fl.bytes_down)}</span>
+                <span style={{ color: theme.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.result}>
+                  {fl.result}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
