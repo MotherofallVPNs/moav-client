@@ -5,12 +5,14 @@ import Analytics from "./components/Analytics";
 import Settings from "./components/Settings";
 import Debug from "./components/Debug";
 import Plugins from "./components/Plugins";
+import Sources from "./components/Sources";
 import { theme } from "./theme";
 
-type Tab = "endpoints" | "analytics" | "plugins" | "settings" | "debug" | "config";
+type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "config";
 
 const TAB_LABELS: Record<Tab, string> = {
   endpoints: "Endpoints",
+  sources: "Sources",
   analytics: "Analytics",
   plugins: "Plugins",
   settings: "Settings",
@@ -197,6 +199,7 @@ export default function App() {
             }}
           />
         )}
+        {tab === "sources" && <Sources refreshTick={refreshTick} />}
         {tab === "analytics" && <Analytics refreshTick={refreshTick} />}
         {tab === "plugins" && <Plugins refreshTick={refreshTick} />}
         {tab === "settings" && <Settings refreshTick={refreshTick} />}

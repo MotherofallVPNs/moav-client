@@ -17,6 +17,7 @@ type Endpoint struct {
 	Name      string // fragment from URI
 	Address   string // host:port
 	RawURI    string // original URI before any parsing
+	Source    string // friendly name of the subscription bundle / moav server this came from
 	Config    map[string]string
 	Priority  int
 	Enabled   bool

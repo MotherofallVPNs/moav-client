@@ -6,12 +6,20 @@ services:
   proxy-core:
     build: ./proxy-core
     ports:
-      - "1080:1080"   # SOCKS5
-      - "8081:8080"   # HTTP CONNECT (host 8081 — 8080 often busy)
-      - "8088:8088"   # REST/WebSocket API
+      # Host-side bind address is .env-driven so the dashboard's Network tab
+      # can flip between loopback (default) and LAN/public exposure without
+      # editing this file. See proxy-core/api `handleExposure`.
+      - "${SOCKS5_BIND:-127.0.0.1}:1080:1080"   # SOCKS5
+      - "${HTTP_BIND:-127.0.0.1}:8081:8080"     # HTTP CONNECT
+      - "${API_BIND:-127.0.0.1}:8088:8088"      # REST/WebSocket API
     volumes:
       - ./data:/app/data
-      - ./config.yaml:/app/config.yaml:ro
+      - ./config.yaml:/app/config.yaml
+      # .env is read by docker-compose from the host and written by the
+      # dashboard's Network exposure setting from inside proxy-core. Mount
+      # the file (created by install.sh if absent) so both sides see the
+      # same bytes.
+      - ./.env:/app/.env
       # Mount docker socket so the dashboard can stop/start sidecar containers
       # when the user toggles a sidecar endpoint on/off. Read-only access is
       # enough for query, RW for start/stop. Comment out for a hardened setup.
@@ -49,7 +57,7 @@ services:
   web-ui:
     build: ./web-ui
     ports:
-      - "3001:3000"
+      - "${UI_BIND:-127.0.0.1}:3001:3000"
     depends_on:
       - proxy-core
     networks:

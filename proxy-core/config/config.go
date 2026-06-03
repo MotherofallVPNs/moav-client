@@ -36,12 +36,49 @@ type ProxyConfig struct {
 	HTTPPort   int             `yaml:"http_port"`
 	APIPort    int             `yaml:"api_port"`
 	Auth       ProxyAuthConfig `yaml:"auth"`
+	// Exposure is the bind policy for the SOCKS5 / HTTP CONNECT listeners
+	// AT THE HOST level (not the container — the container always binds
+	// 0.0.0.0). One of: loopback (default), lan, public. The dashboard
+	// writes this to .env so docker-compose picks it up on next up.
+	Exposure string `yaml:"exposure,omitempty"`
+}
+
+// SourceConfig is one upstream subscription bundle (one MoaV server typically).
+type SourceConfig struct {
+	Name           string   `yaml:"name"`
+	URL            string   `yaml:"url"`
+	File           string   `yaml:"file"`
+	WireGuardFiles []string `yaml:"wireguard_files"`
 }
 
 type SubscriptionConfig struct {
+	// Single-source legacy form. If File or URL is set, an implicit source
+	// named "default" is created. New configs should prefer Sources.
 	URL            string   `yaml:"url"`
 	File           string   `yaml:"file"`
-	WireGuardFiles []string `yaml:"wireguard_files"` // wg-quick / AmneziaWG .conf paths
+	WireGuardFiles []string `yaml:"wireguard_files"`
+
+	// Sources is the new multi-server list. Each entry becomes one logical
+	// upstream group; per-endpoint .Source carries the SourceConfig.Name so
+	// the dashboard can show which moav server each endpoint came from.
+	Sources []SourceConfig `yaml:"sources,omitempty"`
+}
+
+// EffectiveSources collapses the single-source legacy fields + the Sources
+// list into the unified view callers should use. Order: legacy first, then
+// the explicit list.
+func (s SubscriptionConfig) EffectiveSources() []SourceConfig {
+	out := make([]SourceConfig, 0, len(s.Sources)+1)
+	if s.URL != "" || s.File != "" || len(s.WireGuardFiles) > 0 {
+		out = append(out, SourceConfig{
+			Name:           "default",
+			URL:            s.URL,
+			File:           s.File,
+			WireGuardFiles: s.WireGuardFiles,
+		})
+	}
+	out = append(out, s.Sources...)
+	return out
 }
 
 type LoadBalancingConfig struct {

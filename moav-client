@@ -83,6 +83,11 @@ cmd_up() {
   echo "${CYN}→ starting (${args[*]:-no sidecars})${CR}"
   compose "${args[@]:-}" up -d "$@"
   cmd_status
+  # Auto-open the dashboard unless suppressed.
+  if [[ -z "${MOAV_NO_OPEN:-}" ]]; then
+    sleep 1
+    cmd_open >/dev/null 2>&1 || true
+  fi
 }
 
 cmd_down() {

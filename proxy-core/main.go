@@ -76,16 +76,18 @@ func main() {
 		stateByURI[ep.RawURI] = ep
 	}
 
-	// Parse subscription from file and/or URL; merge and deduplicate by RawURI.
+	// Parse every effective source (legacy single-source fields + sources[]).
+	// Each source contributes endpoints tagged with .Source = source.Name.
 	seen := make(map[string]struct{})
 	var endpoints []subscription.Endpoint
 
-	addEndpoints := func(eps []subscription.Endpoint) {
+	addEndpoints := func(eps []subscription.Endpoint, source string) {
 		for _, ep := range eps {
 			if _, dup := seen[ep.RawURI]; dup {
 				continue
 			}
 			seen[ep.RawURI] = struct{}{}
+			ep.Source = source
 			// Restore saved latency/status if available.
 			if saved, ok := stateByURI[ep.RawURI]; ok {
 				ep.LatencyMs = saved.LatencyMs
@@ -95,54 +97,59 @@ func main() {
 		}
 	}
 
-	if cfg.Subscription.File != "" {
-		raw, readErr := os.ReadFile(cfg.Subscription.File)
-		if readErr != nil {
-			log.Printf("subscription: could not read %s: %v", cfg.Subscription.File, readErr)
-		} else {
-			eps, parseErr := subscription.ParseSubscription(string(raw))
-			if parseErr != nil {
-				log.Printf("subscription: parse error: %v", parseErr)
+	for _, src := range cfg.Subscription.EffectiveSources() {
+		if src.File != "" {
+			raw, readErr := os.ReadFile(src.File)
+			if readErr != nil {
+				log.Printf("subscription[%s]: could not read %s: %v", src.Name, src.File, readErr)
 			} else {
-				log.Printf("subscription: loaded %d endpoints from %s", len(eps), cfg.Subscription.File)
-				addEndpoints(eps)
+				eps, parseErr := subscription.ParseSubscription(string(raw))
+				if parseErr != nil {
+					log.Printf("subscription[%s]: parse error: %v", src.Name, parseErr)
+				} else {
+					log.Printf("subscription[%s]: loaded %d endpoints from %s", src.Name, len(eps), src.File)
+					addEndpoints(eps, src.Name)
+				}
 			}
 		}
-	}
 
-	if cfg.Subscription.URL != "" {
-		eps, fetchErr := subscription.FetchSubscription(cfg.Subscription.URL, 30*time.Second)
-		if fetchErr != nil {
-			log.Printf("subscription: fetch error from %s: %v", cfg.Subscription.URL, fetchErr)
-		} else {
-			log.Printf("subscription: fetched %d endpoints from %s", len(eps), cfg.Subscription.URL)
-			addEndpoints(eps)
+		if src.URL != "" {
+			eps, fetchErr := subscription.FetchSubscription(src.URL, 30*time.Second)
+			if fetchErr != nil {
+				log.Printf("subscription[%s]: fetch error from %s: %v", src.Name, src.URL, fetchErr)
+			} else {
+				log.Printf("subscription[%s]: fetched %d endpoints from %s", src.Name, len(eps), src.URL)
+				addEndpoints(eps, src.Name)
+			}
 		}
-	}
 
-	// Wireguard / AmneziaWG .conf sidecars.
-	for _, wgPath := range cfg.Subscription.WireGuardFiles {
-		raw, readErr := os.ReadFile(wgPath)
-		if readErr != nil {
-			log.Printf("subscription: could not read %s: %v", wgPath, readErr)
-			continue
+		// Wireguard / AmneziaWG .conf files for this source.
+		for _, wgPath := range src.WireGuardFiles {
+			raw, readErr := os.ReadFile(wgPath)
+			if readErr != nil {
+				log.Printf("subscription[%s]: could not read %s: %v", src.Name, wgPath, readErr)
+				continue
+			}
+			nameHint := strings.TrimSuffix(filepath.Base(wgPath), filepath.Ext(wgPath))
+			if src.Name != "" && src.Name != "default" {
+				nameHint = src.Name + "/" + nameHint
+			}
+			ep, parseErr := subscription.ParseWireGuardConf(string(raw), nameHint)
+			if parseErr != nil {
+				log.Printf("subscription[%s]: wg conf %s parse error: %v", src.Name, wgPath, parseErr)
+				continue
+			}
+			// AmneziaWG can't be dialed by sing-box (no outbound for the
+			// obfuscation params). If the user enabled the amneziawg sidecar,
+			// that's the real dial path — skip this duplicate to keep the
+			// pool clean.
+			if ep.Protocol == "amneziawg" && cfg.Sidecars.AmneziaWG.Enabled {
+				log.Printf("subscription[%s]: %s endpoint %q from %s superseded by sidecar", src.Name, ep.Protocol, ep.Name, wgPath)
+				continue
+			}
+			log.Printf("subscription[%s]: loaded %s endpoint %q from %s", src.Name, ep.Protocol, ep.Name, wgPath)
+			addEndpoints([]subscription.Endpoint{ep}, src.Name)
 		}
-		nameHint := strings.TrimSuffix(filepath.Base(wgPath), filepath.Ext(wgPath))
-		ep, parseErr := subscription.ParseWireGuardConf(string(raw), nameHint)
-		if parseErr != nil {
-			log.Printf("subscription: wg conf %s parse error: %v", wgPath, parseErr)
-			continue
-		}
-		// AmneziaWG can't be dialed by sing-box (no outbound for the
-		// obfuscation params). If the user enabled the amneziawg sidecar,
-		// that's the real dial path — skip this duplicate to keep the
-		// pool clean. The .conf was still consumed by configgen.
-		if ep.Protocol == "amneziawg" && cfg.Sidecars.AmneziaWG.Enabled {
-			log.Printf("subscription: %s endpoint %q from %s superseded by sidecar", ep.Protocol, ep.Name, wgPath)
-			continue
-		}
-		log.Printf("subscription: loaded %s endpoint %q from %s", ep.Protocol, ep.Name, wgPath)
-		addEndpoints([]subscription.Endpoint{ep})
 	}
 
 	// Add sidecar endpoints + write per-sidecar config files.
@@ -150,7 +157,7 @@ func main() {
 	if err := sm.GenerateConfigs("data/sidecar-configs"); err != nil {
 		log.Printf("sidecars: configgen: %v", err)
 	}
-	addEndpoints(sm.EnabledEndpoints())
+	addEndpoints(sm.EnabledEndpoints(), "sidecars")
 
 	// Generate sing-box config and rewrite endpoints to dial through local
 	// sing-box SOCKS5 ports for real protocol cryptography.

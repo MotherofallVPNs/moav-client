@@ -5,19 +5,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
+	"github.com/ibeezhan/moav-client/proxy-core/bundles"
 	"github.com/ibeezhan/moav-client/proxy-core/dockerctl"
 	"github.com/ibeezhan/moav-client/proxy-core/logbus"
 	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"gopkg.in/yaml.v3"
 	"golang.org/x/net/websocket"
 )
 
@@ -63,6 +67,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/strategy", s.handleStrategy)
 	mux.HandleFunc("/api/logs", s.handleLogs)
 	mux.HandleFunc("/api/plugins", s.handlePlugins)
+	mux.HandleFunc("/api/sources", s.handleSources)
+	mux.HandleFunc("/api/bundles", s.handleBundleUpload)
+	mux.HandleFunc("/api/exposure", s.handleExposure)
 	mux.Handle("/api/ws", websocket.Handler(s.handleWebSocket))
 
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
@@ -236,6 +243,341 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleSources returns the list of subscription sources currently loaded,
+// counting endpoints per source from the live balancer pool. The dashboard's
+// Sources tab uses this as a "which moav servers am I connected to" view.
+func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
+	type srcRow struct {
+		Name      string   `json:"name"`
+		File      string   `json:"file,omitempty"`
+		URL       string   `json:"url,omitempty"`
+		WGFiles   []string `json:"wireguard_files,omitempty"`
+		Endpoints int      `json:"endpoints"`
+		Healthy   int      `json:"healthy"`
+	}
+
+	rawCfg, err := os.ReadFile(s.configPath())
+	if err != nil {
+		http.Error(w, "read config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var parsed struct {
+		Subscription struct {
+			URL            string   `yaml:"url"`
+			File           string   `yaml:"file"`
+			WireGuardFiles []string `yaml:"wireguard_files"`
+			Sources        []struct {
+				Name           string   `yaml:"name"`
+				URL            string   `yaml:"url"`
+				File           string   `yaml:"file"`
+				WireGuardFiles []string `yaml:"wireguard_files"`
+			} `yaml:"sources"`
+		} `yaml:"subscription"`
+	}
+	if err := yaml.Unmarshal(rawCfg, &parsed); err != nil {
+		http.Error(w, "parse config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Tally endpoints by Source.
+	endpointsBySource := map[string]int{}
+	healthyBySource := map[string]int{}
+	for _, ep := range s.balancer.Endpoints() {
+		endpointsBySource[ep.Source]++
+		if ep.Status == "ok" && ep.Enabled {
+			healthyBySource[ep.Source]++
+		}
+	}
+
+	var rows []srcRow
+	if parsed.Subscription.File != "" || parsed.Subscription.URL != "" || len(parsed.Subscription.WireGuardFiles) > 0 {
+		rows = append(rows, srcRow{
+			Name:      "default",
+			File:      parsed.Subscription.File,
+			URL:       parsed.Subscription.URL,
+			WGFiles:   parsed.Subscription.WireGuardFiles,
+			Endpoints: endpointsBySource["default"],
+			Healthy:   healthyBySource["default"],
+		})
+	}
+	for _, src := range parsed.Subscription.Sources {
+		rows = append(rows, srcRow{
+			Name:      src.Name,
+			File:      src.File,
+			URL:       src.URL,
+			WGFiles:   src.WireGuardFiles,
+			Endpoints: endpointsBySource[src.Name],
+			Healthy:   healthyBySource[src.Name],
+		})
+	}
+	writeJSON(w, map[string]interface{}{
+		"sources": rows,
+		"note":    "Editing requires moav-client restart to fully reload subscriptions.",
+	})
+}
+
+// handleBundleUpload accepts a multipart .zip upload, extracts it under
+// data/<name>/ via the bundles package, and patches config.yaml to add a
+// new subscription source. Caller's responsibility to restart moav-client
+// to actually load the new endpoints (we surface that in the response).
+//
+//	POST /api/bundles
+//	form-data: bundle=<zip>  (and optional: name=<friendly-name>)
+func (s *Server) handleBundleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseMultipartForm(64 << 20); err != nil { // 64 MB cap
+		http.Error(w, "parse multipart: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	file, hdr, err := r.FormFile("bundle")
+	if err != nil {
+		http.Error(w, "missing 'bundle' file field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	zipBytes, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "read upload: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	requestedName := strings.TrimSpace(r.FormValue("name"))
+	if requestedName == "" {
+		// Fall back to the uploaded filename minus extension.
+		base := filepath.Base(hdr.Filename)
+		requestedName = strings.TrimSuffix(base, filepath.Ext(base))
+	}
+
+	res, err := bundles.Extract(zipBytes, "data", requestedName)
+	if err != nil {
+		http.Error(w, "extract: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Patch config.yaml to add the new source. Best-effort; we use
+	// gopkg.in/yaml.v3 to preserve as much structure as we can but the
+	// resulting file may have re-ordered keys.
+	if err := s.addSourceToConfig(res); err != nil {
+		log.Printf("api: bundle extracted but config.yaml patch failed: %v", err)
+		writeJSON(w, map[string]interface{}{
+			"ok":      true,
+			"result":  res,
+			"warning": "extracted but config.yaml not updated: " + err.Error(),
+			"note":    "Add the source manually under subscription.sources, then restart moav-client.",
+		})
+		return
+	}
+
+	log.Printf("api: imported bundle %q (%d files) — restart proxy-core to load",
+		res.Name, len(res.Files))
+	writeJSON(w, map[string]interface{}{
+		"ok":     true,
+		"result": res,
+		"note":   "Bundle imported and registered in config.yaml. Restart moav-client (or docker compose restart proxy-core) to load the new endpoints.",
+	})
+}
+
+// addSourceToConfig appends a new subscription.sources entry corresponding
+// to the just-extracted bundle. If masterdns parameters were detected, also
+// updates sidecars.masterdns.config (without enabling — user decides).
+func (s *Server) addSourceToConfig(res *bundles.Result) error {
+	raw, err := os.ReadFile(s.configPath())
+	if err != nil {
+		return err
+	}
+	var root map[string]any
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return err
+	}
+
+	sub, _ := root["subscription"].(map[string]any)
+	if sub == nil {
+		sub = map[string]any{}
+		root["subscription"] = sub
+	}
+	srcs, _ := sub["sources"].([]any)
+
+	entry := map[string]any{"name": res.Name}
+	if res.SubscriptionPath != "" {
+		entry["file"] = relativeIfPossible(res.SubscriptionPath)
+	}
+	if res.WireGuardConfPath != "" {
+		entry["wireguard_files"] = []any{relativeIfPossible(res.WireGuardConfPath)}
+	}
+	srcs = append(srcs, entry)
+	sub["sources"] = srcs
+
+	if res.MasterDNSDomain != "" && res.MasterDNSKey != "" {
+		sidecars, _ := root["sidecars"].(map[string]any)
+		if sidecars == nil {
+			sidecars = map[string]any{}
+			root["sidecars"] = sidecars
+		}
+		md, _ := sidecars["masterdns"].(map[string]any)
+		if md == nil {
+			md = map[string]any{}
+			sidecars["masterdns"] = md
+		}
+		mdCfg, _ := md["config"].(map[string]any)
+		if mdCfg == nil {
+			mdCfg = map[string]any{}
+			md["config"] = mdCfg
+		}
+		mdCfg["domain"] = res.MasterDNSDomain
+		mdCfg["key"] = res.MasterDNSKey
+		if res.MasterDNSMethod != "" {
+			mdCfg["method"] = res.MasterDNSMethod
+		}
+	}
+
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return err
+	}
+	// In-place write (bind-mount can't atomic-rename).
+	return os.WriteFile(s.configPath(), out, 0o644)
+}
+
+// handleExposure reads/writes the .env file that docker-compose uses to
+// decide which interface to bind proxy-core's host ports to. Values:
+//   - "loopback" → 127.0.0.1:1080 / 127.0.0.1:8081 (default)
+//   - "lan"      → 0.0.0.0:1080  / 0.0.0.0:8081   (visible to anything on the LAN)
+//   - "public"   → same as lan; the user's firewall is what makes it public
+//
+// PUT body: {"exposure": "loopback"|"lan"|"public",
+//             "auth": {"username": "...", "password": "..."}}
+// Auth is optional and only meaningfully strict for lan/public.
+func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
+	envPath := ".env"
+
+	switch r.Method {
+	case http.MethodGet:
+		cur := readEnvKV(envPath)
+		writeJSON(w, map[string]interface{}{
+			"exposure":      defaultStr(cur["MOAV_EXPOSURE"], "loopback"),
+			"socks5_bind":   defaultStr(cur["SOCKS5_BIND"], "127.0.0.1"),
+			"http_bind":     defaultStr(cur["HTTP_BIND"], "127.0.0.1"),
+			"auth_username": cur["SOCKS5_USERNAME"],
+			"auth_password": maskSecret(cur["SOCKS5_PASSWORD"]),
+			"note": "After changing exposure, run: docker compose up -d --force-recreate proxy-core",
+		})
+
+	case http.MethodPost, http.MethodPut:
+		var body struct {
+			Exposure string `json:"exposure"`
+			Auth     struct {
+				Username string `json:"username"`
+				Password string `json:"password"`
+			} `json:"auth"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		bindAddr := "127.0.0.1"
+		switch body.Exposure {
+		case "", "loopback":
+			body.Exposure = "loopback"
+			bindAddr = "127.0.0.1"
+		case "lan", "public":
+			bindAddr = "0.0.0.0"
+		default:
+			http.Error(w, "exposure must be loopback|lan|public", http.StatusBadRequest)
+			return
+		}
+		kv := readEnvKV(envPath)
+		kv["MOAV_EXPOSURE"] = body.Exposure
+		kv["SOCKS5_BIND"] = bindAddr
+		kv["HTTP_BIND"] = bindAddr
+		if body.Auth.Username != "" {
+			kv["SOCKS5_USERNAME"] = body.Auth.Username
+		}
+		if body.Auth.Password != "" {
+			kv["SOCKS5_PASSWORD"] = body.Auth.Password
+		}
+		if err := writeEnvKV(envPath, kv); err != nil {
+			http.Error(w, "write .env: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("api: set proxy exposure to %s (bind %s) in %s", body.Exposure, bindAddr, envPath)
+		writeJSON(w, map[string]interface{}{
+			"ok":       true,
+			"exposure": body.Exposure,
+			"bind":     bindAddr,
+			"note":     "Run: docker compose up -d --force-recreate proxy-core to apply.",
+		})
+	default:
+		http.Error(w, "GET or PUT required", http.StatusMethodNotAllowed)
+	}
+}
+
+func readEnvKV(path string) map[string]string {
+	out := map[string]string{}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		eq := strings.IndexByte(line, '=')
+		if eq < 0 {
+			continue
+		}
+		out[strings.TrimSpace(line[:eq])] = strings.TrimSpace(line[eq+1:])
+	}
+	return out
+}
+
+func writeEnvKV(path string, kv map[string]string) error {
+	var sb strings.Builder
+	sb.WriteString("# moav-client environment — managed by /api/exposure. Edit by hand if you prefer.\n")
+	for _, k := range []string{"MOAV_EXPOSURE", "SOCKS5_BIND", "HTTP_BIND", "API_BIND", "UI_BIND", "SOCKS5_USERNAME", "SOCKS5_PASSWORD"} {
+		if v, ok := kv[k]; ok && v != "" {
+			sb.WriteString(k)
+			sb.WriteByte('=')
+			sb.WriteString(v)
+			sb.WriteByte('\n')
+		}
+	}
+	// .env is bind-mounted into the container in compose, so an atomic
+	// tmp+rename fails with "device or resource busy" — docker holds the
+	// inode for the mount. Open with O_TRUNC and overwrite in place instead.
+	return os.WriteFile(path, []byte(sb.String()), 0o644)
+}
+
+func defaultStr(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+func maskSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 4 {
+		return strings.Repeat("•", len(s))
+	}
+	return s[:2] + strings.Repeat("•", len(s)-4) + s[len(s)-2:]
+}
+
+func relativeIfPossible(abs string) string {
+	if cwd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(cwd, abs); err == nil && !strings.HasPrefix(rel, "..") {
+			return "./" + rel
+		}
+	}
+	return abs
+}
+
 // handlePlugins reads or replaces the plugin engine rule list.
 // GET  → {rules, templates} for the Plugins tab to render both panes.
 // PUT  → replace entire rule list (atomic via Engine.SetRules).
@@ -338,13 +680,11 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		path := s.configPath()
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, []byte(body.YAML), 0o644); err != nil {
-			http.Error(w, "write tmp: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if err := os.Rename(tmp, path); err != nil {
-			http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
+		// Bind-mounted files can't be atomically renamed in Docker (device or
+		// resource busy on the rename). Overwrite in place; this is fine
+		// because the file is only ever written from one caller.
+		if err := os.WriteFile(path, []byte(body.YAML), 0o644); err != nil {
+			http.Error(w, "write config: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		log.Printf("api: wrote %d bytes to %s (restart required to apply)", len(body.YAML), path)

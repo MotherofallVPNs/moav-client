@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { theme } from "../theme";
-
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8088";
+import { API_BASE } from "../apiBase";
 
 type Strategy = "latency" | "priority" | "weighted";
+type Exposure = "loopback" | "lan" | "public";
 
 const STRATEGY_OPTIONS: { value: Strategy; label: string; help: string }[] = [
   { value: "latency", label: "Latency", help: "Pick the endpoint with the lowest measured RTT through sing-box." },
@@ -15,13 +15,56 @@ interface Props {
   refreshTick?: number;
 }
 
+const EXPOSURE_OPTIONS: { value: Exposure; label: string; help: string; warn?: string }[] = [
+  {
+    value: "loopback",
+    label: "Loopback only (default)",
+    help: "Bind 127.0.0.1 — only this machine can use the proxy. Safest.",
+  },
+  {
+    value: "lan",
+    label: "Local network",
+    help: "Bind 0.0.0.0 — every device on your LAN (router, phones, TVs) can point at <this-machine>:1080.",
+    warn: "Anyone on your local network can use your moav exit. Set a SOCKS5 username/password below.",
+  },
+  {
+    value: "public",
+    label: "Public exposure",
+    help: "Same bind as LAN, but you'll port-forward 1080/8081/8088 on your router. Treat as a public proxy.",
+    warn: "EVERY internet host that can reach your IP can hit the proxy. AUTHENTICATION IS MANDATORY.",
+  },
+];
+
+const randomPassword = (n = 16) => {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  const arr = new Uint8Array(n);
+  (window.crypto || (window as any).msCrypto).getRandomValues(arr);
+  for (const x of arr) out += alphabet[x % alphabet.length];
+  return out;
+};
+
 export default function Settings({ refreshTick }: Props) {
   const [strategy, setStrategy] = useState<Strategy>("latency");
   const [loaded, setLoaded] = useState(false);
   const [probing, setProbing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
+  // Exposure section state.
+  const [exposure, setExposure] = useState<Exposure>("loopback");
+  const [authUser, setAuthUser] = useState("");
+  const [authPass, setAuthPass] = useState("");
+  const [exposureSaving, setExposureSaving] = useState(false);
+
   useEffect(() => {
+    fetch(`${API_BASE}/api/exposure`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.exposure) setExposure(d.exposure as Exposure);
+        if (d.auth_username) setAuthUser(d.auth_username);
+        // We never receive the unmasked password back; show only a hint.
+      })
+      .catch(() => {});
     fetch(`${API_BASE}/api/stats`)
       .then((r) => r.json())
       .then((data) => {
@@ -72,6 +115,30 @@ export default function Settings({ refreshTick }: Props) {
       flash("Could not reach proxy-core API.", false);
     } finally {
       setTimeout(() => setProbing(false), 4500);
+    }
+  };
+
+  const saveExposure = async () => {
+    setExposureSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/exposure`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          exposure,
+          auth: { username: authUser, password: authPass },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        flash(`Failed: ${data?.error || res.statusText}`, false);
+        return;
+      }
+      flash(data.note ?? "Exposure saved.", true);
+    } catch (e) {
+      flash(`Could not save: ${(e as Error).message}`, false);
+    } finally {
+      setExposureSaving(false);
     }
   };
 
@@ -153,6 +220,121 @@ export default function Settings({ refreshTick }: Props) {
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <div style={{ marginTop: "0.4rem", color: theme.textDim, fontSize: "0.72rem" }}>
           Results stream into the <strong>Endpoints</strong> tab via WebSocket — switch tabs to watch them update.
+        </div>
+      </section>
+
+      <section style={{ marginBottom: "1.5rem" }}>
+        <h3 style={section()}>network exposure</h3>
+        <p style={blurb()}>
+          Controls which interfaces the SOCKS5 / HTTP CONNECT / dashboard ports bind to on the
+          <strong> host</strong>. Saved to <code>.env</code>; a compose recreate of <code>proxy-core</code> applies it.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          {EXPOSURE_OPTIONS.map((opt) => {
+            const active = exposure === opt.value;
+            return (
+              <label
+                key={opt.value}
+                style={{
+                  display: "flex",
+                  gap: "0.75rem",
+                  padding: "0.75rem",
+                  border: `1px solid ${active ? theme.blue : theme.border}`,
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: active ? theme.blueDim : theme.surface2,
+                }}
+              >
+                <input
+                  type="radio"
+                  name="exposure"
+                  value={opt.value}
+                  checked={active}
+                  onChange={() => setExposure(opt.value)}
+                  style={{ marginTop: 3 }}
+                />
+                <div>
+                  <div style={{ fontFamily: theme.mono, fontWeight: 600, color: theme.text, fontSize: "0.82rem" }}>
+                    {opt.label}
+                  </div>
+                  <div style={{ color: theme.textDim, fontSize: "0.74rem", marginTop: 2 }}>{opt.help}</div>
+                  {opt.warn && active && (
+                    <div style={{ color: theme.red, fontSize: "0.72rem", marginTop: 4, fontFamily: theme.mono }}>
+                      ⚠ {opt.warn}
+                    </div>
+                  )}
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        {exposure !== "loopback" && (
+          <div style={{ marginTop: "0.75rem", padding: "0.75rem", border: `1px solid ${theme.border}`, borderRadius: 6, background: theme.surface2 }}>
+            <div style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.textDim, marginBottom: 6 }}>
+              SOCKS5 authentication (recommended for LAN, mandatory for public)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
+              <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
+              <input
+                type="text"
+                value={authUser}
+                onChange={(e) => setAuthUser(e.target.value)}
+                placeholder="moav"
+                style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+              />
+              <span />
+              <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
+              <input
+                type="text"
+                value={authPass}
+                onChange={(e) => setAuthPass(e.target.value)}
+                placeholder="•••••••••"
+                style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+              />
+              <button
+                onClick={() => setAuthPass(randomPassword())}
+                style={{
+                  padding: "0.35rem 0.7rem",
+                  background: "transparent",
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: 4,
+                  fontFamily: theme.mono,
+                  fontSize: "0.7rem",
+                  color: theme.textDim,
+                  cursor: "pointer",
+                }}
+              >
+                generate
+              </button>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={saveExposure}
+          disabled={exposureSaving}
+          style={{
+            marginTop: "0.75rem",
+            padding: "0.45rem 1rem",
+            background: theme.blue,
+            color: theme.bg,
+            border: "none",
+            borderRadius: 4,
+            cursor: exposureSaving ? "wait" : "pointer",
+            fontFamily: theme.mono,
+            fontSize: "0.72rem",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {exposureSaving ? "saving…" : "save exposure"}
+        </button>
+        <div style={{ marginTop: "0.4rem", color: theme.textDim, fontSize: "0.72rem" }}>
+          After saving, run{" "}
+          <code>docker compose up -d --force-recreate proxy-core web-ui</code> (or{" "}
+          <code>./moav-client restart</code>) to apply the new bind.
         </div>
       </section>
 

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { theme, statusColor, statusBg } from "../theme";
+import { API_BASE, WS_BASE } from "../apiBase";
 
 export interface Endpoint {
   ID: string;
   Name: string;
   Protocol: string;
   Address: string;
+  Source?: string;
   LatencyMs: number;
   Status: string;
   Priority: number;
@@ -13,8 +15,6 @@ export interface Endpoint {
   Config?: Record<string, string>;
 }
 
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8088";
-const WS_BASE = API_BASE.replace(/^http/, "ws");
 
 const td: React.CSSProperties = { padding: "0.5rem 0.65rem", verticalAlign: "middle", fontSize: "0.82rem" };
 const th: React.CSSProperties = {
@@ -121,7 +121,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["Name", "Protocol", "Address", "Latency", "Status", "Priority", "Enabled"].map((h) => (
+            {["Name", "Source", "Protocol", "Address", "Latency", "Status", "Priority", "Enabled"].map((h) => (
               <th key={h} style={th}>
                 {h}
               </th>
@@ -131,7 +131,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
         <tbody>
           {endpoints.length === 0 ? (
             <tr>
-              <td colSpan={7} style={{ ...td, color: theme.textDim }}>
+              <td colSpan={8} style={{ ...td, color: theme.textDim }}>
                 No endpoints loaded.
               </td>
             </tr>
@@ -151,6 +151,9 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
                       {ep.Config?.sidecar_kind ?? "?"}
                     </div>
                   )}
+                </td>
+                <td style={{ ...td, fontFamily: theme.mono, fontSize: "0.72rem", color: theme.green }}>
+                  {ep.Source || "—"}
                 </td>
                 <td style={{ ...td, fontFamily: theme.mono, color: theme.blue }}>{ep.Protocol}</td>
                 <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim }}>{ep.Address}</td>

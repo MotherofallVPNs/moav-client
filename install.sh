@@ -298,6 +298,20 @@ else
   exit 1
 fi
 
+# .env must exist before docker-compose can mount it (proxy-core writes to it
+# from the dashboard's Network exposure setting). Seed from .env.example or
+# create an empty file.
+ENVF="$INSTALL_DIR/.env"
+if [[ ! -f "$ENVF" ]]; then
+  if [[ -f "$INSTALL_DIR/.env.example" ]]; then
+    cp "$INSTALL_DIR/.env.example" "$ENVF"
+    ok "seeded .env from .env.example (loopback exposure)"
+  else
+    touch "$ENVF"
+    ok "created empty .env"
+  fi
+fi
+
 if [[ -n "$SUBSCRIPTION" && -f "$SUBSCRIPTION" ]]; then
   # Best-effort in-place edit. Escape slashes for sed.
   esc=$(printf '%s' "$SUBSCRIPTION" | sed 's#/#\\/#g')
@@ -382,7 +396,23 @@ cat <<DONE
     • Open the dashboard ${C_DIM}(http://localhost:3001)${C_RESET} and verify endpoints in the ${C_BOLD}Endpoints${C_RESET} tab.
     • Quick test: ${C_DIM}curl --socks5-hostname localhost:1080 https://api.ipify.org${C_RESET}
     • Manage from CLI: ${C_DIM}./moav-client status | up | down | logs ...${C_RESET}
+    • Run on LAN / public: dashboard → ${C_BOLD}Settings → Network exposure${C_RESET}.
+    • Import another moav server's bundle: dashboard → ${C_BOLD}Sources → drop .zip${C_RESET}.
 DONE
+
+# ---------- auto-open dashboard ---------------------------------------------
+# Best-effort cross-platform open. Skipped in headless mode (no GUI) or
+# when MOAV_NO_OPEN=1.
+if [[ "$HEADLESS" != "1" && "$HEADLESS" != "auto" && -z "${MOAV_NO_OPEN:-}" ]]; then
+  url="http://localhost:3001"
+  if command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || true
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 &
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "Start-Process '$url'" >/dev/null 2>&1 || true
+  fi
+fi
 
 if printf '%s\n' "${SIDECARS[@]:-}" | grep -qx "psiphon"; then
   echo ""

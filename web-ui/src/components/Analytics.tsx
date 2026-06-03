@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { theme, statusColor } from "../theme";
+import { API_BASE, WS_BASE } from "../apiBase";
 
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8088";
 
 interface StatRow {
   id: string;
