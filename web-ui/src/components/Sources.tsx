@@ -36,7 +36,7 @@ interface Props {
   refreshTick?: number;
 }
 
-const td: React.CSSProperties = { padding: "0.5rem 0.65rem", fontSize: "0.82rem", verticalAlign: "middle" };
+const td: React.CSSProperties = { padding: "0.45rem 0.6rem", fontSize: "0.8rem", verticalAlign: "middle" };
 const th: React.CSSProperties = {
   ...td,
   textAlign: "left",
@@ -44,7 +44,7 @@ const th: React.CSSProperties = {
   color: theme.textDim,
   background: theme.surface2,
   fontFamily: theme.mono,
-  fontSize: "0.7rem",
+  fontSize: "0.68rem",
   letterSpacing: "0.04em",
   textTransform: "uppercase" as const,
   borderBottom: `1px solid ${theme.border}`,
@@ -54,8 +54,10 @@ export default function Sources({ refreshTick }: Props) {
   const [data, setData] = useState<SourcesResp>({ sources: [] });
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [lastUpload, setLastUpload] = useState<UploadResult | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [reloading, setReloading] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = async () => {
@@ -73,7 +75,7 @@ export default function Sources({ refreshTick }: Props) {
 
   const flash = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
-    setTimeout(() => setToast(null), 4000);
+    setTimeout(() => setToast(null), 3500);
   };
 
   const upload = async (file: File, name?: string) => {
@@ -90,7 +92,7 @@ export default function Sources({ refreshTick }: Props) {
       }
       const j = (await r.json()) as UploadResult;
       setLastUpload(j);
-      flash(j.warning ?? j.note ?? "Bundle imported.", !j.warning);
+      flash(j.warning ?? "Bundle imported. Hit Reload to activate.", !j.warning);
       await refresh();
     } catch (e) {
       flash(`Upload failed: ${(e as Error).message}`, false);
@@ -106,24 +108,47 @@ export default function Sources({ refreshTick }: Props) {
     const f = e.dataTransfer.files[0];
     if (!f) return;
     if (!f.name.toLowerCase().endsWith(".zip")) {
-      flash("Expected a .zip bundle file.", false);
+      flash("Expected a .zip bundle.", false);
       return;
     }
     upload(f);
   };
 
+  const removeSource = async (name: string) => {
+    if (!window.confirm(`Remove source "${name}"? Its endpoints stay in the pool until you reload.`)) return;
+    try {
+      const r = await fetch(`${API_BASE}/api/sources/${encodeURIComponent(name)}`, { method: "DELETE" });
+      const data = await r.json();
+      if (!r.ok) {
+        flash(`Remove failed: ${data?.error ?? r.statusText}`, false);
+        return;
+      }
+      flash(data.note ?? "Removed. Reload to apply.", true);
+      await refresh();
+    } catch (e) {
+      flash(`Remove failed: ${(e as Error).message}`, false);
+    }
+  };
+
+  const reload = async () => {
+    setReloading(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/sources/reload`, { method: "POST" });
+      const data = await r.json();
+      flash(data.note ?? "Reloading…", data.ok !== false);
+      // Give proxy-core a moment to come back.
+      setTimeout(() => refresh(), 5000);
+    } catch (e) {
+      flash(`Reload failed: ${(e as Error).message}`, false);
+    } finally {
+      setTimeout(() => setReloading(false), 4000);
+    }
+  };
+
   return (
     <div>
-      <div style={{ marginBottom: "1.25rem" }}>
-        <h3 style={section()}>import a bundle</h3>
-        <p style={{ ...blurb(), marginBottom: "0.65rem" }}>
-          Drop a <code>.zip</code> exported from MoaV's per-user bundle directory (the
-          same folder that contains <code>subscription.txt</code>, <code>wireguard.conf</code>,
-          <code>amneziawg.conf</code>, <code>masterdns-instructions.txt</code>, etc).
-          moav-client extracts it into <code>data/&lt;name&gt;/</code>, auto-detects all
-          recognised files, and registers a new subscription source in
-          <code>config.yaml</code>.
-        </p>
+      {/* Compact upload row */}
+      <div style={{ display: "flex", gap: "0.75rem", alignItems: "stretch", marginBottom: "1rem" }}>
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -133,15 +158,19 @@ export default function Sources({ refreshTick }: Props) {
           onDrop={onDrop}
           onClick={() => fileRef.current?.click()}
           style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.5rem",
             border: `1.5px dashed ${dragOver ? theme.green : theme.border}`,
             background: dragOver ? theme.greenDim : theme.surface2,
-            borderRadius: 8,
-            padding: "1.5rem",
-            textAlign: "center",
+            borderRadius: 6,
+            padding: "0.75rem 1rem",
             cursor: uploading ? "wait" : "pointer",
             color: theme.text,
             fontFamily: theme.mono,
-            fontSize: "0.85rem",
+            fontSize: "0.82rem",
             transition: "all 0.15s ease",
           }}
         >
@@ -149,13 +178,8 @@ export default function Sources({ refreshTick }: Props) {
             <span style={{ color: theme.blue }}>uploading…</span>
           ) : (
             <>
-              <div style={{ marginBottom: 4 }}>
-                <span style={{ color: theme.blue }}>drop a .zip here</span> or click to browse
-              </div>
-              <div style={{ color: theme.textDim, fontSize: "0.72rem" }}>
-                64 MB max · scanned for subscription.txt / wireguard.conf / amneziawg.conf /
-                trusttunnel.toml / masterdns-instructions.txt
-              </div>
+              <span style={{ color: theme.blue }}>+ drop bundle .zip</span>
+              <span style={{ color: theme.textDim, fontSize: "0.72rem" }}>or click to browse</span>
             </>
           )}
           <input
@@ -169,55 +193,82 @@ export default function Sources({ refreshTick }: Props) {
             }}
           />
         </div>
-
-        {lastUpload?.result && (
-          <div
-            style={{
-              marginTop: "0.6rem",
-              padding: "0.75rem",
-              border: `1px solid ${theme.green}`,
-              borderRadius: 6,
-              background: theme.greenDim,
-              fontFamily: theme.mono,
-              fontSize: "0.75rem",
-            }}
-          >
-            <div style={{ marginBottom: 6, fontWeight: 600 }}>
-              ✓ extracted as <span style={{ color: theme.green }}>{lastUpload.result.name}</span>
-            </div>
-            {lastUpload.result.subscription_path && (
-              <Detected label="subscription" path={lastUpload.result.subscription_path} />
-            )}
-            {lastUpload.result.wireguard_conf && (
-              <Detected label="wireguard.conf" path={lastUpload.result.wireguard_conf} />
-            )}
-            {lastUpload.result.amneziawg_conf && (
-              <Detected label="amneziawg.conf" path={lastUpload.result.amneziawg_conf} />
-            )}
-            {lastUpload.result.trusttunnel_path && (
-              <Detected label="trusttunnel.toml" path={lastUpload.result.trusttunnel_path} />
-            )}
-            {lastUpload.result.masterdns_domain && (
-              <Detected
-                label="masterdns"
-                path={`domain=${lastUpload.result.masterdns_domain} (key auto-loaded)`}
-              />
-            )}
-            <div style={{ color: theme.textDim, marginTop: 6 }}>
-              {lastUpload.note}{" "}
-              <strong style={{ color: theme.yellow }}>
-                Run <code>docker compose restart proxy-core</code> to load the new endpoints.
-              </strong>
-            </div>
-          </div>
-        )}
+        <button
+          onClick={() => setHelpOpen((o) => !o)}
+          style={chipBtn(theme.textDim)}
+          title="What is a bundle?"
+        >
+          ?
+        </button>
+        <button
+          onClick={reload}
+          disabled={reloading}
+          style={chipBtn(theme.blue)}
+          title="Restart proxy-core to load any new/removed sources"
+        >
+          {reloading ? "reloading…" : "↻ reload"}
+        </button>
       </div>
 
-      <h3 style={section()}>active subscription sources</h3>
+      {helpOpen && (
+        <div
+          style={{
+            marginBottom: "1rem",
+            padding: "0.65rem 0.85rem",
+            background: theme.surface2,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 6,
+            fontSize: "0.78rem",
+            color: theme.textDim,
+            lineHeight: 1.5,
+          }}
+        >
+          A bundle is a <code>.zip</code> exported from your MoaV server's per-user
+          directory. moav-client scans it for <code>subscription.txt</code>,{" "}
+          <code>wireguard.conf</code>, <code>amneziawg.conf</code>,{" "}
+          <code>trusttunnel.toml</code>, <code>masterdns-instructions.txt</code> and
+          registers a new source. 64 MB max. Endpoints from each source share a
+          pool but you can disable individual ones in the <strong>Endpoints</strong> tab.
+        </div>
+      )}
+
+      {/* Upload result mini-summary */}
+      {lastUpload?.result && (
+        <div
+          style={{
+            marginBottom: "0.75rem",
+            padding: "0.55rem 0.75rem",
+            border: `1px solid ${theme.green}`,
+            borderRadius: 6,
+            background: theme.greenDim,
+            fontFamily: theme.mono,
+            fontSize: "0.72rem",
+            color: theme.text,
+          }}
+        >
+          ✓ <strong style={{ color: theme.green }}>{lastUpload.result.name}</strong> imported
+          {lastUpload.result.subscription_path && " · subscription"}
+          {lastUpload.result.wireguard_conf && " · wireguard"}
+          {lastUpload.result.amneziawg_conf && " · amneziawg"}
+          {lastUpload.result.trusttunnel_path && " · trusttunnel"}
+          {lastUpload.result.masterdns_domain && (
+            <>
+              {" · masterdns="}
+              <span style={{ color: theme.blue }}>{lastUpload.result.masterdns_domain}</span>
+            </>
+          )}{" "}
+          —{" "}
+          <span style={{ color: theme.yellow }}>
+            run reload to load its endpoints.
+          </span>
+        </div>
+      )}
+
+      {/* Sources table */}
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["Name", "Source", "Endpoints", "Healthy"].map((h) => (
+            {["Name", "Source", "Endpoints", "Healthy", ""].map((h) => (
               <th key={h} style={th}>
                 {h}
               </th>
@@ -227,46 +278,50 @@ export default function Sources({ refreshTick }: Props) {
         <tbody>
           {data.sources.length === 0 ? (
             <tr>
-              <td colSpan={4} style={{ ...td, color: theme.textDim }}>
-                No sources loaded yet — import a bundle above.
+              <td colSpan={5} style={{ ...td, color: theme.textDim }}>
+                No sources loaded. Drop a bundle .zip above.
               </td>
             </tr>
           ) : (
-            data.sources.map((src, i) => (
-              <tr key={src.name + i} style={{ borderTop: `1px solid ${theme.border}` }}>
-                <td style={td}>
-                  <span style={{ fontFamily: theme.mono, color: theme.green }}>{src.name}</span>
+            data.sources.map((src) => (
+              <tr key={src.name} style={{ borderTop: `1px solid ${theme.border}` }}>
+                <td style={{ ...td, fontFamily: theme.mono, color: theme.green, fontWeight: 600 }}>
+                  {src.name}
                 </td>
-                <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim, fontSize: "0.75rem", wordBreak: "break-all" }}>
+                <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim, fontSize: "0.72rem", wordBreak: "break-all" }}>
                   {src.file || src.url || "—"}
                   {src.wireguard_files && src.wireguard_files.length > 0 && (
-                    <div style={{ marginTop: 2 }}>
-                      + {src.wireguard_files.length} wireguard conf
-                      {src.wireguard_files.length > 1 ? "s" : ""}
-                    </div>
+                    <span style={{ color: theme.blue, marginLeft: 6 }}>
+                      + {src.wireguard_files.length} wg
+                    </span>
                   )}
                 </td>
                 <td style={{ ...td, fontFamily: theme.mono }}>{src.endpoints}</td>
-                <td
-                  style={{
-                    ...td,
-                    fontFamily: theme.mono,
-                    color: src.healthy > 0 ? theme.green : theme.textDim,
-                  }}
-                >
-                  {src.healthy}
+                <td style={{ ...td, fontFamily: theme.mono, color: src.healthy > 0 ? theme.green : theme.textDim }}>
+                  {src.healthy} / {src.endpoints}
+                </td>
+                <td style={{ ...td, textAlign: "right" }}>
+                  <button
+                    onClick={() => removeSource(src.name)}
+                    style={{
+                      padding: "0.2rem 0.5rem",
+                      background: "transparent",
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: 4,
+                      color: theme.red,
+                      cursor: "pointer",
+                      fontFamily: theme.mono,
+                      fontSize: "0.7rem",
+                    }}
+                  >
+                    × remove
+                  </button>
                 </td>
               </tr>
             ))
           )}
         </tbody>
       </table>
-
-      {data.note && (
-        <div style={{ marginTop: "0.5rem", fontSize: "0.72rem", color: theme.textDim, fontFamily: theme.mono }}>
-          {data.note}
-        </div>
-      )}
 
       {toast && (
         <div
@@ -291,27 +346,15 @@ export default function Sources({ refreshTick }: Props) {
   );
 }
 
-function Detected({ label, path }: { label: string; path: string }) {
-  return (
-    <div style={{ marginBottom: 2 }}>
-      <span style={{ color: theme.textDim }}>{label}:</span>{" "}
-      <span style={{ color: theme.blue, wordBreak: "break-all" }}>{path}</span>
-    </div>
-  );
-}
-
-const section = (): React.CSSProperties => ({
-  margin: "0 0 0.5rem",
+const chipBtn = (color: string): React.CSSProperties => ({
+  padding: "0.45rem 0.75rem",
+  background: "transparent",
+  color,
+  border: `1px solid ${color}55`,
+  borderRadius: 6,
+  cursor: "pointer",
   fontFamily: theme.mono,
-  fontSize: "0.78rem",
-  color: theme.text,
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-});
-
-const blurb = (): React.CSSProperties => ({
-  margin: 0,
-  color: theme.textDim,
-  fontSize: "0.78rem",
-  lineHeight: 1.5,
+  fontSize: "0.72rem",
+  fontWeight: 600,
+  whiteSpace: "nowrap",
 });

@@ -12,6 +12,8 @@ func TestClassifyLevel(t *testing.T) {
 		{"probe wireguard:178.105.237.120:51820 via singbox:10805: status=ok latency=247ms", "info"},
 		{"probe ss:178.105.237.120:8388 via singbox:10803: status=timeout latency=10000ms", "info"},
 		{"initial probe complete: 11 endpoints updated", "info"},
+		{"probe cycle: all 8 endpoints ok", "info"},
+		{"probe cycle: WARN 3/11 endpoints unhealthy: Reality, psiphon, trusttunnel", "warn"},
 
 		// Warns — recoverable, operator-relevant.
 		{"balancer: dial through vless:178.105.237.120:443 failed (EOF); trying next endpoint", "warn"},

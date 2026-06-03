@@ -16,6 +16,7 @@ import (
 
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
 	"github.com/ibeezhan/moav-client/proxy-core/bundles"
+	"github.com/ibeezhan/moav-client/proxy-core/cmd"
 	"github.com/ibeezhan/moav-client/proxy-core/dockerctl"
 	"github.com/ibeezhan/moav-client/proxy-core/logbus"
 	"github.com/ibeezhan/moav-client/proxy-core/plugins"
@@ -81,6 +82,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/endpoints/", s.handleEndpointPatch) // PATCH /api/endpoints/<id>
 	mux.HandleFunc("/api/probe", s.handleProbe)
 	mux.HandleFunc("/api/healthz", s.handleHealth)
+	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/strategy", s.handleStrategy)
@@ -227,6 +229,53 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{"ok": true})
 }
+
+// handleVersion is used by the dashboard footer. Returns build version,
+// observed public egress IP (when reachable), uptime.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]interface{}{
+		"version":    cmd.Version,
+		"commit":     buildCommit,
+		"uptime_sec": int(time.Since(startedAt).Seconds()),
+		"public_ip":  observedPublicIP(),
+	})
+}
+
+// buildCommit is wired in at build time via -ldflags "-X .../api.buildCommit=..."
+// install.sh can read git rev-parse --short HEAD and pass it through; if it's
+// not set the footer just shows "dev".
+var buildCommit = "dev"
+
+// startedAt records process start so /api/version can report uptime.
+var startedAt = time.Now()
+
+// observedPublicIP caches the result of an HTTP fetch to ifconfig.me /
+// api.ipify.org from THIS process — i.e. the IP someone reaching out to
+// proxy-core directly would see. It's the install host's WAN IP, NOT the
+// moav-server egress (that's what the dashboard's SOCKS5 traffic uses).
+//
+// We use it in the footer as "your install's public IP" so users know
+// what to point external clients at when exposure is set to lan/public.
+func observedPublicIP() string {
+	publicIPOnce.Do(func() {
+		c := &http.Client{Timeout: 4 * time.Second}
+		resp, err := c.Get("https://api.ipify.org")
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+		if err == nil {
+			publicIP = strings.TrimSpace(string(b))
+		}
+	})
+	return publicIP
+}
+
+var (
+	publicIPOnce sync.Once
+	publicIP     string
+)
 
 // handleStats returns per-endpoint counters + active strategy meta. Joins
 // the endpoint list with the live balancer stats so the UI can render a

@@ -99,8 +99,14 @@ function AreaChart({ samples, color, width = 220, height = 50 }: AreaChartProps)
   const linePath = `M ${pts.join(" L ")}`;
   return (
     <svg width={width} height={height} style={{ display: "block" }}>
+      {/* Baseline grid line at zero */}
+      <line x1={0} y1={height - 1} x2={width} y2={height - 1} stroke="#1e2d3d" strokeWidth={1} />
       <path d={fillPath} fill={color} fillOpacity={0.18} />
       <path d={linePath} fill="none" stroke={color} strokeWidth={1.5} />
+      {/* Peak label */}
+      <text x={width - 4} y={12} textAnchor="end" fontSize={9} fontFamily="monospace" fill="#6e7681">
+        peak {fmtBytes(max)}/s
+      </text>
     </svg>
   );
 }
@@ -432,10 +438,15 @@ interface StackedProps {
 }
 function StackedAreaChart({ series, byProtocol }: StackedProps) {
   const width = 900;
-  const height = 120;
+  const height = 140;
+  const padLeft = 48; // y-axis labels
+  const padBottom = 18; // x-axis labels
+  const innerW = width - padLeft;
+  const innerH = height - padBottom;
   const max = Math.max(1, ...series.map((s) => s.up + s.down));
+  const hasTraffic = series.some((s) => s.up + s.down > 0);
 
-  if (byProtocol.length === 0) {
+  if (byProtocol.length === 0 || !hasTraffic) {
     return (
       <div
         style={{
@@ -450,12 +461,15 @@ function StackedAreaChart({ series, byProtocol }: StackedProps) {
           fontSize: "0.78rem",
         }}
       >
-        no traffic yet
+        no traffic yet — make a request through the SOCKS5 proxy to see the chart fill in
       </div>
     );
   }
 
   const protocols = byProtocol.map((b) => b.protocol);
+
+  // Y-axis ticks: 0, max/2, max.
+  const ticks = [0, max / 2, max];
 
   return (
     <div
@@ -467,13 +481,25 @@ function StackedAreaChart({ series, byProtocol }: StackedProps) {
       }}
     >
       <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ width: "100%", height }}>
+        {/* Y-axis grid + labels */}
+        {ticks.map((t, i) => {
+          const y = innerH - (t / max) * innerH;
+          return (
+            <g key={i}>
+              <line x1={padLeft} y1={y} x2={width} y2={y} stroke="#1e2d3d" strokeDasharray="3 3" strokeWidth={0.5} />
+              <text x={padLeft - 6} y={y + 3} textAnchor="end" fontSize={9} fontFamily="monospace" fill="#6e7681">
+                {fmtBytes(t)}/s
+              </text>
+            </g>
+          );
+        })}
+
         {/* Build stacked layers — one per protocol */}
         {protocols.map((p, pi) => {
           const color = colorForProtocol(p);
           const points: string[] = [];
           const baseTop: number[] = [];
 
-          // bottom line of this layer = sum of all PRIOR layers (up+down)
           for (let i = 0; i < series.length; i++) {
             let base = 0;
             for (let q = 0; q < pi; q++) {
@@ -483,26 +509,36 @@ function StackedAreaChart({ series, byProtocol }: StackedProps) {
             const me = series[i].perProtocol[pi];
             const meTotal = (me?.up || 0) + (me?.down || 0);
             const top = base + meTotal;
-            const x = (i / (series.length - 1)) * width;
-            const yTop = height - (top / max) * height;
+            const x = padLeft + (i / (series.length - 1)) * innerW;
+            const yTop = innerH - (top / max) * innerH;
             points.push(`${x.toFixed(1)},${yTop.toFixed(1)}`);
-            baseTop.push(height - (base / max) * height);
+            baseTop.push(innerH - (base / max) * innerH);
           }
-          // close polygon
           const reversed = baseTop
-            .map((y, i) => `${((series.length - 1 - i) / (series.length - 1)) * width},${y}`)
+            .map((y, i) => `${(padLeft + ((series.length - 1 - i) / (series.length - 1)) * innerW).toFixed(1)},${y.toFixed(1)}`)
             .reverse();
           return (
             <polygon
               key={p}
               points={[...points, ...reversed].join(" ")}
               fill={color}
-              fillOpacity={0.35}
+              fillOpacity={0.45}
               stroke={color}
               strokeWidth={1}
             />
           );
         })}
+
+        {/* X-axis labels: now / -1m / -2m markers */}
+        <text x={padLeft} y={innerH + 12} textAnchor="start" fontSize={9} fontFamily="monospace" fill="#6e7681">
+          -2m
+        </text>
+        <text x={padLeft + innerW / 2} y={innerH + 12} textAnchor="middle" fontSize={9} fontFamily="monospace" fill="#6e7681">
+          -1m
+        </text>
+        <text x={width - 2} y={innerH + 12} textAnchor="end" fontSize={9} fontFamily="monospace" fill="#6e7681">
+          now
+        </text>
       </svg>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", marginTop: "0.6rem" }}>
         {protocols.map((p) => (

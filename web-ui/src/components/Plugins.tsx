@@ -143,6 +143,35 @@ export default function Plugins({ refreshTick }: Props) {
     flash(`Added ${fresh.length} rule${fresh.length > 1 ? "s" : ""} from "${tpl.title}". Toggle on to activate.`, true);
   };
 
+  // Edit-in-place: index of the rule currently being edited, plus a working
+  // copy. Save replaces; cancel reverts.
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState<Rule | null>(null);
+
+  const startEdit = (i: number) => {
+    setEditIdx(i);
+    setEditDraft({ ...rules[i] });
+  };
+  const updateEditDraft = (patch: Partial<Rule>) =>
+    setEditDraft((d) => (d ? { ...d, ...patch } : d));
+  const updateEditMatch = (patch: Partial<Rule["match"]>) =>
+    setEditDraft((d) => (d ? { ...d, match: { ...d.match, ...patch } } : d));
+  const commitEdit = () => {
+    if (editIdx === null || !editDraft) return;
+    if (!editDraft.match.value) {
+      flash("Value required.", false);
+      return;
+    }
+    const next = rules.map((r, i) => (i === editIdx ? editDraft : r));
+    persist(next);
+    setEditIdx(null);
+    setEditDraft(null);
+  };
+  const cancelEdit = () => {
+    setEditIdx(null);
+    setEditDraft(null);
+  };
+
   const updateDraft = (patch: Partial<Rule>) => setDraft((d) => (d ? { ...d, ...patch } : d));
   const updateDraftMatch = (patch: Partial<Rule["match"]>) =>
     setDraft((d) => (d ? { ...d, match: { ...d.match, ...patch } } : d));
@@ -234,43 +263,105 @@ export default function Plugins({ refreshTick }: Props) {
               </td>
             </tr>
           ) : (
-            rules.map((r, i) => (
-              <tr key={(r.id ?? "") + i} style={{ borderTop: `1px solid ${theme.border}` }}>
-                <td style={{ ...td, color: theme.textDim }}>{i + 1}</td>
-                <td style={td}>
-                  <input type="checkbox" checked={r.enabled} onChange={() => toggle(i)} />
-                </td>
-                <td style={{ ...td, fontFamily: theme.mono, color: theme.text }}>{r.match.type}</td>
-                <td style={{ ...td, fontFamily: theme.mono, color: theme.blue, maxWidth: 240, wordBreak: "break-all" }}>
-                  {r.match.value}
-                </td>
-                <td style={td}>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      padding: "0.15rem 0.55rem",
-                      background: ACTION_STYLE[r.action].bg,
-                      color: ACTION_STYLE[r.action].fg,
-                      borderRadius: 12,
-                      fontSize: "0.65rem",
-                      fontWeight: 600,
-                      fontFamily: theme.mono,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                      border: `1px solid ${ACTION_STYLE[r.action].fg}44`,
-                    }}
-                  >
-                    {r.action}
-                  </span>
-                </td>
-                <td style={{ ...td, color: theme.textDim, maxWidth: 220 }}>{r.note || "—"}</td>
-                <td style={{ ...td, whiteSpace: "nowrap" }}>
-                  <button onClick={() => move(i, -1)} disabled={i === 0} style={iconBtn(i === 0)}>↑</button>
-                  <button onClick={() => move(i, 1)} disabled={i === rules.length - 1} style={iconBtn(i === rules.length - 1)}>↓</button>
-                  <button onClick={() => remove(i)} style={{ ...iconBtn(false), color: theme.red }}>×</button>
-                </td>
-              </tr>
-            ))
+            rules.map((r, i) =>
+              editIdx === i && editDraft ? (
+                // Inline edit row.
+                <tr key={(r.id ?? "") + i + "-edit"} style={{ borderTop: `1px solid ${theme.blue}`, background: theme.blueDim }}>
+                  <td style={{ ...td, color: theme.textDim }}>{i + 1}</td>
+                  <td style={td}>
+                    <input
+                      type="checkbox"
+                      checked={editDraft.enabled}
+                      onChange={(e) => updateEditDraft({ enabled: e.target.checked })}
+                    />
+                  </td>
+                  <td style={td}>
+                    <select
+                      value={editDraft.match.type}
+                      onChange={(e) => updateEditMatch({ type: e.target.value as MatchType })}
+                      style={{ ...inputStyle, width: "100%" }}
+                    >
+                      {MATCH_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={td}>
+                    <input
+                      type="text"
+                      value={editDraft.match.value}
+                      onChange={(e) => updateEditMatch({ value: e.target.value })}
+                      style={{ ...inputStyle, width: "100%" }}
+                    />
+                  </td>
+                  <td style={td}>
+                    <select
+                      value={editDraft.action}
+                      onChange={(e) => updateEditDraft({ action: e.target.value as Action })}
+                      style={{ ...inputStyle, width: "100%" }}
+                    >
+                      {ACTIONS.map((a) => (
+                        <option key={a} value={a}>
+                          {a}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={td}>
+                    <input
+                      type="text"
+                      value={editDraft.note ?? ""}
+                      onChange={(e) => updateEditDraft({ note: e.target.value })}
+                      placeholder="(optional)"
+                      style={{ ...inputStyle, width: "100%" }}
+                    />
+                  </td>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>
+                    <button onClick={commitEdit} style={{ ...iconBtn(false), color: theme.green }} title="Save">✓</button>
+                    <button onClick={cancelEdit} style={iconBtn(false)} title="Cancel">×</button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={(r.id ?? "") + i} style={{ borderTop: `1px solid ${theme.border}` }}>
+                  <td style={{ ...td, color: theme.textDim }}>{i + 1}</td>
+                  <td style={td}>
+                    <input type="checkbox" checked={r.enabled} onChange={() => toggle(i)} />
+                  </td>
+                  <td style={{ ...td, fontFamily: theme.mono, color: theme.text }}>{r.match.type}</td>
+                  <td style={{ ...td, fontFamily: theme.mono, color: theme.blue, maxWidth: 240, wordBreak: "break-all" }}>
+                    {r.match.value}
+                  </td>
+                  <td style={td}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        padding: "0.15rem 0.55rem",
+                        background: ACTION_STYLE[r.action].bg,
+                        color: ACTION_STYLE[r.action].fg,
+                        borderRadius: 12,
+                        fontSize: "0.65rem",
+                        fontWeight: 600,
+                        fontFamily: theme.mono,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        border: `1px solid ${ACTION_STYLE[r.action].fg}44`,
+                      }}
+                    >
+                      {r.action}
+                    </span>
+                  </td>
+                  <td style={{ ...td, color: theme.textDim, maxWidth: 220 }}>{r.note || "—"}</td>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>
+                    <button onClick={() => startEdit(i)} style={iconBtn(false)} title="Edit">✎</button>
+                    <button onClick={() => move(i, -1)} disabled={i === 0} style={iconBtn(i === 0)}>↑</button>
+                    <button onClick={() => move(i, 1)} disabled={i === rules.length - 1} style={iconBtn(i === rules.length - 1)}>↓</button>
+                    <button onClick={() => remove(i)} style={{ ...iconBtn(false), color: theme.red }}>×</button>
+                  </td>
+                </tr>
+              )
+            )
           )}
         </tbody>
       </table>

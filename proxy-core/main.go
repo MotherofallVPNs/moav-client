@@ -247,12 +247,29 @@ func main() {
 				log.Printf("state: save error: %v", err)
 			}
 
-			// Start background probing loop.
-			ch := p.Run(ctx, updated)
+			// Start background probing loop. We pass a fetcher that pulls
+			// from the LIVE balancer pool so user PATCHes (enable/disable,
+			// priority) from the dashboard survive each cycle instead of
+			// being clobbered by the stale slice we started with.
+			ch := p.Run(ctx, b.Endpoints)
 			for eps := range ch {
-				b.SetEndpoints(eps)
+				// Merge probe results into the live pool: copy Status /
+				// LatencyMs from probed copies onto current entries, but
+				// keep current Enabled / Priority intact.
+				current := b.Endpoints()
+				probed := make(map[string]subscription.Endpoint, len(eps))
+				for _, ep := range eps {
+					probed[ep.ID] = ep
+				}
+				for i := range current {
+					if p2, ok := probed[current[i].ID]; ok {
+						current[i].Status = p2.Status
+						current[i].LatencyMs = p2.LatencyMs
+					}
+				}
+				b.SetEndpoints(current)
 				// Persist after every background probe cycle.
-				s2 := &state.State{LastProbeAt: time.Now(), Endpoints: eps}
+				s2 := &state.State{LastProbeAt: time.Now(), Endpoints: current}
 				if err := s2.Save(statePath); err != nil {
 					log.Printf("state: save error: %v", err)
 				}

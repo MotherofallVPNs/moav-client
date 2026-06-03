@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +36,10 @@ func New() *Prober {
 
 // ProbeAll probes all endpoints concurrently (max 10 parallel) and returns
 // the updated slice. The input slice is not modified; a new slice is returned.
+// After every pass we emit a single summary log line — INFO when everything
+// is healthy, WARN with the failing endpoint names when not — so operators
+// can spot trouble in the Debug tab without trawling each per-endpoint line
+// (those stay at INFO level because one peer down isn't a system error).
 func (p *Prober) ProbeAll(endpoints []subscription.Endpoint) []subscription.Endpoint {
 	sem := make(chan struct{}, maxParallel)
 	results := make([]subscription.Endpoint, len(endpoints))
@@ -50,6 +55,30 @@ func (p *Prober) ProbeAll(endpoints []subscription.Endpoint) []subscription.Endp
 		}(i, ep)
 	}
 	wg.Wait()
+
+	// Emit a roll-up so the Debug tab has a single line per cycle showing
+	// who's down. We compose the message such that classifyLevel in logbus
+	// flags it warn when there are failures.
+	var down, ok []string
+	for _, ep := range results {
+		switch ep.Status {
+		case "ok":
+			ok = append(ok, ep.Name)
+		case "error", "timeout":
+			label := ep.Name
+			if label == "" {
+				label = ep.ID
+			}
+			down = append(down, label)
+		}
+	}
+	if len(down) > 0 {
+		log.Printf("probe cycle: WARN %d/%d endpoints unhealthy: %s",
+			len(down), len(results), strings.Join(down, ", "))
+	} else if len(results) > 0 {
+		log.Printf("probe cycle: all %d endpoints ok", len(results))
+	}
+
 	return results
 }
 
@@ -94,9 +123,14 @@ func (p *Prober) probeTarget() string {
 	return "1.1.1.1:443"
 }
 
-// Run starts a background loop that probes eps every interval until ctx is done.
+// Run starts a background loop that probes the endpoints returned by fetch
+// every interval until ctx is done. fetch is called fresh on each cycle so
+// the prober always works against the LIVE balancer pool — that way user
+// PATCHes from the dashboard (enable/disable, priority) survive the probe
+// loop instead of being clobbered by a stale snapshot.
+//
 // Updated endpoints are sent on the returned channel after each pass.
-func (p *Prober) Run(ctx context.Context, eps []subscription.Endpoint) <-chan []subscription.Endpoint {
+func (p *Prober) Run(ctx context.Context, fetch func() []subscription.Endpoint) <-chan []subscription.Endpoint {
 	ch := make(chan []subscription.Endpoint, 1)
 
 	go func() {
@@ -105,7 +139,7 @@ func (p *Prober) Run(ctx context.Context, eps []subscription.Endpoint) <-chan []
 		defer ticker.Stop()
 
 		send := func() {
-			updated := p.ProbeAll(eps)
+			updated := p.ProbeAll(fetch())
 			select {
 			case ch <- updated:
 			default:

@@ -157,8 +157,17 @@ func (w *CapturingWriter) Write(p []byte) (int, error) {
 func classifyLevel(s string) string {
 	low := strings.ToLower(s)
 
-	// Probe lines are always info, regardless of the per-endpoint status.
-	// They report on a peer's health, not on proxy-core's own health.
+	// "probe cycle:" is our roll-up emitted at the end of each pass. We
+	// classify it explicitly first so the embedded WARN keyword survives.
+	if strings.HasPrefix(low, "probe cycle:") {
+		if strings.Contains(low, "warn") {
+			return "warn"
+		}
+		return "info"
+	}
+
+	// Individual probe lines are always info regardless of the per-endpoint
+	// status. They report on a peer's health, not on proxy-core's own health.
 	if strings.HasPrefix(low, "probe ") || strings.Contains(low, " probe ") &&
 		(strings.Contains(low, "status=ok") || strings.Contains(low, "status=error") ||
 			strings.Contains(low, "status=timeout")) {

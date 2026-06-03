@@ -6,6 +6,7 @@ import Settings from "./components/Settings";
 import Debug from "./components/Debug";
 import Plugins from "./components/Plugins";
 import Sources from "./components/Sources";
+import Footer from "./components/Footer";
 import { theme } from "./theme";
 
 type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "config";
@@ -206,6 +207,8 @@ export default function App() {
         {tab === "debug" && <Debug refreshTick={refreshTick} />}
         {tab === "config" && <ConfigEditor refreshTick={refreshTick} />}
       </div>
+
+      <Footer />
     </div>
   );
 }

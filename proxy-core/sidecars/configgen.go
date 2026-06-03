@@ -97,38 +97,54 @@ func writePsiphon(baseDir string, c map[string]string) error {
 		return writeAtomic(filepath.Join(baseDir, "psiphon", "psiphon.config"), []byte(raw))
 	}
 
-	propID := defaultStr(c["propagation_channel_id"], "0000000000000000")
-	sponsorID := defaultStr(c["sponsor_id"], "0000000000000000")
+	// The "FFFFFFFFFFFFFFFF" channel + sponsor IDs are the anonymous
+	// Psiphon channel — they're real, Psiphon Inc. honors them, and they
+	// ship in upstream OSS clients (verified against
+	// Alessandros-Hube/PsiphonLinuxGUI/src/configs/psiphon.config which
+	// runs against the same psiphon-tunnel-core-binaries we build). The
+	// SignaturePublicKey + RemoteServerListUrl pair is the matching public
+	// bootstrap list — Psiphon's signed S3 blob.
+	propID := defaultStr(c["propagation_channel_id"], "FFFFFFFFFFFFFFFF")
+	sponsorID := defaultStr(c["sponsor_id"], "FFFFFFFFFFFFFFFF")
 	clientPlatform := defaultStr(c["client_platform"], "Linux_moav-client")
+	pubKey := defaultStr(c["remote_server_list_signature_public_key"], psiphonDefaultPubKey)
+	listURL := defaultStr(c["remote_server_list_url"], psiphonDefaultListURL)
 
 	cfg := map[string]any{
-		"PropagationChannelId":  propID,
-		"SponsorId":             sponsorID,
-		"ClientPlatform":        clientPlatform,
-		"LocalSocksProxyPort":   5400,
-		"LocalHttpProxyPort":    0,
-		"DisableLocalHTTPProxy": true,
-		"DataRootDirectory":     "/var/lib/psiphon",
-		"EmitDiagnosticNotices": true,
-		"EmitBytesTransferred":  true,
+		"PropagationChannelId":               propID,
+		"SponsorId":                          sponsorID,
+		"ClientPlatform":                     clientPlatform,
+		"LocalSocksProxyPort":                5400,
+		"LocalHttpProxyPort":                 0,
+		"DisableLocalHTTPProxy":              true,
+		"DataRootDirectory":                  "/var/lib/psiphon",
+		"EmitDiagnosticNotices":              true,
+		"EmitBytesTransferred":               true,
+		"UseIndistinguishableTLS":            true,
+		"RemoteServerListSignaturePublicKey": pubKey,
+		"RemoteServerListUrl":                listURL,
+		"RemoteServerListDownloadFilename":   "remote_server_list",
 	}
 
-	// Bootstrap server list — only included when the user supplied the
-	// matching pubkey. Without it Psiphon rejects every download as
-	// "asn1: syntax error", which is worse than no list at all.
-	if pk := c["remote_server_list_signature_public_key"]; pk != "" {
-		cfg["RemoteServerListSignaturePublicKey"] = pk
-		if url := c["remote_server_list_url"]; url != "" {
-			cfg["RemoteServerListUrls"] = []map[string]string{{"URL": url}}
-		}
-		if url := c["obfuscated_server_list_root_url"]; url != "" {
-			cfg["ObfuscatedServerListRootURLs"] = []map[string]string{{"URL": url}}
-		}
+	if url := c["obfuscated_server_list_root_url"]; url != "" {
+		cfg["ObfuscatedServerListRootURLs"] = []map[string]string{{"URL": url}}
+	}
+	if region := c["egress_region"]; region != "" {
+		cfg["EgressRegion"] = region
 	}
 
 	enc, _ := json.MarshalIndent(cfg, "", "  ")
 	return writeAtomic(filepath.Join(baseDir, "psiphon", "psiphon.config"), enc)
 }
+
+// psiphonDefaultPubKey / psiphonDefaultListURL are the bootstrap material
+// from Psiphon's public OSS distribution (see Alessandros-Hube/PsiphonLinuxGUI
+// and Psiphon-Labs/psiphon-tunnel-core-binaries). They're public by design
+// — the pubkey only validates the signed list, it doesn't authorise anything.
+const (
+	psiphonDefaultPubKey  = "MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM="
+	psiphonDefaultListURL = "https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed"
+)
 
 func defaultStr(v, fallback string) string {
 	if v == "" {
