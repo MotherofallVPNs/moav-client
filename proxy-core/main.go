@@ -236,7 +236,7 @@ func main() {
 	if cfg.Proxy.Auth.Username != "" && cfg.Proxy.Auth.Password != "" {
 		proxyServer = proxyServer.WithAuth(cfg.Proxy.Auth.Username, cfg.Proxy.Auth.Password)
 	}
-	apiServer := api.New(cfg.Proxy.APIPort, b, eng)
+	apiServer := api.New(cfg.Proxy.APIPort, *cfgPath, b, eng)
 
 	errCh := make(chan error, 3)
 

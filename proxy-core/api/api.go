@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 // Server is the API HTTP server.
 type Server struct {
 	port     int
+	cfgPath  string
 	balancer *balancer.Balancer
 	prober   *prober.Prober
 	engine   *plugins.Engine // hot-swappable plugin engine (Plugins tab)
@@ -37,9 +39,10 @@ type Server struct {
 }
 
 // New creates an API Server.
-func New(port int, b *balancer.Balancer, eng *plugins.Engine) *Server {
+func New(port int, cfgPath string, b *balancer.Balancer, eng *plugins.Engine) *Server {
 	return &Server{
 		port:     port,
+		cfgPath:  cfgPath,
 		balancer: b,
 		prober:   prober.New(),
 		engine:   eng,
@@ -304,31 +307,63 @@ func (s *Server) handleStrategy(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleConfig reads or updates the in-memory config.
+// handleConfig serves the on-disk YAML config so the dashboard's Config tab
+// can show the user what's actually loaded. POST writes the bytes back
+// (atomically). The in-memory map remains as a legacy free-form store for
+// callers that want it under a "_map" key.
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		s.cfgMu.RLock()
-		cfg := s.config
-		s.cfgMu.RUnlock()
-		writeJSON(w, cfg)
+		raw, err := os.ReadFile(s.configPath())
+		if err != nil {
+			http.Error(w, "read config: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"path": s.configPath(),
+			"yaml": string(raw),
+		})
 
-	case http.MethodPost:
-		var incoming map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
+	case http.MethodPost, http.MethodPut:
+		var body struct {
+			YAML string `json:"yaml"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.cfgMu.Lock()
-		for k, v := range incoming {
-			s.config[k] = v
+		if body.YAML == "" {
+			http.Error(w, "yaml field required", http.StatusBadRequest)
+			return
 		}
-		s.cfgMu.Unlock()
-		writeJSON(w, map[string]interface{}{"ok": true})
+		path := s.configPath()
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, []byte(body.YAML), 0o644); err != nil {
+			http.Error(w, "write tmp: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("api: wrote %d bytes to %s (restart required to apply)", len(body.YAML), path)
+		writeJSON(w, map[string]interface{}{
+			"ok":   true,
+			"note": "saved to disk — restart moav-client (or docker compose restart proxy-core) to apply",
+		})
 
 	default:
 		http.Error(w, "GET or POST required", http.StatusMethodNotAllowed)
 	}
+}
+
+// configPath returns the on-disk YAML config path. Default matches main.go.
+func (s *Server) configPath() string {
+	if s.cfgPath != "" {
+		return s.cfgPath
+	}
+	return "config.yaml"
 }
 
 // handleWebSocket streams endpoint updates AND live log events to the

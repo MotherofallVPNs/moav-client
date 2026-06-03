@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import EndpointTable from "./components/EndpointTable";
-import ProbeButton from "./components/ProbeButton";
 import ConfigEditor from "./components/ConfigEditor";
 import Analytics from "./components/Analytics";
 import Settings from "./components/Settings";
 import Debug from "./components/Debug";
 import Plugins from "./components/Plugins";
+import { theme } from "./theme";
 
-type Tab = "endpoints" | "analytics" | "plugins" | "settings" | "debug" | "probe" | "config";
+type Tab = "endpoints" | "analytics" | "plugins" | "settings" | "debug" | "config";
 
 const TAB_LABELS: Record<Tab, string> = {
   endpoints: "Endpoints",
@@ -15,46 +15,163 @@ const TAB_LABELS: Record<Tab, string> = {
   plugins: "Plugins",
   settings: "Settings",
   debug: "Debug",
-  probe: "Probe",
   config: "Config",
 };
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
-  padding: "0.4rem 1rem",
-  border: "none",
-  borderBottom: active ? "2px solid #3b82f6" : "2px solid transparent",
+  padding: "0.55rem 1.1rem",
+  border: "1px solid transparent",
+  borderBottom: active ? `2px solid ${theme.green}` : "2px solid transparent",
   background: "none",
   cursor: "pointer",
   fontWeight: active ? 600 : 400,
-  color: active ? "#1d4ed8" : "#64748b",
-  fontSize: "0.9rem",
+  color: active ? theme.text : theme.textDim,
+  fontSize: "0.78rem",
+  fontFamily: theme.mono,
+  letterSpacing: "0.02em",
+  textTransform: "uppercase" as const,
+  transition: "color 0.15s, border-color 0.15s",
 });
+
+const btn: React.CSSProperties = {
+  fontFamily: theme.mono,
+  fontSize: "0.7rem",
+  padding: "0.35rem 0.75rem",
+  borderRadius: 4,
+  border: `1px solid ${theme.border}`,
+  background: theme.surface,
+  color: theme.text,
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.3rem",
+  transition: "border-color 0.15s",
+};
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("endpoints");
   const [healthy, setHealthy] = useState(0);
   const [total, setTotal] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [clock, setClock] = useState(new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setClock(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const refresh = () => setRefreshTick((t) => t + 1);
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 1100, margin: "0 auto", padding: "2rem 1rem" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
-        <h1 style={{ margin: 0, fontSize: "1.4rem", color: "#0f172a" }}>moav-client</h1>
-        <span
+    <div
+      style={{
+        maxWidth: 1100,
+        margin: "0 auto",
+        padding: "1.5rem 2rem",
+        fontFamily: theme.sans,
+        color: theme.text,
+        minHeight: "100vh",
+      }}
+    >
+      {/* Topbar */}
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          paddingBottom: "1rem",
+          marginBottom: "1.25rem",
+          borderBottom: `1px solid ${theme.border}`,
+        }}
+      >
+        <h1
           style={{
-            display: "inline-block",
-            padding: "0.2rem 0.7rem",
-            borderRadius: 12,
-            fontSize: "0.78rem",
+            margin: 0,
+            fontFamily: theme.mono,
+            fontSize: "1.1rem",
             fontWeight: 600,
-            background: healthy > 0 ? "#dcfce7" : "#fee2e2",
-            color: healthy > 0 ? "#16a34a" : "#dc2626",
+            letterSpacing: "-0.02em",
+            color: theme.text,
           }}
         >
-          {total === 0 ? "no endpoints" : `${healthy}/${total} healthy`}
-        </span>
+          MoaV<span style={{ color: theme.green }}>-client</span>
+          <span
+            style={{
+              marginLeft: 8,
+              color: theme.textDim,
+              fontSize: "0.62rem",
+              letterSpacing: "0.15em",
+              textTransform: "uppercase",
+            }}
+          >
+            mother of all VPNs
+          </span>
+        </h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <span
+            style={{
+              color: theme.textDim,
+              fontFamily: theme.mono,
+              fontSize: "0.7rem",
+            }}
+          >
+            {clock.toISOString().slice(11, 19)} UTC
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "0.25rem 0.7rem",
+              borderRadius: 12,
+              fontSize: "0.7rem",
+              fontWeight: 600,
+              fontFamily: theme.mono,
+              background:
+                total === 0
+                  ? theme.redDim
+                  : healthy === total
+                  ? theme.greenDim
+                  : theme.yellowDim,
+              color:
+                total === 0
+                  ? theme.red
+                  : healthy === total
+                  ? theme.green
+                  : theme.yellow,
+              border: `1px solid ${
+                total === 0
+                  ? theme.red
+                  : healthy === total
+                  ? theme.green
+                  : theme.yellow
+              }44`,
+            }}
+          >
+            ● {total === 0 ? "no endpoints" : `${healthy}/${total} healthy`}
+          </span>
+          <button
+            onClick={refresh}
+            style={{
+              ...btn,
+              borderColor: theme.blue,
+              color: theme.blue,
+            }}
+            title="Refresh all tabs"
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </header>
 
-      <nav style={{ display: "flex", borderBottom: "1px solid #e2e8f0", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+      {/* Tab bar */}
+      <nav
+        style={{
+          display: "flex",
+          borderBottom: `1px solid ${theme.border}`,
+          marginBottom: "1.25rem",
+          flexWrap: "wrap",
+        }}
+      >
         {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
           <button key={t} style={tabStyle(tab === t)} onClick={() => setTab(t)}>
             {TAB_LABELS[t]}
@@ -62,16 +179,29 @@ export default function App() {
         ))}
       </nav>
 
-      <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "1.25rem" }}>
+      {/* Content card */}
+      <div
+        style={{
+          background: theme.surface,
+          border: `1px solid ${theme.border}`,
+          borderRadius: 8,
+          padding: "1.25rem",
+        }}
+      >
         {tab === "endpoints" && (
-          <EndpointTable onHealthChange={(h, t) => { setHealthy(h); setTotal(t); }} />
+          <EndpointTable
+            refreshTick={refreshTick}
+            onHealthChange={(h, t) => {
+              setHealthy(h);
+              setTotal(t);
+            }}
+          />
         )}
-        {tab === "analytics" && <Analytics />}
-        {tab === "plugins" && <Plugins />}
-        {tab === "settings" && <Settings />}
-        {tab === "debug" && <Debug />}
-        {tab === "probe" && <ProbeButton />}
-        {tab === "config" && <ConfigEditor />}
+        {tab === "analytics" && <Analytics refreshTick={refreshTick} />}
+        {tab === "plugins" && <Plugins refreshTick={refreshTick} />}
+        {tab === "settings" && <Settings refreshTick={refreshTick} />}
+        {tab === "debug" && <Debug refreshTick={refreshTick} />}
+        {tab === "config" && <ConfigEditor refreshTick={refreshTick} />}
       </div>
     </div>
   );

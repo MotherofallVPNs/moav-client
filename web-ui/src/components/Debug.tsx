@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { theme } from "../theme";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8088";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
@@ -13,15 +14,9 @@ interface LogEvent {
 }
 
 const LEVEL_COLOR: Record<Level, { fg: string; bg: string }> = {
-  info: { fg: "#1d4ed8", bg: "#dbeafe" },
-  warn: { fg: "#a16207", bg: "#fef3c7" },
-  error: { fg: "#b91c1c", bg: "#fee2e2" },
-};
-
-const ROW_BG: Record<Level, string> = {
-  info: "transparent",
-  warn: "rgba(254, 243, 199, 0.4)",
-  error: "rgba(254, 226, 226, 0.5)",
+  info: { fg: theme.blue, bg: theme.blueDim },
+  warn: { fg: theme.yellow, bg: theme.yellowDim },
+  error: { fg: theme.red, bg: theme.redDim },
 };
 
 const fmtTime = (ms: number) => {
@@ -32,7 +27,11 @@ const fmtTime = (ms: number) => {
 
 const RING_LIMIT = 1000;
 
-export default function Debug() {
+interface Props {
+  refreshTick?: number;
+}
+
+export default function Debug({ refreshTick }: Props) {
   const [events, setEvents] = useState<LogEvent[]>([]);
   const [levels, setLevels] = useState<Record<Level, boolean>>({ info: true, warn: true, error: true });
   const [query, setQuery] = useState("");
@@ -44,7 +43,6 @@ export default function Debug() {
 
   pausedRef.current = paused;
 
-  // Initial snapshot + WS tail.
   useEffect(() => {
     let cancelled = false;
     fetch(`${API_BASE}/api/logs`)
@@ -54,7 +52,12 @@ export default function Debug() {
         setEvents((data.events ?? []) as LogEvent[]);
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshTick]);
 
+  useEffect(() => {
     const ws = new WebSocket(`${WS_BASE}/api/ws`);
     wsRef.current = ws;
     ws.onmessage = (ev) => {
@@ -71,13 +74,9 @@ export default function Debug() {
         // ignore
       }
     };
-    return () => {
-      cancelled = true;
-      ws.close();
-    };
+    return () => ws.close();
   }, []);
 
-  // Autoscroll on new events.
   useEffect(() => {
     if (!autoscroll || !tailRef.current) return;
     tailRef.current.scrollTop = tailRef.current.scrollHeight;
@@ -99,7 +98,6 @@ export default function Debug() {
   }, [events]);
 
   const toggle = (lvl: Level) => setLevels((s) => ({ ...s, [lvl]: !s[lvl] }));
-
   const copyAll = () => {
     const txt = filtered.map((e) => `${fmtTime(e.ts)} [${e.level.toUpperCase()}] ${e.source}: ${e.message}`).join("\n");
     navigator.clipboard?.writeText(txt);
@@ -114,13 +112,13 @@ export default function Debug() {
             onClick={() => toggle(lvl)}
             style={{
               padding: "0.25rem 0.7rem",
-              border: "1px solid",
-              borderColor: levels[lvl] ? LEVEL_COLOR[lvl].fg : "#cbd5e1",
-              borderRadius: 14,
-              background: levels[lvl] ? LEVEL_COLOR[lvl].bg : "#fff",
-              color: levels[lvl] ? LEVEL_COLOR[lvl].fg : "#64748b",
-              fontSize: "0.78rem",
+              border: `1px solid ${levels[lvl] ? LEVEL_COLOR[lvl].fg : theme.border}`,
+              borderRadius: 12,
+              background: levels[lvl] ? LEVEL_COLOR[lvl].bg : "transparent",
+              color: levels[lvl] ? LEVEL_COLOR[lvl].fg : theme.textDim,
+              fontSize: "0.7rem",
               fontWeight: 600,
+              fontFamily: theme.mono,
               cursor: "pointer",
               textTransform: "uppercase",
               letterSpacing: 0.3,
@@ -131,74 +129,38 @@ export default function Debug() {
         ))}
         <input
           type="text"
-          placeholder="Filter by text…"
+          placeholder="Filter…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{
             flex: 1,
             minWidth: 180,
             padding: "0.35rem 0.6rem",
-            border: "1px solid #e2e8f0",
-            borderRadius: 6,
-            fontSize: "0.85rem",
+            borderRadius: 4,
+            fontSize: "0.8rem",
+            fontFamily: theme.mono,
           }}
         />
-        <button
-          onClick={() => setPaused((p) => !p)}
-          style={{
-            padding: "0.35rem 0.8rem",
-            background: paused ? "#fef3c7" : "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 6,
-            cursor: "pointer",
-            fontSize: "0.82rem",
-            fontWeight: 500,
-            color: paused ? "#a16207" : "#0f172a",
-          }}
-        >
-          {paused ? "▶ Resume" : "❚❚ Pause"}
+        <button onClick={() => setPaused((p) => !p)} style={chip(paused ? theme.yellow : theme.textDim)}>
+          {paused ? "▶ resume" : "❚❚ pause"}
         </button>
-        <label style={{ fontSize: "0.78rem", color: "#475569", display: "flex", alignItems: "center", gap: 4 }}>
+        <label style={{ fontSize: "0.72rem", color: theme.textDim, display: "flex", alignItems: "center", gap: 4, fontFamily: theme.mono }}>
           <input type="checkbox" checked={autoscroll} onChange={(e) => setAutoscroll(e.target.checked)} />
           autoscroll
         </label>
-        <button
-          onClick={copyAll}
-          style={{
-            padding: "0.35rem 0.8rem",
-            background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 6,
-            cursor: "pointer",
-            fontSize: "0.82rem",
-          }}
-        >
-          Copy
-        </button>
-        <button
-          onClick={() => setEvents([])}
-          style={{
-            padding: "0.35rem 0.8rem",
-            background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 6,
-            cursor: "pointer",
-            fontSize: "0.82rem",
-            color: "#64748b",
-          }}
-        >
-          Clear view
-        </button>
+        <button onClick={copyAll} style={chip(theme.textDim)}>copy</button>
+        <button onClick={() => setEvents([])} style={chip(theme.textDim)}>clear</button>
       </div>
 
       <div
         ref={tailRef}
         style={{
-          fontFamily: "ui-monospace, SFMono-Regular, monospace",
-          fontSize: "0.78rem",
-          background: "#0f172a",
-          color: "#e2e8f0",
-          borderRadius: 8,
+          fontFamily: theme.mono,
+          fontSize: "0.74rem",
+          background: theme.bg,
+          color: theme.text,
+          borderRadius: 6,
+          border: `1px solid ${theme.border}`,
           padding: "0.75rem",
           height: 460,
           overflowY: "auto",
@@ -206,47 +168,56 @@ export default function Debug() {
         }}
       >
         {filtered.length === 0 ? (
-          <div style={{ color: "#64748b" }}>No log events match the current filter.</div>
+          <div style={{ color: theme.textDim }}>No log events match the current filter.</div>
         ) : (
           filtered.map((e, i) => (
             <div
               key={i + ":" + e.ts}
               style={{
-                background: ROW_BG[e.level],
-                color: e.level === "error" ? "#fecaca" : e.level === "warn" ? "#fde68a" : "#e2e8f0",
-                padding: "1px 4px",
-                borderRadius: 3,
+                color: e.level === "error" ? theme.red : e.level === "warn" ? theme.yellow : theme.text,
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
+                padding: "1px 4px",
               }}
             >
-              <span style={{ color: "#64748b" }}>{fmtTime(e.ts)}</span>{" "}
+              <span style={{ color: theme.textDim }}>{fmtTime(e.ts)}</span>{" "}
               <span
                 style={{
                   display: "inline-block",
-                  minWidth: 42,
+                  minWidth: 44,
                   padding: "0 4px",
                   background: LEVEL_COLOR[e.level].bg,
                   color: LEVEL_COLOR[e.level].fg,
                   borderRadius: 3,
                   fontWeight: 700,
-                  fontSize: "0.7rem",
+                  fontSize: "0.65rem",
                   textAlign: "center",
                   marginRight: 6,
+                  border: `1px solid ${LEVEL_COLOR[e.level].fg}44`,
                 }}
               >
                 {e.level.toUpperCase()}
               </span>
-              <span style={{ color: "#94a3b8" }}>{e.source}</span>{" "}
-              {e.message}
+              <span style={{ color: theme.green }}>{e.source}</span> {e.message}
             </div>
           ))
         )}
       </div>
 
-      <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
-        Showing {filtered.length} of {events.length} events (server ring buffer holds the last {RING_LIMIT}).
+      <div style={{ fontSize: "0.7rem", color: theme.textDim, fontFamily: theme.mono }}>
+        showing {filtered.length} of {events.length} events · server ring buffer holds the last {RING_LIMIT}
       </div>
     </div>
   );
 }
+
+const chip = (color: string): React.CSSProperties => ({
+  padding: "0.35rem 0.7rem",
+  background: "transparent",
+  border: `1px solid ${theme.border}`,
+  borderRadius: 4,
+  cursor: "pointer",
+  fontSize: "0.72rem",
+  color,
+  fontFamily: theme.mono,
+});

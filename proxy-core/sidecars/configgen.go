@@ -16,6 +16,7 @@ import (
 //
 // Per-sidecar layout under baseDir:
 //   masterdns/client_config.toml
+//   masterdns/client_resolvers.txt
 //   psiphon/psiphon.config
 //   amneziawg/awg0.conf
 //   trusttunnel/client.toml
@@ -75,30 +76,65 @@ CLIENT_RESOLVERS_FILE = "client_resolvers.txt"
 	return writeAtomic(filepath.Join(baseDir, "masterdns", "client_resolvers.txt"), resolvers)
 }
 
+// writePsiphon assembles a Psiphon ConsoleClient config from individual keys
+// in sidecars.psiphon.config (PropagationChannelId, SponsorId, the bootstrap
+// server-list URLs, the signing pubkey) — all of which come from a Psiphon
+// Inc. licensing agreement or from extracting them out of an official
+// Psiphon Pro release. Without them the ConsoleClient still starts and opens
+// its SOCKS5 listener so the moav-client probe TCP-connects cleanly, but
+// no tunnel will establish — visible in the Debug tab as repeated
+// "failed to fetch obfuscated remote server list" warnings.
+//
+// The simplest way to wire this up is to paste a full Psiphon-issued config
+// blob under sidecars.psiphon.config.config_json — moav-client writes it
+// verbatim to /etc/psiphon/psiphon.config and we don't synthesise anything.
 func writePsiphon(baseDir string, c map[string]string) error {
 	if c == nil {
-		return nil
+		c = map[string]string{}
 	}
-	// The user is expected to provide a real Psiphon config blob via the
-	// 'config_json' key. We just persist it verbatim.
+	// Verbatim user config wins.
 	if raw := c["config_json"]; raw != "" {
 		return writeAtomic(filepath.Join(baseDir, "psiphon", "psiphon.config"), []byte(raw))
 	}
-	// Otherwise write a minimal default that points at the public
-	// psiphon-tunnel-core server-list bootstrap (suitable for testing).
+
+	propID := defaultStr(c["propagation_channel_id"], "0000000000000000")
+	sponsorID := defaultStr(c["sponsor_id"], "0000000000000000")
+	clientPlatform := defaultStr(c["client_platform"], "Linux_moav-client")
+
 	cfg := map[string]any{
-		"PropagationChannelId":         "FFFFFFFFFFFFFFFF",
-		"SponsorId":                    "FFFFFFFFFFFFFFFF",
-		"LocalSocksProxyPort":          5400,
-		"LocalHttpProxyPort":           0,
-		"EmitDiagnosticNotices":        true,
-		"EmitBytesTransferred":         false,
-		"DataRootDirectory":            "/var/lib/psiphon",
-		"DisableLocalSocksProxy":       false,
-		"DisableLocalHTTPProxy":        true,
+		"PropagationChannelId":  propID,
+		"SponsorId":             sponsorID,
+		"ClientPlatform":        clientPlatform,
+		"LocalSocksProxyPort":   5400,
+		"LocalHttpProxyPort":    0,
+		"DisableLocalHTTPProxy": true,
+		"DataRootDirectory":     "/var/lib/psiphon",
+		"EmitDiagnosticNotices": true,
+		"EmitBytesTransferred":  true,
 	}
+
+	// Bootstrap server list — only included when the user supplied the
+	// matching pubkey. Without it Psiphon rejects every download as
+	// "asn1: syntax error", which is worse than no list at all.
+	if pk := c["remote_server_list_signature_public_key"]; pk != "" {
+		cfg["RemoteServerListSignaturePublicKey"] = pk
+		if url := c["remote_server_list_url"]; url != "" {
+			cfg["RemoteServerListUrls"] = []map[string]string{{"URL": url}}
+		}
+		if url := c["obfuscated_server_list_root_url"]; url != "" {
+			cfg["ObfuscatedServerListRootURLs"] = []map[string]string{{"URL": url}}
+		}
+	}
+
 	enc, _ := json.MarshalIndent(cfg, "", "  ")
 	return writeAtomic(filepath.Join(baseDir, "psiphon", "psiphon.config"), enc)
+}
+
+func defaultStr(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
 }
 
 func writeAmneziaWG(baseDir string, c map[string]string) error {

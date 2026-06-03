@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { theme } from "../theme";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8088";
 
@@ -39,21 +40,37 @@ const MATCH_TYPES: MatchType[] = [
 const ACTIONS: Action[] = ["proxy", "direct", "block"];
 
 const ACTION_STYLE: Record<Action, { bg: string; fg: string }> = {
-  proxy: { bg: "#dbeafe", fg: "#1d4ed8" },
-  direct: { bg: "#dcfce7", fg: "#15803d" },
-  block: { bg: "#fee2e2", fg: "#b91c1c" },
+  proxy: { bg: theme.blueDim, fg: theme.blue },
+  direct: { bg: theme.greenDim, fg: theme.green },
+  block: { bg: theme.redDim, fg: theme.red },
 };
 
-const td: React.CSSProperties = { padding: "0.5rem 0.6rem", fontSize: "0.85rem", verticalAlign: "middle" };
+const td: React.CSSProperties = { padding: "0.5rem 0.6rem", fontSize: "0.78rem", verticalAlign: "middle" };
 const th: React.CSSProperties = {
   ...td,
   textAlign: "left",
   fontWeight: 500,
-  color: "#475569",
-  background: "#f8fafc",
+  color: theme.textDim,
+  background: theme.surface2,
+  fontFamily: theme.mono,
+  fontSize: "0.7rem",
+  letterSpacing: "0.04em",
+  textTransform: "uppercase" as const,
+  borderBottom: `1px solid ${theme.border}`,
 };
 
-export default function Plugins() {
+const inputStyle: React.CSSProperties = {
+  padding: "0.35rem 0.55rem",
+  borderRadius: 4,
+  fontSize: "0.82rem",
+  fontFamily: theme.mono,
+};
+
+interface Props {
+  refreshTick?: number;
+}
+
+export default function Plugins({ refreshTick }: Props) {
   const [rules, setRules] = useState<Rule[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -62,7 +79,7 @@ export default function Plugins() {
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refreshTick]);
 
   const refresh = async () => {
     try {
@@ -123,7 +140,7 @@ export default function Plugins() {
     const fresh = tpl.rules.map((r) => ({ ...r, enabled: false, id: undefined }));
     persist([...rules, ...fresh]);
     setPickerOpen(false);
-    flash(`Added ${fresh.length} rule${fresh.length > 1 ? "s" : ""} from "${tpl.title}". Toggle enable to activate.`, true);
+    flash(`Added ${fresh.length} rule${fresh.length > 1 ? "s" : ""} from "${tpl.title}". Toggle on to activate.`, true);
   };
 
   const updateDraft = (patch: Partial<Rule>) => setDraft((d) => (d ? { ...d, ...patch } : d));
@@ -146,80 +163,52 @@ export default function Plugins() {
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: "0.95rem", color: "#0f172a" }}>Routing rules</h3>
-          <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: 2 }}>
-            First-match-wins. {ruleCount}. Changes apply live — no restart.
+          <h3 style={{ margin: 0, fontFamily: theme.mono, fontSize: "0.85rem", color: theme.text }}>routing rules</h3>
+          <div style={{ fontSize: "0.72rem", color: theme.textDim, marginTop: 2, fontFamily: theme.mono }}>
+            first-match-wins · {ruleCount} · changes apply live
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button
-            onClick={() => setPickerOpen((p) => !p)}
-            style={{
-              padding: "0.4rem 0.9rem",
-              background: "#fff",
-              color: "#1d4ed8",
-              border: "1px solid #1d4ed8",
-              borderRadius: 6,
-              cursor: "pointer",
-              fontWeight: 500,
-              fontSize: "0.85rem",
-            }}
-          >
-            + From template…
+          <button onClick={() => setPickerOpen((p) => !p)} style={ghostBtn(theme.blue)}>
+            + from template…
           </button>
-          <button
-            onClick={() => setDraft(blankDraft())}
-            style={{
-              padding: "0.4rem 0.9rem",
-              background: "#1d4ed8",
-              color: "#fff",
-              border: "1px solid #1d4ed8",
-              borderRadius: 6,
-              cursor: "pointer",
-              fontWeight: 500,
-              fontSize: "0.85rem",
-            }}
-          >
-            + New rule
+          <button onClick={() => setDraft(blankDraft())} style={solidBtn(theme.blue)}>
+            + new rule
           </button>
         </div>
       </div>
 
       {pickerOpen && (
-        <div style={{ marginBottom: "1rem", border: "1px solid #e2e8f0", borderRadius: 8, padding: "0.75rem" }}>
-          <div style={{ fontSize: "0.85rem", color: "#475569", marginBottom: "0.5rem" }}>
-            Pick a curated template — all rules land disabled so you can review before enabling.
+        <div
+          style={{
+            marginBottom: "1rem",
+            border: `1px solid ${theme.border}`,
+            borderRadius: 6,
+            padding: "0.75rem",
+            background: theme.surface2,
+          }}
+        >
+          <div style={{ fontSize: "0.78rem", color: theme.textDim, marginBottom: "0.5rem", fontFamily: theme.mono }}>
+            curated templates — all rules land disabled so you can review before enabling.
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.6rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "0.6rem" }}>
             {templates.map((tpl) => (
               <div
                 key={tpl.key}
                 style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 8,
-                  padding: "0.75rem",
-                  background: "#fff",
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: 6,
+                  padding: "0.7rem",
+                  background: theme.surface,
                 }}
               >
-                <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "#0f172a" }}>{tpl.title}</div>
-                <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 4, lineHeight: 1.4 }}>{tpl.help}</div>
-                <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 6 }}>
+                <div style={{ fontFamily: theme.mono, fontSize: "0.82rem", color: theme.green }}>{tpl.title}</div>
+                <div style={{ fontSize: "0.72rem", color: theme.textDim, marginTop: 4, lineHeight: 1.45 }}>{tpl.help}</div>
+                <div style={{ fontSize: "0.7rem", color: theme.textDim, marginTop: 6, fontFamily: theme.mono }}>
                   {tpl.rules.length} rule{tpl.rules.length > 1 ? "s" : ""}
                 </div>
-                <button
-                  onClick={() => fromTemplate(tpl)}
-                  style={{
-                    marginTop: "0.5rem",
-                    padding: "0.3rem 0.7rem",
-                    background: "#22c55e",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: 5,
-                    cursor: "pointer",
-                    fontSize: "0.78rem",
-                  }}
-                >
-                  Add to ruleset (disabled)
+                <button onClick={() => fromTemplate(tpl)} style={{ ...solidBtn(theme.green), marginTop: "0.55rem" }}>
+                  add (disabled)
                 </button>
               </div>
             ))}
@@ -230,7 +219,7 @@ export default function Plugins() {
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            {["#", "Enabled", "Match", "Value", "Action", "Note", ""].map((h) => (
+            {["#", "On", "Match", "Value", "Action", "Note", ""].map((h) => (
               <th key={h} style={th}>
                 {h}
               </th>
@@ -240,21 +229,19 @@ export default function Plugins() {
         <tbody>
           {rules.length === 0 ? (
             <tr>
-              <td colSpan={7} style={{ ...td, color: "#94a3b8" }}>
+              <td colSpan={7} style={{ ...td, color: theme.textDim }}>
                 No rules configured. Add one above or pick a template.
               </td>
             </tr>
           ) : (
             rules.map((r, i) => (
-              <tr key={(r.id ?? "") + i} style={{ borderTop: "1px solid #e2e8f0" }}>
-                <td style={{ ...td, color: "#94a3b8" }}>{i + 1}</td>
+              <tr key={(r.id ?? "") + i} style={{ borderTop: `1px solid ${theme.border}` }}>
+                <td style={{ ...td, color: theme.textDim }}>{i + 1}</td>
                 <td style={td}>
-                  <label style={{ cursor: "pointer" }}>
-                    <input type="checkbox" checked={r.enabled} onChange={() => toggle(i)} />
-                  </label>
+                  <input type="checkbox" checked={r.enabled} onChange={() => toggle(i)} />
                 </td>
-                <td style={{ ...td, fontFamily: "monospace", fontSize: "0.78rem" }}>{r.match.type}</td>
-                <td style={{ ...td, fontFamily: "monospace", fontSize: "0.78rem", maxWidth: 240, wordBreak: "break-all" }}>
+                <td style={{ ...td, fontFamily: theme.mono, color: theme.text }}>{r.match.type}</td>
+                <td style={{ ...td, fontFamily: theme.mono, color: theme.blue, maxWidth: 240, wordBreak: "break-all" }}>
                   {r.match.value}
                 </td>
                 <td style={td}>
@@ -264,22 +251,23 @@ export default function Plugins() {
                       padding: "0.15rem 0.55rem",
                       background: ACTION_STYLE[r.action].bg,
                       color: ACTION_STYLE[r.action].fg,
-                      borderRadius: 10,
-                      fontSize: "0.72rem",
+                      borderRadius: 12,
+                      fontSize: "0.65rem",
                       fontWeight: 600,
+                      fontFamily: theme.mono,
                       textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      border: `1px solid ${ACTION_STYLE[r.action].fg}44`,
                     }}
                   >
                     {r.action}
                   </span>
                 </td>
-                <td style={{ ...td, color: "#64748b", fontSize: "0.78rem", maxWidth: 220 }}>
-                  {r.note || "—"}
-                </td>
+                <td style={{ ...td, color: theme.textDim, maxWidth: 220 }}>{r.note || "—"}</td>
                 <td style={{ ...td, whiteSpace: "nowrap" }}>
                   <button onClick={() => move(i, -1)} disabled={i === 0} style={iconBtn(i === 0)}>↑</button>
                   <button onClick={() => move(i, 1)} disabled={i === rules.length - 1} style={iconBtn(i === rules.length - 1)}>↓</button>
-                  <button onClick={() => remove(i)} style={{ ...iconBtn(false), color: "#b91c1c" }}>×</button>
+                  <button onClick={() => remove(i)} style={{ ...iconBtn(false), color: theme.red }}>×</button>
                 </td>
               </tr>
             ))
@@ -288,14 +276,24 @@ export default function Plugins() {
       </table>
 
       {draft && (
-        <div style={{ marginTop: "1rem", border: "1px solid #1d4ed8", borderRadius: 8, padding: "0.75rem", background: "#eff6ff" }}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.5rem", color: "#0f172a" }}>New rule</div>
+        <div
+          style={{
+            marginTop: "1rem",
+            border: `1px solid ${theme.blue}`,
+            borderRadius: 6,
+            padding: "0.75rem",
+            background: theme.blueDim,
+          }}
+        >
+          <div style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.5rem", color: theme.text, fontFamily: theme.mono }}>
+            new rule
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.5rem 0.75rem", alignItems: "center" }}>
-            <label style={lbl}>Match type</label>
+            <label style={lbl}>match type</label>
             <select
               value={draft.match.type}
               onChange={(e) => updateDraftMatch({ type: e.target.value as MatchType })}
-              style={input}
+              style={inputStyle}
             >
               {MATCH_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -303,29 +301,29 @@ export default function Plugins() {
                 </option>
               ))}
             </select>
-            <label style={lbl}>Value</label>
+            <label style={lbl}>value</label>
             <input
               type="text"
               value={draft.match.value}
               onChange={(e) => updateDraftMatch({ value: e.target.value })}
               placeholder={placeholderFor(draft.match.type)}
-              style={input}
+              style={inputStyle}
             />
-            <label style={lbl}>Action</label>
-            <select value={draft.action} onChange={(e) => updateDraft({ action: e.target.value as Action })} style={input}>
+            <label style={lbl}>action</label>
+            <select value={draft.action} onChange={(e) => updateDraft({ action: e.target.value as Action })} style={inputStyle}>
               {ACTIONS.map((a) => (
                 <option key={a} value={a}>
                   {a}
                 </option>
               ))}
             </select>
-            <label style={lbl}>Note</label>
+            <label style={lbl}>note</label>
             <input
               type="text"
               value={draft.note ?? ""}
               onChange={(e) => updateDraft({ note: e.target.value })}
               placeholder="(optional)"
-              style={input}
+              style={inputStyle}
             />
           </div>
           <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem" }}>
@@ -338,32 +336,12 @@ export default function Plugins() {
                 addRule({ ...draft, enabled: true });
                 setDraft(null);
               }}
-              style={{
-                padding: "0.4rem 0.9rem",
-                background: "#1d4ed8",
-                color: "#fff",
-                border: "none",
-                borderRadius: 6,
-                cursor: "pointer",
-                fontSize: "0.85rem",
-                fontWeight: 500,
-              }}
+              style={solidBtn(theme.blue)}
             >
-              Add rule
+              add rule
             </button>
-            <button
-              onClick={() => setDraft(null)}
-              style={{
-                padding: "0.4rem 0.9rem",
-                background: "#fff",
-                color: "#64748b",
-                border: "1px solid #cbd5e1",
-                borderRadius: 6,
-                cursor: "pointer",
-                fontSize: "0.85rem",
-              }}
-            >
-              Cancel
+            <button onClick={() => setDraft(null)} style={ghostBtn(theme.textDim)}>
+              cancel
             </button>
           </div>
         </div>
@@ -376,11 +354,13 @@ export default function Plugins() {
             bottom: 24,
             right: 24,
             padding: "0.6rem 1rem",
-            background: toast.ok ? "#16a34a" : "#dc2626",
-            color: "#fff",
-            borderRadius: 6,
-            fontSize: "0.85rem",
-            boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+            background: toast.ok ? theme.green : theme.red,
+            color: theme.bg,
+            borderRadius: 4,
+            fontSize: "0.78rem",
+            fontFamily: theme.mono,
+            fontWeight: 600,
+            maxWidth: 360,
           }}
         >
           {toast.msg}
@@ -390,24 +370,46 @@ export default function Plugins() {
   );
 }
 
-const lbl: React.CSSProperties = { fontSize: "0.8rem", color: "#475569", fontWeight: 500 };
-const input: React.CSSProperties = {
-  padding: "0.35rem 0.55rem",
-  border: "1px solid #cbd5e1",
-  borderRadius: 5,
-  fontSize: "0.85rem",
-  fontFamily: "monospace",
-};
+const lbl: React.CSSProperties = { fontSize: "0.72rem", color: theme.textDim, fontFamily: theme.mono };
+
+const solidBtn = (color: string): React.CSSProperties => ({
+  padding: "0.35rem 0.8rem",
+  background: color,
+  color: theme.bg,
+  border: "none",
+  borderRadius: 4,
+  cursor: "pointer",
+  fontFamily: theme.mono,
+  fontSize: "0.7rem",
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+});
+
+const ghostBtn = (color: string): React.CSSProperties => ({
+  padding: "0.35rem 0.8rem",
+  background: "transparent",
+  color: color,
+  border: `1px solid ${color}`,
+  borderRadius: 4,
+  cursor: "pointer",
+  fontFamily: theme.mono,
+  fontSize: "0.7rem",
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+});
 
 const iconBtn = (disabled: boolean): React.CSSProperties => ({
   padding: "0 0.4rem",
   marginRight: 4,
   background: "transparent",
-  border: "1px solid #e2e8f0",
+  border: `1px solid ${theme.border}`,
   borderRadius: 4,
   cursor: disabled ? "not-allowed" : "pointer",
-  fontSize: "0.9rem",
-  color: disabled ? "#cbd5e1" : "#475569",
+  fontSize: "0.85rem",
+  color: disabled ? theme.border : theme.textDim,
+  fontFamily: theme.mono,
 });
 
 function placeholderFor(t: MatchType): string {

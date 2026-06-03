@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { theme } from "../theme";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8088";
 
@@ -10,12 +11,16 @@ const STRATEGY_OPTIONS: { value: Strategy; label: string; help: string }[] = [
   { value: "weighted", label: "Weighted random", help: "Random pick with weights = Priority field. Spreads load." },
 ];
 
-export default function Settings() {
+interface Props {
+  refreshTick?: number;
+}
+
+export default function Settings({ refreshTick }: Props) {
   const [strategy, setStrategy] = useState<Strategy>("latency");
   const [loaded, setLoaded] = useState(false);
+  const [probing, setProbing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
-  // Load current strategy from /api/stats (it carries .strategy).
   useEffect(() => {
     fetch(`${API_BASE}/api/stats`)
       .then((r) => r.json())
@@ -26,9 +31,9 @@ export default function Settings() {
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
-  }, []);
+  }, [refreshTick]);
 
-  const showToast = (msg: string, ok: boolean) => {
+  const flash = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 2500);
   };
@@ -44,36 +49,37 @@ export default function Settings() {
       });
       if (!res.ok) {
         setStrategy(prev);
-        showToast(`Failed: ${res.status} ${res.statusText}`, false);
+        flash(`Failed: ${res.status} ${res.statusText}`, false);
       } else {
-        showToast(`Strategy set to ${s}.`, true);
+        flash(`strategy → ${s}`, true);
       }
-    } catch (e) {
+    } catch {
       setStrategy(prev);
-      showToast("Could not reach proxy-core API.", false);
+      flash("Could not reach proxy-core API.", false);
     }
   };
 
   const triggerProbe = async () => {
+    setProbing(true);
     try {
       const res = await fetch(`${API_BASE}/api/probe`, { method: "POST" });
       if (res.ok) {
-        showToast("Probing all endpoints…", true);
+        flash("Probing all endpoints…", true);
       } else {
-        showToast(`Failed: ${res.status} ${res.statusText}`, false);
+        flash(`Failed: ${res.status} ${res.statusText}`, false);
       }
     } catch {
-      showToast("Could not reach proxy-core API.", false);
+      flash("Could not reach proxy-core API.", false);
+    } finally {
+      setTimeout(() => setProbing(false), 4500);
     }
   };
 
   return (
     <div>
       <section style={{ marginBottom: "2rem" }}>
-        <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.95rem", color: "#0f172a" }}>Load-balancing strategy</h3>
-        <p style={{ margin: "0 0 0.75rem", color: "#64748b", fontSize: "0.85rem" }}>
-          Applied immediately; no restart required.
-        </p>
+        <h3 style={section()}>load-balancing strategy</h3>
+        <p style={blurb()}>Applied immediately, no restart required.</p>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
           {STRATEGY_OPTIONS.map((opt) => (
             <label
@@ -82,11 +88,10 @@ export default function Settings() {
                 display: "flex",
                 gap: "0.75rem",
                 padding: "0.75rem",
-                border: "1px solid",
-                borderColor: strategy === opt.value ? "#3b82f6" : "#e2e8f0",
-                borderRadius: 8,
+                border: `1px solid ${strategy === opt.value ? theme.green : theme.border}`,
+                borderRadius: 6,
                 cursor: loaded ? "pointer" : "not-allowed",
-                background: strategy === opt.value ? "#eff6ff" : "#fff",
+                background: strategy === opt.value ? theme.greenDim : theme.surface2,
               }}
             >
               <input
@@ -99,8 +104,10 @@ export default function Settings() {
                 style={{ marginTop: 3 }}
               />
               <div>
-                <div style={{ fontWeight: 600, color: "#0f172a", fontSize: "0.9rem" }}>{opt.label}</div>
-                <div style={{ color: "#64748b", fontSize: "0.8rem" }}>{opt.help}</div>
+                <div style={{ fontFamily: theme.mono, fontWeight: 600, color: theme.text, fontSize: "0.82rem" }}>
+                  {opt.label}
+                </div>
+                <div style={{ color: theme.textDim, fontSize: "0.74rem", marginTop: 2 }}>{opt.help}</div>
               </div>
             </label>
           ))}
@@ -108,21 +115,45 @@ export default function Settings() {
       </section>
 
       <section style={{ marginBottom: "1.5rem" }}>
-        <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.95rem", color: "#0f172a" }}>Actions</h3>
+        <h3 style={section()}>actions</h3>
         <button
           onClick={triggerProbe}
+          disabled={probing}
           style={{
-            padding: "0.5rem 1rem",
-            background: "#3b82f6",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            cursor: "pointer",
-            fontWeight: 500,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            padding: "0.45rem 1rem",
+            background: probing ? theme.surface2 : "transparent",
+            color: theme.blue,
+            border: `1px solid ${theme.blue}`,
+            borderRadius: 4,
+            cursor: probing ? "wait" : "pointer",
+            fontFamily: theme.mono,
+            fontSize: "0.72rem",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
           }}
         >
-          Probe all endpoints now
+          {probing && (
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                border: `2px solid ${theme.blue}`,
+                borderTopColor: "transparent",
+                borderRadius: "50%",
+                animation: "spin 0.7s linear infinite",
+              }}
+            />
+          )}
+          probe all endpoints
         </button>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ marginTop: "0.4rem", color: theme.textDim, fontSize: "0.72rem" }}>
+          Results stream into the <strong>Endpoints</strong> tab via WebSocket — switch tabs to watch them update.
+        </div>
       </section>
 
       {toast && (
@@ -132,11 +163,12 @@ export default function Settings() {
             bottom: 24,
             right: 24,
             padding: "0.6rem 1rem",
-            background: toast.ok ? "#16a34a" : "#dc2626",
-            color: "#fff",
-            borderRadius: 6,
-            fontSize: "0.85rem",
-            boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+            background: toast.ok ? theme.green : theme.red,
+            color: theme.bg,
+            borderRadius: 4,
+            fontSize: "0.78rem",
+            fontFamily: theme.mono,
+            fontWeight: 600,
           }}
         >
           {toast.msg}
@@ -145,3 +177,17 @@ export default function Settings() {
     </div>
   );
 }
+
+const section = (): React.CSSProperties => ({
+  margin: "0 0 0.5rem",
+  fontFamily: theme.mono,
+  fontSize: "0.78rem",
+  color: theme.text,
+  textTransform: "uppercase" as const,
+  letterSpacing: "0.04em",
+});
+const blurb = (): React.CSSProperties => ({
+  margin: "0 0 0.75rem",
+  color: theme.textDim,
+  fontSize: "0.78rem",
+});

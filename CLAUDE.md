@@ -2,7 +2,7 @@
 
 ## 1. Project overview
 
-moav-client is a local censorship-circumvention proxy client written in Go with a React/TypeScript web dashboard. It ingests a V2Ray-style subscription feed (base64 or plain text, from a URL or local file), parses each line into a typed `Endpoint`, optionally augments the pool with locally-running sidecar processes (Tor, Psiphon, dns-tunnels, etc.), probes every endpoint via TCP connect to measure latency, then exposes a SOCKS5 listener and an HTTP CONNECT listener that route outbound connections through the best live endpoint as selected by a pluggable load-balancing strategy. A routing-rule engine and a torrent-traffic blocker allow per-host or per-port decisions (proxy / direct / block) to be applied before the balancer picks an upstream. A REST + WebSocket API drives the web dashboard, which shows endpoint health, triggers on-demand probes, and lets users update config at runtime.
+moav-client is the local client for [**MoaV — Mother of all VPNs**](https://github.com/shayanb/MoaV), written in Go with a React/TypeScript dark-themed web dashboard styled after the MoaV admin panel. It ingests a multi-protocol MoaV subscription bundle (base64-encoded V2Ray-style URIs plus optional WireGuard/AmneziaWG `.conf` files), parses each line into a typed `Endpoint`, delegates the protocol cryptography to a sing-box sidecar (one SOCKS5 inbound per endpoint) plus an optional stack of additional sidecars (MasterDNS, AmneziaWG, Psiphon, TrustTunnel, Tor), probes every endpoint end-to-end through its tunnel to measure real latency, then exposes a SOCKS5 listener and an HTTP CONNECT listener that route outbound connections through the best live endpoint as selected by a pluggable load-balancing strategy. A hot-swappable routing-rule engine and a torrent-traffic blocker allow per-host or per-port decisions (proxy / direct / block) to be applied before the balancer picks an upstream. A REST + WebSocket API drives the dashboard, which shows live endpoint health and per-protocol throughput, lets the user toggle endpoints / adjust priorities (and stop/start the corresponding sidecar container via the docker socket), edit routing rules in place, view a streaming log tail, and edit `config.yaml` from the browser.
 
 ---
 
@@ -22,7 +22,9 @@ moav-client is a local censorship-circumvention proxy client written in Go with 
 | `proxy-core/singbox/` | Generates a sing-box config (1 SOCKS5 inbound + 1 protocol outbound per endpoint, plus 1 `endpoints[]` block per WireGuard endpoint) and rewrites `Endpoint.Config["socks5_addr"]` to point at the local sing-box port |
 | `proxy-core/state/` | Atomic JSON persistence of probe results to `data/state.json` |
 | `proxy-core/subscription/` | URI parsers for vless/vmess/trojan/ss/hysteria2/wireguard/tuic; base64-subscription decoder; HTTP fetcher |
-| `web-ui/src/` | React 18 dashboard (Vite + TypeScript): `App.tsx` (tabs), `EndpointTable.tsx` (REST + WebSocket live view), `ProbeButton.tsx`, `ConfigEditor.tsx` |
+| `proxy-core/dockerctl/` | Engine-API client over `/var/run/docker.sock` — used by `handleEndpointPatch` to stop/start sidecar containers when the user toggles them in the dashboard |
+| `proxy-core/logbus/` | Pub/sub log bus + level classifier (info / warn / error) + ring buffer; mirrors every `log.Printf` for the Debug tab |
+| `web-ui/src/` | React 18 dark dashboard (Vite + TypeScript) styled after the MoaV admin panel: `App.tsx` (tabs + topbar refresh), `theme.ts` (palette), `components/EndpointTable.tsx` (toggle/priority controls), `Analytics.tsx` (per-protocol stacked area + sparklines), `Plugins.tsx` (hot-swap rule editor + template catalog), `Settings.tsx`, `Debug.tsx` (filtered log tail), `ConfigEditor.tsx` (loads on-disk YAML) |
 
 ---
 

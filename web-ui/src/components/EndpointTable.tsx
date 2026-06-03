@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { theme, statusColor, statusBg } from "../theme";
 
 export interface Endpoint {
   ID: string;
@@ -15,26 +16,26 @@ export interface Endpoint {
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8088";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 
-function statusColor(status: string): string {
-  if (status === "ok") return "#16a34a";
-  if (status === "timeout" || status === "error") return "#dc2626";
-  return "#94a3b8";
-}
-
-const td: React.CSSProperties = { padding: "0.5rem 0.6rem", verticalAlign: "middle" };
+const td: React.CSSProperties = { padding: "0.5rem 0.65rem", verticalAlign: "middle", fontSize: "0.82rem" };
 const th: React.CSSProperties = {
   ...td,
   textAlign: "left",
   fontWeight: 500,
-  color: "#475569",
-  background: "#f8fafc",
+  color: theme.textDim,
+  background: theme.surface2,
+  fontFamily: theme.mono,
+  fontSize: "0.72rem",
+  letterSpacing: "0.04em",
+  textTransform: "uppercase" as const,
+  borderBottom: `1px solid ${theme.border}`,
 };
 
 interface Props {
   onHealthChange?: (healthy: number, total: number) => void;
+  refreshTick?: number;
 }
 
-export default function EndpointTable({ onHealthChange }: Props) {
+export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [editingPrio, setEditingPrio] = useState<{ id: string; value: string } | null>(null);
@@ -46,12 +47,16 @@ export default function EndpointTable({ onHealthChange }: Props) {
     onHealthChange?.(eps.filter((e) => e.Status === "ok" && e.Enabled).length, eps.length);
   };
 
+  // Initial + on refresh tick.
   useEffect(() => {
     fetch(`${API_BASE}/api/endpoints`)
       .then((r) => r.json())
       .then((data) => apply((data.endpoints ?? []) as Endpoint[]))
       .catch(() => {});
+  }, [refreshTick]);
 
+  // Persistent WS stream.
+  useEffect(() => {
     const ws = new WebSocket(`${WS_BASE}/api/ws`);
     wsRef.current = ws;
     ws.onmessage = (ev) => {
@@ -93,7 +98,7 @@ export default function EndpointTable({ onHealthChange }: Props) {
     const next = !ep.Enabled;
     if (ep.Protocol === "sidecar" && !next) {
       const ok = window.confirm(
-        `Disable ${ep.Name}?\n\nThis also stops its docker container (if the docker socket is mounted) so the protocol is fully off — not just removed from the dial pool.`
+        `Disable ${ep.Name}?\n\nThis also stops its docker container (if /var/run/docker.sock is mounted) so the protocol is fully off — not just removed from the dial pool.`
       );
       if (!ok) return;
     }
@@ -113,7 +118,7 @@ export default function EndpointTable({ onHealthChange }: Props) {
 
   return (
     <div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
             {["Name", "Protocol", "Address", "Latency", "Status", "Priority", "Enabled"].map((h) => (
@@ -126,7 +131,7 @@ export default function EndpointTable({ onHealthChange }: Props) {
         <tbody>
           {endpoints.length === 0 ? (
             <tr>
-              <td colSpan={7} style={{ ...td, color: "#94a3b8" }}>
+              <td colSpan={7} style={{ ...td, color: theme.textDim }}>
                 No endpoints loaded.
               </td>
             </tr>
@@ -135,31 +140,35 @@ export default function EndpointTable({ onHealthChange }: Props) {
               <tr
                 key={ep.ID}
                 style={{
-                  borderTop: "1px solid #e2e8f0",
-                  opacity: ep.Enabled ? 1 : 0.55,
+                  borderTop: `1px solid ${theme.border}`,
+                  opacity: ep.Enabled ? 1 : 0.5,
                 }}
               >
                 <td style={td}>
-                  {ep.Name || ep.ID}
+                  <div>{ep.Name || ep.ID}</div>
                   {ep.Protocol === "sidecar" && (
-                    <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "#94a3b8" }}>
-                      ({ep.Config?.sidecar_kind ?? "?"})
-                    </span>
+                    <div style={{ fontSize: "0.65rem", color: theme.textDim, marginTop: 2, fontFamily: theme.mono }}>
+                      {ep.Config?.sidecar_kind ?? "?"}
+                    </div>
                   )}
                 </td>
-                <td style={{ ...td, fontFamily: "monospace", fontSize: "0.8rem" }}>{ep.Protocol}</td>
-                <td style={{ ...td, fontFamily: "monospace", fontSize: "0.8rem" }}>{ep.Address}</td>
-                <td style={td}>{ep.LatencyMs >= 0 ? `${ep.LatencyMs} ms` : "—"}</td>
+                <td style={{ ...td, fontFamily: theme.mono, color: theme.blue }}>{ep.Protocol}</td>
+                <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim }}>{ep.Address}</td>
+                <td style={{ ...td, fontFamily: theme.mono }}>{ep.LatencyMs >= 0 ? `${ep.LatencyMs}ms` : "—"}</td>
                 <td style={td}>
                   <span
                     style={{
                       display: "inline-block",
-                      padding: "0.15rem 0.5rem",
+                      padding: "0.15rem 0.55rem",
                       borderRadius: 12,
-                      fontSize: "0.75rem",
+                      fontSize: "0.65rem",
                       fontWeight: 600,
-                      background: statusColor(ep.Status) + "22",
+                      fontFamily: theme.mono,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      background: statusBg(ep.Status),
                       color: statusColor(ep.Status),
+                      border: `1px solid ${statusColor(ep.Status)}44`,
                     }}
                   >
                     {ep.Status || "unknown"}
@@ -181,10 +190,10 @@ export default function EndpointTable({ onHealthChange }: Props) {
                       }}
                       style={{
                         width: 60,
-                        padding: "0.15rem 0.3rem",
-                        border: "1px solid #3b82f6",
+                        padding: "0.2rem 0.4rem",
                         borderRadius: 4,
-                        fontSize: "0.85rem",
+                        fontSize: "0.82rem",
+                        fontFamily: theme.mono,
                       }}
                     />
                   ) : (
@@ -195,13 +204,13 @@ export default function EndpointTable({ onHealthChange }: Props) {
                       style={{
                         background: "transparent",
                         border: "1px dashed transparent",
-                        padding: "0.15rem 0.45rem",
+                        padding: "0.2rem 0.5rem",
                         borderRadius: 4,
                         cursor: pendingId === ep.ID ? "wait" : "pointer",
-                        color: "#475569",
-                        fontFamily: "monospace",
+                        color: theme.text,
+                        fontFamily: theme.mono,
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#cbd5e1")}
+                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = theme.border)}
                       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "transparent")}
                     >
                       {ep.Priority}
@@ -221,10 +230,9 @@ export default function EndpointTable({ onHealthChange }: Props) {
         </tbody>
       </table>
 
-      <div style={{ marginTop: "0.75rem", fontSize: "0.72rem", color: "#94a3b8" }}>
-        Priority is used by the <code>priority</code> and <code>weighted</code> strategies (lower = picked first; weighted treats it as a sampling weight). For
-        sidecar endpoints, toggling Enabled also stops/starts the docker container if{" "}
-        <code>/var/run/docker.sock</code> is mounted.
+      <div style={{ marginTop: "0.75rem", fontSize: "0.7rem", color: theme.textDim, fontFamily: theme.mono }}>
+        Priority is used by the <code>priority</code> and <code>weighted</code> strategies. Toggling sidecar endpoints
+        also stops/starts the docker container if <code>/var/run/docker.sock</code> is mounted.
       </div>
 
       {toast && (
@@ -234,11 +242,12 @@ export default function EndpointTable({ onHealthChange }: Props) {
             bottom: 24,
             right: 24,
             padding: "0.6rem 1rem",
-            background: toast.ok ? "#16a34a" : "#dc2626",
-            color: "#fff",
-            borderRadius: 6,
-            fontSize: "0.85rem",
-            boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+            background: toast.ok ? theme.green : theme.red,
+            color: theme.bg,
+            borderRadius: 4,
+            fontSize: "0.78rem",
+            fontWeight: 600,
+            fontFamily: theme.mono,
             maxWidth: 360,
           }}
         >
@@ -265,12 +274,12 @@ function Switch({
       onClick={onChange}
       disabled={disabled}
       style={{
-        width: 38,
+        width: 36,
         height: 20,
         borderRadius: 999,
         border: "none",
         padding: 2,
-        background: checked ? "#22c55e" : "#cbd5e1",
+        background: checked ? theme.green : theme.border,
         cursor: disabled ? "wait" : "pointer",
         display: "inline-flex",
         alignItems: "center",
@@ -280,13 +289,12 @@ function Switch({
     >
       <span
         style={{
-          width: 16,
-          height: 16,
+          width: 14,
+          height: 14,
           borderRadius: "50%",
           background: "#fff",
-          transform: checked ? "translateX(18px)" : "translateX(0)",
+          transform: checked ? "translateX(16px)" : "translateX(0)",
           transition: "transform 0.15s ease",
-          boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
         }}
       />
     </button>
