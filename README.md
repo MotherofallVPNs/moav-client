@@ -76,10 +76,31 @@ than the sum.
 | TrustTunnel | ~85 MB | builds locally (placeholder) | `--profile trusttunnel` |
 | Tor | ~85 MB | ~30 MB pull (peterdavehello/tor-socks-proxy) | `--profile tor` |
 
-Core stack (always on): **~313 MB** on disk. Full stack with every sidecar:
-**~945 MB**, plus ~500 MB of build cache on first run. A fresh install pulls
-roughly 600–800 MB of base + runtime layers, most of it shared across the
-built sidecars (the golang/debian build stages are downloaded once).
+Core stack (always on): **~313 MB** of runtime images on disk. Full stack with
+every sidecar: **~945 MB** of runtime images. A full build also leaves
+**~4 GB of build cache** on disk (Go module cache, apt, compiled stages) — that
+is reclaimable any time with `docker builder prune` without touching the
+running containers.
+
+### How much will the install download? (per-GB cost)
+
+Measured as the actual network bytes received during a **cold** install
+(`docker builder prune -af` + full rebuild) on Ubuntu 24.04 / amd64 — this
+includes the Go/Node/Debian build base images, Go module + npm + apt
+downloads, the git clones (psiphon-tunnel-core, amneziawg-go), and the pulled
+runtime images:
+
+| Install | First-time download |
+|---|---|
+| **Core only** (proxy-core + web-ui + sing-box + xray) | **~190 MB** |
+| **+ all sidecars** (masterdns + amneziawg + psiphon + tor) | **+~620 MB** |
+| **Full stack** | **~810 MB total** |
+
+So budget **~0.2 GB for a core install** and **~0.8 GB for everything**. The
+on-disk footprint is larger than the download because layers arrive
+compressed and the Go module cache expands locally. Updates (`moav-client
+update`) re-download only changed layers — typically tens of MB, not the full
+amount.
 
 RAM: the core stack idles around ~150 MB; each sidecar adds 20–80 MB. 1 GB is
 comfortable for core-only; 2 GB if you enable several sidecars.
