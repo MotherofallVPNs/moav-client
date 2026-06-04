@@ -3,6 +3,7 @@ package prober
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -235,13 +236,30 @@ func socksConnect(proxyAddr, target string, timeout time.Duration) (int64, strin
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	conn, derr := cdialer.DialContext(ctx, "tcp", target)
-	elapsed := time.Since(start).Milliseconds()
 	if derr != nil {
+		elapsed := time.Since(start).Milliseconds()
 		if isTimeout(derr) {
 			return elapsed, "timeout"
 		}
 		return elapsed, "error"
 	}
-	conn.Close()
-	return elapsed, "ok"
+	defer conn.Close()
+	// A granted CONNECT alone doesn't prove the tunnel works: xray's xhttp
+	// outbound grants instantly and only dials upstream on first byte, so a
+	// dead tunnel still probes ~1ms "ok" and then poisons the latency
+	// balancer. Validate with a real TLS handshake to the target when it's
+	// a :443 host (the default 1.1.1.1:443 is) — this exercises the full
+	// path end-to-end for both sing-box and xray.
+	if _, port, perr := net.SplitHostPort(target); perr == nil && port == "443" {
+		_ = conn.SetDeadline(time.Now().Add(timeout))
+		tconn := tls.Client(conn, &tls.Config{InsecureSkipVerify: true})
+		if herr := tconn.Handshake(); herr != nil {
+			elapsed := time.Since(start).Milliseconds()
+			if isTimeout(herr) {
+				return elapsed, "timeout"
+			}
+			return elapsed, "error"
+		}
+	}
+	return time.Since(start).Milliseconds(), "ok"
 }

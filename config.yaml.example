@@ -2,14 +2,21 @@ proxy:
   socks5_port: 1080
   http_port: 8080
   api_port: 8088
+  auth:
+    username: ""        # empty = no SOCKS5 auth (loopback default is safe)
+    password: ""
 
 subscription:
-  # Paste a V2Ray subscription base64 string or point to a file
+  # Single-source legacy form. Paste a V2Ray subscription (base64 or plain)
+  # in url, or point file at a local subscription.txt. For multiple MoaV
+  # servers, prefer importing bundles from the dashboard (Sources → drop .zip),
+  # which appends to subscription.sources.
   url: ""
   file: ""
+  wireguard_files: []   # wg-quick / AmneziaWG .conf paths, one endpoint each
 
 load_balancing:
-  strategy: latency   # latency | priority | weighted
+  strategy: latency     # latency | priority | weighted
   probe_on_start: true
 
 plugins:
@@ -22,15 +29,63 @@ plugins:
     - match: {type: ip_cidr, value: 10.0.0.0/8}
       action: direct
 
+# sing-box performs the actual protocol cryptography (VLESS/Reality/Trojan/
+# Shadowsocks/Hysteria2/WireGuard). It MUST be enabled or no endpoint can be
+# dialed. dial_host is the docker-compose service name; set it to 127.0.0.1
+# for a host-mode (non-docker) run.
+singbox:
+  enabled: true
+  listen_host: 0.0.0.0
+  dial_host: singbox
+  base_port: 10800
+  output_path: data/singbox.json
+
+# Xray handles transports sing-box can't (xhttp / splithttp) plus MTProxy.
+# Harmless when no such endpoints exist.
+xray:
+  enabled: true
+  listen_host: 0.0.0.0
+  dial_host: xray
+  base_port: 11800
+  output_path: data/xray.json
+
+# Optional SNI-spoofing sidecar. Off by default; enable + set default_fake_sni
+# to route TLS endpoints through a decoy ClientHello.
+sni_spoof:
+  enabled: false
+  listen_host: 0.0.0.0
+  dial_host: sni-spoof
+  base_port: 12800
+  output_path: data/sni-spoof.json
+  default_fake_sni: ""
+  default_utls: chrome
+
+# Optional protocol sidecars. Each needs its own config before it can tunnel,
+# so all default to off — enable via install flags (--sidecars) or the
+# dashboard. Valid kinds: masterdns, amneziawg, psiphon, trusttunnel, tor.
 sidecars:
   masterdns:
-    enabled: true
+    enabled: false
     priority: 1
-  dnstt:
+    config:
+      domain: ""        # m.<your-bundle>.<tld>
+      method: "5"       # 5 = AES-256-GCM
+      key: ""           # encryption key (hex)
+  amneziawg:
     enabled: false
-  slipstream:
-    enabled: false
+    priority: 5
+    config:
+      source_path: ""   # path to AmneziaWG .conf
   psiphon:
     enabled: false
+    priority: 5
+    config:
+      config_json: ""   # verbatim Psiphon config blob
+  trusttunnel:
+    enabled: false
+    priority: 5
+    config:
+      source_path: ""   # path to client.toml (needs upstream binary mounted)
   tor:
     enabled: false
+    priority: 5

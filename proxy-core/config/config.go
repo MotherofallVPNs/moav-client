@@ -166,15 +166,20 @@ func Defaults() *Config {
 			Strategy:     "latency",
 			ProbeOnStart: true,
 		},
+		// sing-box does all protocol cryptography; without it the client can't
+		// dial any endpoint, so it's on by default. dial_host "singbox" is the
+		// compose service name — host-mode (non-docker) runs must override it.
 		Singbox: SingboxConfig{
-			Enabled:    false,
+			Enabled:    true,
 			ListenHost: "0.0.0.0",
 			DialHost:   "singbox",
 			BasePort:   10800,
 			OutputPath: "data/singbox.json",
 		},
+		// Xray covers transports sing-box can't speak (xhttp/splithttp). Idle
+		// when no such endpoints exist, so on by default is harmless.
 		Xray: XrayConfig{
-			Enabled:    false,
+			Enabled:    true,
 			ListenHost: "0.0.0.0",
 			DialHost:   "xray",
 			BasePort:   11800,

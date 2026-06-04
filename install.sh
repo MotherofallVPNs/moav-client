@@ -144,6 +144,9 @@ need_cmd() {
 
 need_cmd git || { warn "install git first: https://git-scm.com/downloads"; exit 1; }
 need_cmd curl || { warn "install curl first"; exit 1; }
+# python3 drives the config.yaml sidecar-toggle step; without it the install
+# aborts mid-config under set -e.
+need_cmd python3 || { warn "install python3 first"; exit 1; }
 need_cmd docker || {
   err "docker not found"
   warn "install Docker Desktop or the docker engine: https://docs.docker.com/get-docker/"
