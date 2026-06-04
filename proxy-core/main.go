@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"flag"
 	"log"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/balancer"
 	"github.com/ibeezhan/moav-client/proxy-core/cmd"
 	"github.com/ibeezhan/moav-client/proxy-core/config"
+	"github.com/ibeezhan/moav-client/proxy-core/dockerctl"
 	"github.com/ibeezhan/moav-client/proxy-core/logbus"
 	"github.com/ibeezhan/moav-client/proxy-core/plugins"
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
@@ -112,6 +114,15 @@ func main() {
 			}
 			seen[ep.RawURI] = struct{}{}
 			ep.Source = source
+			// Namespace the ID by source so endpoints from two configs
+			// pointing at the same moav server (same protocol:host:port)
+			// don't collide. Sidecar IDs are already "sidecar:<kind>"
+			// and unique by construction — skip those. "default" is the
+			// legacy/un-named source so we leave it bare for backcompat
+			// with persisted state.
+			if source != "" && source != "default" && source != "sidecars" {
+				ep.ID = source + "/" + ep.ID
+			}
 			// Restore saved latency/status if available.
 			if saved, ok := stateByURI[ep.RawURI]; ok {
 				ep.LatencyMs = saved.LatencyMs
@@ -267,14 +278,17 @@ func main() {
 			if outPath == "" {
 				outPath = "data/singbox.json"
 			}
-			tmp := outPath + ".tmp"
-			if err := os.WriteFile(tmp, jsonBytes, 0o644); err != nil {
-				log.Printf("singbox: write %s: %v", tmp, err)
-			} else if err := os.Rename(tmp, outPath); err != nil {
-				log.Printf("singbox: rename %s -> %s: %v", tmp, outPath, err)
+			changed, werr := writeConfigIfChanged(outPath, jsonBytes)
+			if werr != nil {
+				log.Printf("singbox: %v", werr)
 			} else {
-				log.Printf("singbox: wrote %d-endpoint config to %s (dial via %s)", len(endpoints), outPath, cfg.Singbox.DialHost)
+				log.Printf("singbox: wrote %d-endpoint config to %s (dial via %s, changed=%v)", len(endpoints), outPath, cfg.Singbox.DialHost, changed)
 				endpoints = updatedEps
+				// Always cycle sing-box on proxy-core startup: even when
+				// the on-disk file is unchanged, sing-box may have been
+				// launched against an older revision of it before this
+				// proxy-core run. Cheap (~2 s) and idempotent.
+				maybeRestartContainer("singbox")
 			}
 		}
 	}
@@ -298,12 +312,12 @@ func main() {
 			if outPath == "" {
 				outPath = "data/xray.json"
 			}
-			tmp := outPath + ".tmp"
-			if err := os.WriteFile(tmp, jsonBytes, 0o644); err != nil {
-				log.Printf("xray: write %s: %v", tmp, err)
-			} else if err := os.Rename(tmp, outPath); err != nil {
-				log.Printf("xray: rename %s -> %s: %v", tmp, outPath, err)
+			changed, werr := writeConfigIfChanged(outPath, jsonBytes)
+			if werr != nil {
+				log.Printf("xray: %v", werr)
 			} else {
+				_ = changed
+				maybeRestartContainer("xray")
 				count := 0
 				for _, ep := range updatedEps {
 					if strings.HasPrefix(ep.Config["socks5_addr"], cfg.Xray.DialHost+":") {
@@ -434,4 +448,52 @@ func main() {
 			log.Fatalf("fatal: %v", err)
 		}
 	}
+}
+
+// writeConfigIfChanged atomically writes content to path via .tmp + rename.
+// Returns (changed, err) where `changed` is true iff the new bytes differ
+// from what was already on disk — callers use this to decide whether to
+// kick a downstream container (sing-box / xray) into restart so it reloads.
+func writeConfigIfChanged(path string, content []byte) (bool, error) {
+	newHash := sha256.Sum256(content)
+	var oldHash [32]byte
+	if old, err := os.ReadFile(path); err == nil {
+		oldHash = sha256.Sum256(old)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, content, 0o644); err != nil {
+		return false, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return false, err
+	}
+	return oldHash != newHash, nil
+}
+
+// maybeRestartContainer issues a docker restart against the named
+// docker-compose service in a background goroutine — no-op if the docker
+// socket isn't mounted (dev / standalone use). Used to hot-cycle sing-box
+// / xray after their config files are regenerated, otherwise they keep
+// serving the listener set they loaded at startup and any new endpoints
+// added during this proxy-core run dial against ports nobody is bound to.
+func maybeRestartContainer(service string) {
+	if !dockerctl.Available() {
+		log.Printf("%s: config changed but docker socket unmounted — restart %s manually to pick up new endpoints", service, service)
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		c := dockerctl.New()
+		id, err := c.FindContainerByService(ctx, service)
+		if err != nil || id == "" {
+			log.Printf("%s: couldn't find container to restart: %v", service, err)
+			return
+		}
+		if err := c.Restart(ctx, id); err != nil {
+			log.Printf("%s: restart failed: %v", service, err)
+			return
+		}
+		log.Printf("%s: restarted to reload regenerated config", service)
+	}()
 }

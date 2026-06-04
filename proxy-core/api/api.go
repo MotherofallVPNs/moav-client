@@ -247,8 +247,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // through localhost:1080 sees), and best-effort country annotations for
 // each. Both lookups are cached for ~5 min.
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	directIP, directCC := observedDirectIP()
-	proxyIP, proxyCC := observedProxyIP(s.balancer)
+	// IP lookups are kicked off in the background so this handler ALWAYS
+	// returns instantly. First poll after start returns empty IPs; the
+	// dashboard footer just shows "…" until the next refresh tick.
+	// Without this, a hung SOCKS5 lookup would hold the cache mutex for up
+	// to 8 s, queue subsequent /api/version requests behind it, and the
+	// browser would surface that as ERR_EMPTY_RESPONSE when it gave up.
+	directIPCache.MaybeRefresh(observedDirectIPRefresh)
+	proxyIPCache.MaybeRefresh(observedProxyIPRefresh)
+	directIP, directCC := directIPCache.Read()
+	proxyIP, proxyCC := proxyIPCache.Read()
 	writeJSON(w, map[string]interface{}{
 		"version":         cmd.Version,
 		"commit":          buildCommit,
@@ -269,35 +277,30 @@ var buildCommit = "dev"
 // startedAt records process start so /api/version can report uptime.
 var startedAt = time.Now()
 
-// observedDirectIP returns (ip, country) for the install host's WAN egress —
-// i.e. the IP someone reaching out to proxy-core directly would see. Cached
-// for ~5 min. Used in the footer as "your install's public IP".
-func observedDirectIP() (string, string) {
-	return cachedIPLookup(&directIPCache, &directIPMu, func() (string, string) {
-		c := &http.Client{Timeout: 4 * time.Second}
-		return lookupIPCountry(c, "")
-	})
+// observedDirectIPRefresh fetches the install host's WAN egress IP — i.e.
+// what someone reaching proxy-core directly would see. Used by the footer
+// "your install's public IP".
+func observedDirectIPRefresh() (string, string) {
+	c := &http.Client{Timeout: 4 * time.Second}
+	return lookupIPCountry(c, "")
 }
 
-// observedProxyIP returns (ip, country) as seen via the balancer — the IP
-// world sees when traffic is routed through the SOCKS5 listener. We dial
-// the local SOCKS5 on 127.0.0.1:1080 so the lookup goes through whatever
-// endpoint the balancer would pick right now.
-func observedProxyIP(b *balancer.Balancer) (string, string) {
-	return cachedIPLookup(&proxyIPCache, &proxyIPMu, func() (string, string) {
-		dialer, err := proxy.SOCKS5("tcp", "127.0.0.1:1080", nil, &net.Dialer{Timeout: 6 * time.Second})
-		if err != nil {
-			return "", ""
-		}
-		c := &http.Client{
-			Timeout: 8 * time.Second,
-			Transport: &http.Transport{
-				Dial: dialer.Dial,
-			},
-		}
-		_ = b // reserved for future per-endpoint pinning
-		return lookupIPCountry(c, "")
-	})
+// observedProxyIPRefresh dials the local SOCKS5 on 127.0.0.1:1080 so the
+// lookup goes through whatever endpoint the balancer would pick right now.
+// The dial / read can take up to ~14 s when the chosen endpoint stalls — we
+// only ever call this from a background goroutine via ipCacheEntry.
+func observedProxyIPRefresh() (string, string) {
+	dialer, err := proxy.SOCKS5("tcp", "127.0.0.1:1080", nil, &net.Dialer{Timeout: 6 * time.Second})
+	if err != nil {
+		return "", ""
+	}
+	c := &http.Client{
+		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			Dial: dialer.Dial,
+		},
+	}
+	return lookupIPCountry(c, "")
 }
 
 // lookupIPCountry calls Cloudflare's free trace endpoint
@@ -332,32 +335,54 @@ func lookupIPCountry(c *http.Client, _ string) (string, string) {
 	return ip, strings.ToUpper(cc)
 }
 
+// ipCacheEntry holds a (ip, country) tuple and dispatches background
+// refresh work without blocking readers. Readers take RLock; the refresh
+// goroutine takes the Lock only at the start (to set `refreshing`) and at
+// the end (to write the new value).
 type ipCacheEntry struct {
-	ip      string
-	country string
-	at      time.Time
+	mu         sync.RWMutex
+	ip         string
+	country    string
+	at         time.Time
+	refreshing bool
 }
 
-func cachedIPLookup(cache *ipCacheEntry, mu *sync.Mutex, refresh func() (string, string)) (string, string) {
-	mu.Lock()
-	defer mu.Unlock()
-	if time.Since(cache.at) < 5*time.Minute && cache.ip != "" {
-		return cache.ip, cache.country
+// Read returns the last cached value, or ("", "") if never populated.
+// Never blocks on the network.
+func (c *ipCacheEntry) Read() (string, string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ip, c.country
+}
+
+// MaybeRefresh kicks off a background refresh if the cache is stale and
+// nothing else is already refreshing it. Returns immediately. The next
+// Read after the goroutine completes will see the new value.
+func (c *ipCacheEntry) MaybeRefresh(refresh func() (string, string)) {
+	c.mu.Lock()
+	if c.refreshing || (time.Since(c.at) < 5*time.Minute && c.ip != "") {
+		c.mu.Unlock()
+		return
 	}
-	ip, cc := refresh()
-	if ip != "" {
-		cache.ip = ip
-		cache.country = cc
-		cache.at = time.Now()
-	}
-	return cache.ip, cache.country
+	c.refreshing = true
+	c.mu.Unlock()
+
+	go func() {
+		ip, cc := refresh()
+		c.mu.Lock()
+		if ip != "" {
+			c.ip = ip
+			c.country = cc
+			c.at = time.Now()
+		}
+		c.refreshing = false
+		c.mu.Unlock()
+	}()
 }
 
 var (
 	directIPCache ipCacheEntry
-	directIPMu    sync.Mutex
 	proxyIPCache  ipCacheEntry
-	proxyIPMu     sync.Mutex
 )
 
 // handleStats returns per-endpoint counters + active strategy meta. Joins

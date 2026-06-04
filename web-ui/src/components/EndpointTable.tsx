@@ -168,12 +168,13 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
                       fontFamily: theme.mono,
                       letterSpacing: "0.05em",
                       textTransform: "uppercase",
-                      background: statusBg(ep.Status),
-                      color: statusColor(ep.Status),
-                      border: `1px solid ${statusColor(ep.Status)}44`,
+                      background: ep.Enabled ? statusBg(ep.Status) : "rgba(110, 118, 129, 0.15)",
+                      color: ep.Enabled ? statusColor(ep.Status) : theme.textDim,
+                      border: `1px solid ${ep.Enabled ? statusColor(ep.Status) : theme.textDim}44`,
                     }}
+                    title={ep.Enabled ? "" : "endpoint is disabled — not probed"}
                   >
-                    {ep.Status || "unknown"}
+                    {ep.Enabled ? (ep.Status || "unknown") : "disabled"}
                   </span>
                 </td>
                 <td style={td}>

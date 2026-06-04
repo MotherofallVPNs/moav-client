@@ -3,6 +3,7 @@ package prober
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -45,7 +46,17 @@ func (p *Prober) ProbeAll(endpoints []subscription.Endpoint) []subscription.Endp
 	results := make([]subscription.Endpoint, len(endpoints))
 
 	var wg sync.WaitGroup
+	var disabledCount int
 	for i, ep := range endpoints {
+		// Disabled endpoints are passthrough: copy through unchanged so
+		// the balancer pool slot stays present but we don't probe them.
+		// Otherwise they'd skew the cycle's unhealthy count and waste
+		// SOCKS5 dials against ports the user intentionally turned off.
+		if !ep.Enabled {
+			results[i] = ep
+			disabledCount++
+			continue
+		}
 		wg.Add(1)
 		go func(idx int, e subscription.Endpoint) {
 			defer wg.Done()
@@ -58,12 +69,17 @@ func (p *Prober) ProbeAll(endpoints []subscription.Endpoint) []subscription.Endp
 
 	// Emit a roll-up so the Debug tab has a single line per cycle showing
 	// who's down. We compose the message such that classifyLevel in logbus
-	// flags it warn when there are failures.
-	var down, ok []string
+	// flags it warn when there are failures. Disabled endpoints are
+	// excluded from both numerator and denominator — they're intentionally
+	// off, not unhealthy.
+	var down []string
+	probedCount := 0
 	for _, ep := range results {
+		if !ep.Enabled {
+			continue
+		}
+		probedCount++
 		switch ep.Status {
-		case "ok":
-			ok = append(ok, ep.Name)
 		case "error", "timeout":
 			label := ep.Name
 			if label == "" {
@@ -72,11 +88,15 @@ func (p *Prober) ProbeAll(endpoints []subscription.Endpoint) []subscription.Endp
 			down = append(down, label)
 		}
 	}
+	suffix := ""
+	if disabledCount > 0 {
+		suffix = fmt.Sprintf(" (%d disabled)", disabledCount)
+	}
 	if len(down) > 0 {
-		log.Printf("probe cycle: WARN %d/%d endpoints unhealthy: %s",
-			len(down), len(results), strings.Join(down, ", "))
-	} else if len(results) > 0 {
-		log.Printf("probe cycle: all %d endpoints ok", len(results))
+		log.Printf("probe cycle: WARN %d/%d endpoints unhealthy: %s%s",
+			len(down), probedCount, strings.Join(down, ", "), suffix)
+	} else if probedCount > 0 {
+		log.Printf("probe cycle: all %d endpoints ok%s", probedCount, suffix)
 	}
 
 	return results
