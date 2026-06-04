@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -39,6 +40,9 @@ func ParseAndRun(globalConfig *string) string {
 	case "fetch-sub":
 		runFetchSub()
 		os.Exit(0)
+	case "healthcheck":
+		runHealthcheck()
+		os.Exit(0)
 	case "help", "--help", "-h":
 		printUsage()
 		os.Exit(0)
@@ -47,6 +51,29 @@ func ParseAndRun(globalConfig *string) string {
 		return "serve"
 	}
 	return "serve"
+}
+
+// runHealthcheck is the container healthcheck: the proxy-core image is built
+// FROM scratch, so there's no wget/curl/sh to probe the API — the binary
+// checks its own /api/healthz and exits 0 (healthy) or 1. Port defaults to
+// 8088; override with MOAV_API_PORT if proxy.api_port is customized.
+func runHealthcheck() {
+	port := "8088"
+	if v := os.Getenv("MOAV_API_PORT"); v != "" {
+		port = v
+	}
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/api/healthz")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "healthcheck: status", resp.StatusCode)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 func printUsage() {

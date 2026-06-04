@@ -33,7 +33,8 @@ services:
       - moav-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8088/api/healthz"]
+      # proxy-core is FROM scratch (no wget/sh) — the binary self-checks.
+      test: ["CMD", "/proxy-core", "healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -104,7 +105,9 @@ services:
     environment:
       - VITE_API_URL=http://proxy-core:8088
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      # 127.0.0.1, not localhost — localhost resolves to ::1 in the container
+      # but nginx listens IPv4-only, so localhost gives connection-refused.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
       interval: 30s
       timeout: 5s
       retries: 3
