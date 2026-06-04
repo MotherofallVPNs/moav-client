@@ -416,6 +416,8 @@ func main() {
 		})
 	}
 	eng := plugins.NewEngine(engineRules)
+	eng.SetBlockDirect(cfg.Plugins.BlockDirect)
+	b.SetBlockDirect(cfg.Plugins.BlockDirect)
 	tb := &plugins.TorrentBlocker{Enabled: cfg.Plugins.TorrentBlock}
 
 	proxyServer := proxy.NewServer(cfg.Proxy.SOCKS5Port, cfg.Proxy.HTTPPort, b, eng, tb)

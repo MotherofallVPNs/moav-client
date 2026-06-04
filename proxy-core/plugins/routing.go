@@ -3,11 +3,17 @@ package plugins
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+// geoipWarned tracks which country codes we've already warned about a missing
+// list file for, so the warning fires once per cc instead of per connection.
+var geoipWarned sync.Map
 
 // matchExpr evaluates a single MatchExpr against connection attributes.
 // It is the shared matching logic used by both Engine and Router.
@@ -87,7 +93,13 @@ func matchGeoIP(host, cc string) bool {
 	path := fmt.Sprintf("geoip/%s.txt", strings.ToLower(cc))
 	f, err := os.Open(path)
 	if err != nil {
-		// File absent → no match; not an error condition.
+		// File absent → the rule can't match, so it's silently inert. For a
+		// BLOCK rule that's a fail-open leak (the operator thinks a region is
+		// blocked but traffic flows). We can't safely fail closed for every
+		// destination, so warn loudly once per cc to surface the misconfig.
+		if _, seen := geoipWarned.LoadOrStore(strings.ToLower(cc), true); !seen {
+			log.Printf("plugins: WARN geoip list %q not found — rules matching geoip:%s are INERT (no block/route applied). Populate %s.", path, cc, path)
+		}
 		return false
 	}
 	defer f.Close()

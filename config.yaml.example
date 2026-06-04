@@ -21,6 +21,11 @@ load_balancing:
 
 plugins:
   torrent_block: true
+  # Kill-switch: when true, anything that would go direct (a `direct` rule OR
+  # the balancer's all-endpoints-failed fallback) is dropped instead, so the
+  # host never makes an unproxied connection. Leave false to allow direct
+  # fallback (e.g. LAN-direct rules) when proxies are down.
+  block_direct: false
   routing_rules:
     - match: {type: geoip, value: ir}
       action: proxy

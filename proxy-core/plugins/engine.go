@@ -69,6 +69,16 @@ type Rule struct {
 type Engine struct {
 	mu    sync.RWMutex
 	rules []Rule
+	// blockDirect, when set, turns every DecisionDirect into DecisionBlock —
+	// a kill-switch so nothing ever leaves the host unproxied.
+	blockDirect bool
+}
+
+// SetBlockDirect toggles the no-direct kill-switch.
+func (e *Engine) SetBlockDirect(v bool) {
+	e.mu.Lock()
+	e.blockDirect = v
+	e.mu.Unlock()
 }
 
 // NewEngine returns an Engine with the given rules. Rules without IDs are
@@ -117,6 +127,9 @@ func (e *Engine) Evaluate(host string, port int, protocolHint string) Decision {
 			continue
 		}
 		if matchExpr(r.Match, host, port, protocolHint) {
+			if r.Action == DecisionDirect && e.blockDirect {
+				return DecisionBlock
+			}
 			return r.Action
 		}
 	}

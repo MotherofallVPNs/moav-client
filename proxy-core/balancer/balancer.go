@@ -33,11 +33,22 @@ type Balancer struct {
 	strategy  Strategy
 	stats     *Stats
 	flows     *Flows
+	// blockDirect, when set, makes DialContext refuse the direct fallback
+	// when every endpoint fails — so a downed proxy pool can't leak the
+	// real IP. The caller closes the connection instead.
+	blockDirect bool
 }
 
 // New creates a Balancer with the given strategy.
 func New(strategy Strategy) *Balancer {
 	return &Balancer{strategy: strategy, stats: NewStats(), flows: NewFlows(200)}
+}
+
+// SetBlockDirect toggles the no-direct-fallback kill-switch.
+func (b *Balancer) SetBlockDirect(v bool) {
+	b.mu.Lock()
+	b.blockDirect = v
+	b.mu.Unlock()
 }
 
 // Stats exposes the live counters for external observers (e.g. /api/stats).
@@ -171,6 +182,15 @@ func (b *Balancer) DialContext(network, addr string) (net.Conn, error) {
 		b.stats.RecordFailover(ep.ID)
 		tried[ep.ID] = struct{}{}
 		log.Printf("balancer: dial through %s failed (%v); trying next endpoint", ep.ID, dialErr)
+	}
+
+	b.mu.RLock()
+	blockDirect := b.blockDirect
+	b.mu.RUnlock()
+	if blockDirect {
+		log.Printf("balancer: all candidates failed and block_direct is set — refusing direct dial to %s", addr)
+		b.flows.Begin("", addr, "", "blocked-direct")
+		return nil, fmt.Errorf("all endpoints failed; direct dial blocked by block_direct")
 	}
 
 	log.Printf("balancer: all candidates failed, dialing %s directly", addr)

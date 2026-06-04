@@ -135,6 +135,11 @@ type RoutingRuleConfig struct {
 
 type PluginsConfig struct {
 	TorrentBlock bool                `yaml:"torrent_block"`
+	// BlockDirect is a kill-switch: when true, any connection that would go
+	// direct (a `direct` rule, or the balancer's all-endpoints-failed
+	// fallback) is dropped instead, so nothing ever leaves the host
+	// unproxied. Default false (preserves direct fallback).
+	BlockDirect  bool                `yaml:"block_direct"`
 	RoutingRules []RoutingRuleConfig `yaml:"routing_rules"`
 }
 

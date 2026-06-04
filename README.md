@@ -222,6 +222,16 @@ First-match-wins rule chain. Both `config.yaml` and the dashboard Plugins tab fe
 Match types: `domain`, `domain_suffix`, `domain_keyword`, `ip_cidr`, `geoip`, `port`, `protocol`.
 Actions: `proxy` (default — go through the balancer), `direct` (bypass), `block` (drop).
 
+### Block direct (kill-switch)
+
+`plugins.block_direct: true` is a leak kill-switch: any connection that would
+otherwise go **direct** is dropped instead. That covers both a `direct`
+routing rule *and* the balancer's last-resort fallback when every endpoint is
+down — so the host never makes an unproxied connection that would expose its
+real IP. Default `false` (direct fallback allowed). Turn it on when "proxy or
+nothing" is a hard requirement; note it will also break intentional
+`direct` rules like `lan-direct`.
+
 Curated templates ship with the binary and surface in the dashboard's `+ from template…` picker — all rules land disabled so you can review before enabling:
 
 - `lan-direct` — direct dial for RFC1918 / loopback / link-local CIDRs (practically required when SOCKS5 is set system-wide)
@@ -234,7 +244,25 @@ Curated templates ship with the binary and surface in the dashboard's `+ from te
 
 ### GeoIP
 
-`matchGeoIP` reads `geoip/<cc>.txt` (one CIDR per line). For production use replace with `github.com/oschwald/maxminddb-golang` against a GeoLite2 db.
+`geoip:<cc>` rules match a destination IP against the CIDRs in `geoip/<cc>.txt`
+(one CIDR per line). The `geoip/` dir is bind-mounted read-only into proxy-core
+at `/app/geoip`, so you edit lists without rebuilding.
+
+Two things to know — both matter for `block` rules:
+
+- **IP-only.** The match needs a parseable destination IP. A hostname target
+  (the common `socks5h://` case) is *not* resolved here, so a `geoip:` rule
+  won't catch it — it applies to IP-literal destinations. Verified: a
+  `geoip:<cc> → block` rule drops a connection to an in-range IP at the
+  decision stage, before any dial (no proxy dial, no direct dial, no DNS —
+  the destination never appears in `/api/flows`).
+- **Missing list = inert + WARN.** If `geoip/<cc>.txt` doesn't exist, the rule
+  can't match and proxy-core logs a one-time `WARN … rules matching geoip:<cc>
+  are INERT`. A `block` rule against a missing list will **not** block, so
+  watch for that warning. Populate the file.
+
+For full country coverage, drop in CIDR exports from a GeoLite2 / RIR dataset
+instead of the hand-maintained stub.
 
 ---
 

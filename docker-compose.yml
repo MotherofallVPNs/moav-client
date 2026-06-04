@@ -19,6 +19,9 @@ services:
     volumes:
       - ./data:/app/data
       - ./config.yaml:/app/config.yaml
+      # geoip CIDR lists for `geoip:` routing rules. Mounted (not baked into
+      # the scratch image) so operators can edit lists without a rebuild.
+      - ./geoip:/app/geoip:ro
       # .env is read by docker-compose from the host and written by the
       # dashboard's Network exposure setting from inside proxy-core. Mount
       # the file (created by install.sh if absent) so both sides see the
