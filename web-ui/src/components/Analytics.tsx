@@ -220,6 +220,8 @@ export default function Analytics({ refreshTick }: Props) {
     type Bucket = {
       label: string;        // chart-legend label ("psiphon", "vless", ...)
       endpointName: string; // representative ep.Name for the card header
+      repBytes: number;     // traffic of the current representative (pick the max)
+      endpointCount: number; // distinct endpoints with traffic in this bucket
       dials: number;
       errors: number;
       bytesUp: number;
@@ -233,7 +235,9 @@ export default function Analytics({ refreshTick }: Props) {
       if (!b) {
         b = {
           label,
-          endpointName: displayEndpointName(row.name, row.id),
+          endpointName: "",
+          repBytes: -1,
+          endpointCount: 0,
           dials: 0,
           errors: 0,
           bytesUp: 0,
@@ -242,6 +246,16 @@ export default function Analytics({ refreshTick }: Props) {
         };
         map.set(label, b);
       }
+      // Representative name = the endpoint carrying the most traffic in this
+      // bucket. Several endpoints can share a protocol (Reality + XHTTP + CDN
+      // are all "vless"); picking by max bytes keeps the card title stable and
+      // pointing at the dominant endpoint instead of flipping with row order.
+      const rowBytes = row.bytes_up + row.bytes_down;
+      if (rowBytes > b.repBytes) {
+        b.repBytes = rowBytes;
+        b.endpointName = displayEndpointName(row.name, row.id);
+      }
+      if (rowBytes > 0) b.endpointCount++;
       b.dials += row.dials;
       b.errors += row.dial_errors;
       b.bytesUp += row.bytes_up;
@@ -345,6 +359,11 @@ export default function Analytics({ refreshTick }: Props) {
                         }}
                       >
                         {b.endpointName}
+                        {b.endpointCount > 1 && (
+                          <span style={{ color: theme.textDim, fontWeight: 400 }}>
+                            {" "}+{b.endpointCount - 1} more
+                          </span>
+                        )}
                       </div>
                       <div
                         style={{
