@@ -135,14 +135,14 @@ func (p *Prober) ProbeOne(ep subscription.Endpoint) subscription.Endpoint {
 	// unhealthy, not just that it is. classifyLevel flags status=error/timeout
 	// probe lines as warn so they surface above the info stream.
 	if updated.Status == "ok" {
-		log.Printf("probe %s via %s: status=ok latency=%dms", ep.ID, probedAddr, updated.LatencyMs)
+		log.Printf("probe %s via %s: status=ok latency=%dms", ep.Label(), probedAddr, updated.LatencyMs)
 	} else {
 		reason := "unknown"
 		if perr != nil {
 			reason = perr.Error()
 		}
 		log.Printf("probe %s via %s: status=%s latency=%dms — %s",
-			ep.ID, probedAddr, updated.Status, updated.LatencyMs, reason)
+			ep.Label(), probedAddr, updated.Status, updated.LatencyMs, reason)
 	}
 	return updated
 }

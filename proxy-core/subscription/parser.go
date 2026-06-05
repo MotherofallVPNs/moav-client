@@ -25,6 +25,18 @@ type Endpoint struct {
 	Status    string // unknown, ok, timeout, error
 }
 
+// Label is a human-readable identifier for logs: the friendly Name (e.g.
+// "MoaV-XHTTP-beezhantest2") plus the ID for full detail. Several endpoints
+// can share a protocol (Reality/CDN/XHTTP are all vless), so the bare ID is
+// ambiguous — the Name disambiguates. Falls back to the ID alone when there's
+// no name (e.g. synthetic sidecar endpoints).
+func (e Endpoint) Label() string {
+	if e.Name != "" {
+		return e.Name + " (" + e.ID + ")"
+	}
+	return e.ID
+}
+
 // ParseSubscription decodes a base64-encoded subscription blob and returns
 // all parseable endpoints. Lines that fail to parse are silently skipped.
 func ParseSubscription(raw string) ([]Endpoint, error) {

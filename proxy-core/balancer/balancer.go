@@ -173,7 +173,7 @@ func (b *Balancer) DialContext(network, addr string) (net.Conn, error) {
 		b.stats.RecordDial(ep.ID, dialErr)
 		if dialErr == nil {
 			if attempt > 0 {
-				log.Printf("balancer: dial %s via %s succeeded after %d failover(s)", addr, ep.ID, attempt)
+				log.Printf("balancer: dial %s via %s succeeded after %d failover(s)", addr, ep.Label(), attempt)
 			}
 			fl := b.flows.Begin("", addr, ep.ID, ep.Protocol)
 			return &countingConn{Conn: conn, id: ep.ID, stats: b.stats, flow: fl}, nil
@@ -181,7 +181,7 @@ func (b *Balancer) DialContext(network, addr string) (net.Conn, error) {
 		b.markError(ep.ID)
 		b.stats.RecordFailover(ep.ID)
 		tried[ep.ID] = struct{}{}
-		log.Printf("balancer: dial through %s failed (%v); trying next endpoint", ep.ID, dialErr)
+		log.Printf("balancer: dial through %s failed (%v); trying next endpoint", ep.Label(), dialErr)
 	}
 
 	b.mu.RLock()
