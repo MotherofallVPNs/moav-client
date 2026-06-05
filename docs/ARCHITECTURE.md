@@ -1,6 +1,9 @@
-# moav-client — Internal Architecture Notes
+# moav-client — Architecture
 
-Deep technical reference for agents doing integration, debugging, or extension work.
+Technical reference for the proxy-core internals: the sing-box/xray dialer
+bridge, balancer + failover, the tunnel-aware prober, sidecar config
+generation, and docker control. Useful for integration, debugging, or
+extending the client.
 
 ---
 

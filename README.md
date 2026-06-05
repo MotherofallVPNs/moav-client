@@ -6,43 +6,30 @@ English | **[فارسی](README-fa.md)**
 
 A client for **[MoaV — Mother of all VPNs](https://github.com/shayanb/MoaV)** servers. It ingests a multi-protocol subscription bundle, delegates real protocol cryptography to sing-box plus a stack of optional sidecars (MasterDNS, AmneziaWG, Psiphon, TrustTunnel, Tor), latency-probes every endpoint end-to-end through its tunnel, load-balances across the healthy set, and exposes a single local SOCKS5 / HTTP CONNECT proxy. A React dashboard styled to match the MoaV admin panel gives live visibility into endpoint health, per-protocol throughput, plugin rule editing, and a streaming debug log.
 
+<!-- screenshot: dashboard overview (Endpoints tab) -->
+<!-- ![moav-client dashboard](docs/assets/dashboard.png) -->
+
 ---
 
 ## Quick start
-
-**One-liner install** (recommended):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
 ```
 
-The installer checks prerequisites, clones the repo, walks you through enabling sidecars (with disk-size estimates per choice), seeds `config.yaml`, builds the docker images, and brings the stack up. Works both interactively (TTY) and fully headless (env vars / flags).
+The installer checks prerequisites, clones the repo, lets you pick sidecars,
+seeds `config.yaml`, builds the images, brings the stack up, and installs a
+global `moav-client` command. Works interactively or headless — see
+[docs/INSTALL.md](docs/INSTALL.md) for headless/flag-driven installs.
 
-**Headless examples:**
-
-```bash
-# Drive everything from env (no prompts).
-MOAV_HEADLESS=1 \
-MOAV_DIR=/opt/moav-client \
-MOAV_SUBSCRIPTION=/etc/moav/subscription.txt \
-MOAV_SIDECARS=masterdns,psiphon \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh)"
-
-# Or via flags after a local clone.
-git clone https://github.com/MotherofallVPNs/moav-client && cd moav-client
-./install.sh --headless --dir /opt/moav-client --sidecars masterdns,psiphon
-```
-
-After install, `./moav-client` is a thin docker-compose wrapper:
+Then manage the stack with `moav-client`:
 
 ```bash
-./moav-client status                # docker compose ps
-./moav-client logs proxy-core       # tail logs
-./moav-client probe                 # trigger probe via API
-./moav-client stats                 # /api/stats JSON
-./moav-client sidecar add tor       # enable + build + start the tor sidecar
-./moav-client sidecar remove psiphon
-./moav-client update                # git pull + rebuild + restart
+moav-client status                # docker compose ps
+moav-client logs proxy-core       # tail logs
+moav-client probe                 # trigger probe via API
+moav-client sidecar add tor       # enable + build + start the tor sidecar
+moav-client update                # git pull + rebuild + restart
 ```
 
 Endpoints exposed:
@@ -56,54 +43,31 @@ Endpoints exposed:
 
 Point your browser or system proxy at `socks5h://localhost:1080`. Every connection routes through the healthiest moav server endpoint.
 
-### Resource footprint per container
+### Resources
 
-On-disk image sizes (measured on Ubuntu 24.04 / amd64). "Network" is what the
-first install fetches: pulled images download compressed layers; built images
-compile locally but pull a base image (golang / debian / node) — those base
-layers are shared across the built containers, so the real total is far less
-than the sum.
+Per-container disk + first-install download (amd64). Core services always run;
+sidecars are opt-in via `--profile`.
 
-| Service | On-disk image | Network (first run) | Comes up |
+| Service | Disk | Download | Profile |
 |---|---|---|---|
-| **proxy-core** | ~18 MB | builds locally (Go on scratch; golang-alpine base) | always |
-| **web-ui** | ~75 MB | builds locally (Vite build → nginx:alpine, ~94 MB base) | always |
-| **sing-box** | ~116 MB | ~50 MB pull (ghcr.io/sagernet/sing-box) | always |
-| **xray** | ~104 MB | ~45 MB pull (teddysun/xray — xhttp/splithttp + MTProxy) | always |
-| MasterDNS | ~138 MB | builds locally (golang + debian) | `--profile masterdns` |
-| AmneziaWG | ~149 MB | builds locally (golang + debian) | `--profile amneziawg` |
-| Psiphon | ~176 MB | builds locally (clones psiphon-tunnel-core) | `--profile psiphon` |
-| TrustTunnel | ~85 MB | builds locally (placeholder) | `--profile trusttunnel` |
-| Tor | ~85 MB | ~30 MB pull (peterdavehello/tor-socks-proxy) | `--profile tor` |
+| proxy-core | ~18 MB | core | always |
+| web-ui | ~75 MB | core | always |
+| sing-box | ~116 MB | core | always |
+| xray | ~104 MB | core | always |
+| MasterDNS | ~138 MB | sidecar | `masterdns` |
+| AmneziaWG | ~149 MB | sidecar | `amneziawg` |
+| Psiphon | ~176 MB | sidecar | `psiphon` |
+| TrustTunnel | ~90 MB | sidecar | `trusttunnel` |
+| Tor | ~85 MB | sidecar | `tor` |
 
-Core stack (always on): **~313 MB** of runtime images on disk. Full stack with
-every sidecar: **~945 MB** of runtime images. A full build also leaves
-**~4 GB of build cache** on disk (Go module cache, apt, compiled stages) — that
-is reclaimable any time with `docker builder prune` without touching the
-running containers.
+| Footprint | Core only | Full stack |
+|---|---|---|
+| Disk (runtime images) | ~313 MB | ~945 MB |
+| First-install download | ~190 MB | ~810 MB |
+| RAM (idle) | ~150 MB | ~400 MB |
 
-### How much will the install download? (per-GB cost)
-
-Measured as the actual network bytes received during a **cold** install
-(`docker builder prune -af` + full rebuild) on Ubuntu 24.04 / amd64 — this
-includes the Go/Node/Debian build base images, Go module + npm + apt
-downloads, the git clones (psiphon-tunnel-core, amneziawg-go), and the pulled
-runtime images:
-
-| Install | First-time download |
-|---|---|
-| **Core only** (proxy-core + web-ui + sing-box + xray) | **~190 MB** |
-| **+ all sidecars** (masterdns + amneziawg + psiphon + tor) | **+~620 MB** |
-| **Full stack** | **~810 MB total** |
-
-So budget **~0.2 GB for a core install** and **~0.8 GB for everything**. The
-on-disk footprint is larger than the download because layers arrive
-compressed and the Go module cache expands locally. Updates (`moav-client
-update`) re-download only changed layers — typically tens of MB, not the full
-amount.
-
-RAM: the core stack idles around ~150 MB; each sidecar adds 20–80 MB. 1 GB is
-comfortable for core-only; 2 GB if you enable several sidecars.
+A full build also leaves ~4 GB of build cache, reclaimable with
+`docker builder prune`. Updates re-download only changed layers.
 
 ---
 
@@ -121,7 +85,7 @@ The bundle parser accepts the standard MoaV subscription format (base64-encoded 
 | VLESS + XHTTP + Reality | xray outbound | xhttp is Xray-only; the xray sidecar handles it on 11800+ |
 | WireGuard | sing-box `endpoints[]` | parsed from `wireguard.conf` |
 | AmneziaWG | `amneziawg` sidecar | userspace `amneziawg-go` + `awg setconf` + microsocks on awg0 default route |
-| TrustTunnel | `trusttunnel` sidecar | placeholder — mount the upstream client binary to activate |
+| TrustTunnel | `trusttunnel` sidecar | upstream prebuilt client (HTTP/2 + HTTP/3), run in SOCKS5 mode |
 | MasterDNS | `masterdns` sidecar | upstream binary from `masterking32/MasterDnsVPN` releases |
 | Psiphon | `psiphon` sidecar | builds `Psiphon-Labs/psiphon-tunnel-core` from source; tunnels out of the box with its embedded config |
 | Tor | `tor` sidecar | `peterdavehello/tor-socks-proxy` — SOCKS5 on :9150, no credentials |
@@ -145,94 +109,31 @@ Every sidecar exposes its own SOCKS5 inbound on the `moav-net` Docker network; m
 
 A `↻ Refresh` button in the topbar reloads every tab in place; the health pill next to it shows `healthy/total`.
 
----
-
-## Config reference
-
-`config.yaml` controls every aspect of the client. Defaults are set by `config.Defaults()` in `proxy-core/config/config.go`; the file below shows every supported key.
-
-```yaml
-proxy:
-  socks5_port: 1080
-  http_port: 8080
-  api_port: 8088
-  auth:
-    username: ""        # optional SOCKS5 auth
-    password: ""
-
-subscription:
-  url: ""                              # V2Ray-style subscription URL (base64 or plain)
-  file: "./data/<bundle>/subscription.txt"
-  wireguard_files:                     # WG / AmneziaWG .conf paths become endpoints
-    - "./data/<bundle>/wireguard.conf"
-    - "./data/<bundle>/amneziawg.conf"
-
-load_balancing:
-  strategy: latency                    # latency | priority | weighted
-  probe_on_start: true
-
-plugins:
-  torrent_block: true
-  routing_rules:                       # see "Plugins" below
-    - {match: {type: geoip, value: ir},       action: proxy}
-    - {match: {type: ip_cidr, value: 10.0.0.0/8}, action: direct}
-
-# sing-box does the real protocol cryptography. moav-client generates
-# data/singbox.json from the subscription and rewrites Config["socks5_addr"]
-# so the balancer dials through sing-box's local port.
-singbox:
-  enabled: true
-  listen_host: "0.0.0.0"
-  dial_host: "singbox"                 # docker-compose service name
-  base_port: 10800
-  output_path: "data/singbox.json"
-
-sidecars:
-  masterdns:                           # m.<your-bundle>.<tld> MoaV DNS tunnel
-    enabled: true
-    priority: 2
-    config:
-      domain: "m.<your-bundle>.<tld>"
-      method: "5"                      # 5 = AES-256-GCM
-      key: "<hex encryption key>"
-  amneziawg:
-    enabled: true
-    priority: 5
-    config:
-      source_path: "./data/<bundle>/amneziawg.conf"
-  trusttunnel:
-    enabled: false
-    priority: 5
-    config:
-      source_path: "./data/<bundle>/trusttunnel.toml"
-  psiphon:
-    enabled: false
-    priority: 8
-    config:
-      # Either: paste a verbatim Psiphon-issued ConsoleClient config:
-      #   config_json: |
-      #     { "PropagationChannelId": "...", "SponsorId": "...", ... }
-      # Or: drop in the individual keys (see "Psiphon" below).
-      client_platform: "Linux_moav-client"
-  tor:
-    enabled: false
-  dnstt:
-    enabled: false                     # legacy, superseded by masterdns
-  slipstream:
-    enabled: false
-```
+<!-- screenshot/gif: dashboard tabs walkthrough -->
+<!-- ![dashboard walkthrough](docs/assets/dashboard.gif) -->
+<!-- screenshot: Analytics tab (per-protocol throughput) -->
+<!-- ![analytics](docs/assets/analytics.png) -->
+<!-- screenshot: Plugins tab (routing rules) -->
+<!-- ![plugins](docs/assets/plugins.png) -->
 
 ---
 
-## Known limitations
+## Config
 
-Things that are *not* bugs in moav-client but will show up as red rows in the dashboard until you act on them:
+`config.yaml` controls everything; sing-box and xray are enabled by default
+(they do the protocol crypto). The fully-commented
+[`config.yaml.example`](config.yaml.example) is the reference — copy it and
+edit. Key sections:
 
-- **TrustTunnel has no public Linux client.** The sidecar Dockerfile accepts a binary mounted at `/usr/local/bin/trusttunnel-client` plus a `client.toml`. Until upstream ships one, this entry stays errored.
-- **Tor container may report `unhealthy` while working.** `peterdavehello/tor-socks-proxy` ships its own healthcheck that fetches a Facebook `.onion` over the Tor circuit — strict, and slow/blocked on some networks. The SOCKS5 proxy on `:9150` works regardless; the probe in the dashboard is the authoritative signal.
-- **Reality keypair validity is server-side.** If `pbk` / `sid` in the bundle no longer match the moav server's private key, you'll see `connection: EOF` (sing-box) or `received real certificate (potential MITM or redirection)` (xray) — the server is fall-through-proxying to the configured `dest` instead of completing the Reality handshake. moav-client's failover loop routes around it; if every Reality endpoint is broken simultaneously, ask the operator to rotate. See [shayanb/MoaV#115](https://github.com/shayanb/MoaV/issues/115).
-- **Reality + XHTTP requires xray.** sing-box doesn't support Xray's `xhttp` / `splithttp` transports. The bundled xray sidecar handles them; if you want to slim the install, disable `xray.enabled` in `config.yaml` and those endpoints will go silent.
-- **AmneziaWG needs container privileges.** The userspace `amneziawg-go` + `awg setconf` + microsocks chain requires `cap_add: NET_ADMIN` and `/dev/net/tun` (already set in `docker-compose.yml`). On strictly hardened hosts this may need a relaxed seccomp profile.
+- `proxy` — listener ports + optional SOCKS5 auth
+- `subscription` — `file` / `url` / `wireguard_files`, or multiple `sources`
+- `load_balancing.strategy` — `latency` | `priority` | `weighted`
+- `plugins` — `torrent_block`, `block_direct`, `routing_rules`
+- `singbox` / `xray` / `sni_spoof` — dialer sidecars (enabled by default)
+- `sidecars` — `masterdns` / `amneziawg` / `psiphon` / `trusttunnel` / `tor`
+
+Most users never edit `config.yaml` by hand — importing a bundle (Sources tab)
+and toggling endpoints/sidecars in the dashboard writes it for you.
 
 ---
 
@@ -265,53 +166,11 @@ Curated templates ship with the binary and surface in the dashboard's `+ from te
 
 ### GeoIP
 
-`geoip:<cc>` rules match a destination IP against the CIDRs in `geoip/<cc>.txt`
-(one CIDR per line). The `geoip/` dir is bind-mounted read-only into proxy-core
-at `/app/geoip`, so you edit lists without rebuilding.
-
-Two things to know — both matter for `block` rules:
-
-- **IP-only.** The match needs a parseable destination IP. A hostname target
-  (the common `socks5h://` case) is *not* resolved here, so a `geoip:` rule
-  won't catch it — it applies to IP-literal destinations. Verified: a
-  `geoip:<cc> → block` rule drops a connection to an in-range IP at the
-  decision stage, before any dial (no proxy dial, no direct dial, no DNS —
-  the destination never appears in `/api/flows`).
-- **Missing list = inert + WARN.** If `geoip/<cc>.txt` doesn't exist, the rule
-  can't match and proxy-core logs a one-time `WARN … rules matching geoip:<cc>
-  are INERT`. A `block` rule against a missing list will **not** block, so
-  watch for that warning. Populate the file.
-
-For full country coverage, drop in CIDR exports from a GeoLite2 / RIR dataset
-instead of the hand-maintained stub.
-
----
-
-## Psiphon
-
-Psiphon ConsoleClient builds from source as part of the `psiphon` sidecar. The container exposes SOCKS5 on `psiphon:5400` inside the Docker network so the prober reaches it.
-
-**It tunnels out of the box** — the sidecar ships an embedded config (valid all-`F` `PropagationChannelId` / `SponsorId` plus the correct remote-server-list signing key), so it bootstraps a Psiphon circuit with no user input. You only need to supply your own config to point at a private Psiphon network:
-
-```yaml
-# Best — verbatim config from Psiphon Inc.:
-sidecars:
-  psiphon:
-    enabled: true
-    config:
-      config_json: |
-        { "PropagationChannelId": "...", "SponsorId": "...",
-          "RemoteServerListUrls": [{"URL": "..."}], ... }
-
-# Or — individual keys merged with safe defaults:
-      propagation_channel_id: "<hex>"
-      sponsor_id:             "<hex>"
-      remote_server_list_signature_public_key: "<base64 RSA pubkey>"
-      remote_server_list_url:               "<base64 url>"
-      obfuscated_server_list_root_url:      "<base64 url>"
-```
-
-Sources: [psiphon.ca/en/license.html](https://psiphon.ca/en/license.html), or extracted from an official Psiphon Pro Android / iOS build (`psiphon_config` resource).
+`geoip:<cc>` rules match a destination IP against `geoip/<cc>.txt` CIDR lists
+(Iran ships in-repo, refreshed weekly by CI). Matching is **IP-only** —
+hostname destinations aren't resolved, so geoip rules apply to IP-literal
+targets. See [geoip/README.md](geoip/README.md) for sources and how to add
+countries.
 
 ---
 
@@ -367,15 +226,15 @@ The API server listens on `proxy.api_port` (default 8088). Responses are JSON; a
 
 ---
 
-## Internal architecture
+## Docs
 
-For implementation details (sing-box bridge, balancer failover, prober tunnel-aware semantics, sidecar config generation, docker control), see **[docs/INTERNALS.md](docs/INTERNALS.md)**. There's also an LLM agent guide at **[CLAUDE.md](CLAUDE.md)**.
-
----
-
-## Bundle format
-
-To compress one server's full protocol surface into a single transferable URL instead of N protocol-specific URIs, see the proposal at **[docs/MOAV_BUNDLE.md](docs/MOAV_BUNDLE.md)** and tracking issue [#1](https://github.com/MotherofallVPNs/moav-client/issues/1).
+- [docs/INSTALL.md](docs/INSTALL.md) — headless / flag-driven install, network exposure
+- [docs/SIDECARS.md](docs/SIDECARS.md) — TrustTunnel, Psiphon, Tor, MasterDNS, AmneziaWG
+- [docs/SNI_SPOOFING.md](docs/SNI_SPOOFING.md) — optional decoy-ClientHello sidecar
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — sing-box bridge, balancer/failover, prober, docker control
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — common issues
+- [docs/MOAV_BUNDLE.md](docs/MOAV_BUNDLE.md) — `moav://` bundle format proposal ([#1](https://github.com/MotherofallVPNs/moav-client/issues/1))
+- [CLAUDE.md](CLAUDE.md) — LLM agent guide
 
 ---
 

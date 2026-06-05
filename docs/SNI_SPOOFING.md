@@ -1,7 +1,16 @@
-# SNI spoofing — research notes & integration plan
+# SNI spoofing
 
-> Status: research / proposal. The hooks to wire a spoofer in are in place;
-> the actual spoofer sidecar build is gated on the user's request.
+> Status: **implemented, needs further real-world testing.** The `sni-spoof`
+> sidecar builds and the dial-path wiring is in place (Settings → SNI-spoof,
+> or `sni_spoof` in `config.yaml`), but it has not been validated against a
+> live DPI'd network at scale — treat it as experimental until it has.
+
+## Upstream
+
+| Project | Role |
+|---|---|
+| [aleskxyz/SNI-Spoofing-Go](https://github.com/aleskxyz/SNI-Spoofing-Go) | **Source of truth** — the Go implementation the `sni-spoof` sidecar builds from. Local TCP proxy that injects a fake-SNI (uTLS-fingerprinted) ClientHello, then forwards the real handshake. |
+| [patterniha/SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing) | Original IP/TCP-header manipulation approach; SNI-Spoofing-Go is the modernised port. Reference only. |
 
 ## What it is
 
@@ -12,13 +21,6 @@ sending a *first* ClientHello whose SNI is a known-good decoy (`hcaptcha.com`,
 `update.windows.com`, etc.), letting the DPI's stateful inspector accept
 the connection, then issuing the *real* TLS handshake against the actual
 destination.
-
-The two implementations we evaluated:
-
-| Project | Lang | Implementation |
-|---|---|---|
-| [aleskxyz/SNI-Spoofing-Go](https://github.com/aleskxyz/SNI-Spoofing-Go) | Go | Local TCP proxy. Injects a fake-SNI ClientHello (uTLS fingerprinted), then forwards the real handshake. CLI + experimental GUI. |
-| [patterniha/SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing) | mixed | Original IP/TCP-header manipulation approach; SNI-Spoofing-Go is the modernised Go port. |
 
 ## Where it fits in moav-client
 
@@ -92,21 +94,20 @@ incomplete. Tracking issue in sing-box: [#TODO].
 - Reality already does this style of disguise at the protocol level.
   Don't stack the two.
 
-## What's done in this commit
+## Current state
 
-- This document, so the design isn't ad-hoc when it lands.
-- The `Endpoint.Config["fake_sni"]` and `Endpoint.Config["spoof_via"]`
-  fields are reserved (no parser writes them yet; no generator reads them
-  yet — both are no-ops in the current build).
-- HTTPS for the dashboard via Caddy ships in this commit; that's
-  unrelated infrastructure but a prerequisite if the spoofer ever needs to
-  ride alongside the dashboard.
+- The `sni-spoof` sidecar (built from aleskxyz/SNI-Spoofing-Go) ships behind
+  the `sni-spoof` compose profile.
+- `snispoof/generator.go` writes its config from the `sni_spoof` block in
+  `config.yaml` (or per-endpoint `fake_sni` / `utls`), and rewrites eligible
+  endpoints' `Config["socks5_addr"]` to route through the spoofer ahead of the
+  sing-box/xray hop. Reality / Shadowsocks / UDP-QUIC / sidecar endpoints are
+  auto-excluded.
+- Toggle it from **Settings → SNI-spoof** or `sni_spoof.enabled` in config.
 
-## What's not done (and needs your green light)
+## Needs further testing
 
-- Building `sni-spoofing-go` as a sidecar.
-- Generating its config from a `subscription.sources[].spoof` block.
-- Adding the spoof-pinned dial-path layer.
-
-Estimated cost if you want it: half a day plus a real DPI'd network to
-validate against.
+This works in the lab but hasn't been proven on a live DPI'd network at scale.
+Before relying on it: validate decoy-SNI acceptance on the target network,
+confirm the uTLS fingerprint isn't itself flagged, and measure throughput
+overhead of the extra local hop.
