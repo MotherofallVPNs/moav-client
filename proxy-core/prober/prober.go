@@ -114,24 +114,36 @@ func (p *Prober) ProbeOne(ep subscription.Endpoint) subscription.Endpoint {
 	updated := ep // copy
 
 	probedAddr := ep.Address
+	var perr error
 	if socksAddr := ep.Config["socks5_addr"]; socksAddr != "" {
 		// SOCKS5 probe: send a CONNECT to a well-known target so the
 		// measurement reflects the whole tunnel (sing-box + remote moav
 		// server + reachability of the test target), not just the loopback.
 		probedAddr = socksAddr
-		updated.LatencyMs, updated.Status = socksConnect(socksAddr, p.probeTarget(), p.Timeout)
+		updated.LatencyMs, updated.Status, perr = socksConnect(socksAddr, p.probeTarget(), p.Timeout)
 	} else {
 		switch ep.Protocol {
 		case "sidecar":
 			probedAddr = "127.0.0.1:1080"
-			updated.LatencyMs, updated.Status = tcpConnect("127.0.0.1:1080", p.Timeout)
+			updated.LatencyMs, updated.Status, perr = tcpConnect("127.0.0.1:1080", p.Timeout)
 		default:
-			updated.LatencyMs, updated.Status = tcpConnect(ep.Address, p.Timeout)
+			updated.LatencyMs, updated.Status, perr = tcpConnect(ep.Address, p.Timeout)
 		}
 	}
 
-	log.Printf("probe %s via %s: status=%s latency=%dms",
-		ep.ID, probedAddr, updated.Status, updated.LatencyMs)
+	// Include the failure reason so the Debug tab shows WHY an endpoint is
+	// unhealthy, not just that it is. classifyLevel flags status=error/timeout
+	// probe lines as warn so they surface above the info stream.
+	if updated.Status == "ok" {
+		log.Printf("probe %s via %s: status=ok latency=%dms", ep.ID, probedAddr, updated.LatencyMs)
+	} else {
+		reason := "unknown"
+		if perr != nil {
+			reason = perr.Error()
+		}
+		log.Printf("probe %s via %s: status=%s latency=%dms — %s",
+			ep.ID, probedAddr, updated.Status, updated.LatencyMs, reason)
+	}
 	return updated
 }
 
@@ -187,19 +199,19 @@ func (p *Prober) Run(ctx context.Context, fetch func() []subscription.Endpoint) 
 
 // tcpConnect dials addr via TCP and returns (latencyMs, status).
 // status is one of "ok", "timeout", "error".
-func tcpConnect(addr string, timeout time.Duration) (int64, string) {
+func tcpConnect(addr string, timeout time.Duration) (int64, string, error) {
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	elapsed := time.Since(start).Milliseconds()
 
 	if err != nil {
 		if isTimeout(err) {
-			return elapsed, "timeout"
+			return elapsed, "timeout", err
 		}
-		return elapsed, "error"
+		return elapsed, "error", err
 	}
 	conn.Close()
-	return elapsed, "ok"
+	return elapsed, "ok", nil
 }
 
 // isTimeout checks whether an error is a network timeout.
@@ -213,11 +225,11 @@ func isTimeout(err error) bool {
 // socksConnect SOCKS5-dials target through proxyAddr and measures end-to-end
 // time. A successful TCP CONNECT through sing-box implies the full chain
 // (sing-box outbound -> moav server -> target) is alive.
-func socksConnect(proxyAddr, target string, timeout time.Duration) (int64, string) {
+func socksConnect(proxyAddr, target string, timeout time.Duration) (int64, string, error) {
 	start := time.Now()
 	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, &net.Dialer{Timeout: timeout})
 	if err != nil {
-		return time.Since(start).Milliseconds(), "error"
+		return time.Since(start).Milliseconds(), "error", err
 	}
 	cdialer, ok := dialer.(proxy.ContextDialer)
 	if !ok {
@@ -226,12 +238,12 @@ func socksConnect(proxyAddr, target string, timeout time.Duration) (int64, strin
 		elapsed := time.Since(start).Milliseconds()
 		if derr != nil {
 			if isTimeout(derr) {
-				return elapsed, "timeout"
+				return elapsed, "timeout", derr
 			}
-			return elapsed, "error"
+			return elapsed, "error", derr
 		}
 		conn.Close()
-		return elapsed, "ok"
+		return elapsed, "ok", nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -239,9 +251,9 @@ func socksConnect(proxyAddr, target string, timeout time.Duration) (int64, strin
 	if derr != nil {
 		elapsed := time.Since(start).Milliseconds()
 		if isTimeout(derr) {
-			return elapsed, "timeout"
+			return elapsed, "timeout", derr
 		}
-		return elapsed, "error"
+		return elapsed, "error", derr
 	}
 	defer conn.Close()
 	// A granted CONNECT alone doesn't prove the tunnel works: xray's xhttp
@@ -256,10 +268,10 @@ func socksConnect(proxyAddr, target string, timeout time.Duration) (int64, strin
 		if herr := tconn.Handshake(); herr != nil {
 			elapsed := time.Since(start).Milliseconds()
 			if isTimeout(herr) {
-				return elapsed, "timeout"
+				return elapsed, "timeout", fmt.Errorf("tunnel TLS handshake: %w", herr)
 			}
-			return elapsed, "error"
+			return elapsed, "error", fmt.Errorf("tunnel TLS handshake: %w", herr)
 		}
 	}
-	return time.Since(start).Milliseconds(), "ok"
+	return time.Since(start).Milliseconds(), "ok", nil
 }

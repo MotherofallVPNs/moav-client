@@ -169,10 +169,15 @@ func (w *CapturingWriter) Write(p []byte) (int, error) {
 		}
 		s := strings.TrimRight(string(line), "\r\n")
 		if s != "" {
+			// Strip the stdlib "2026/.. .." date prefix BEFORE classifying —
+			// classifyLevel's prefix rules ("probe ", "fatal:", …) assume a
+			// clean line. Classifying the raw date-prefixed line silently
+			// dropped every rule to the info default.
+			clean := stripDatePrefix(s)
 			w.Bus.Publish(Event{
-				Level:   classifyLevel(s),
+				Level:   classifyLevel(clean),
 				Source:  w.Source,
-				Message: stripDatePrefix(s),
+				Message: clean,
 			})
 		}
 	}
@@ -209,11 +214,14 @@ func classifyLevel(s string) string {
 		return "info"
 	}
 
-	// Individual probe lines are always info regardless of the per-endpoint
-	// status. They report on a peer's health, not on proxy-core's own health.
-	if strings.HasPrefix(low, "probe ") || strings.Contains(low, " probe ") &&
-		(strings.Contains(low, "status=ok") || strings.Contains(low, "status=error") ||
-			strings.Contains(low, "status=timeout")) {
+	// Per-endpoint probe lines: a failing probe (status=error/timeout) is a
+	// warn so it surfaces in the Debug tab above the info stream; a healthy
+	// probe stays info. It's never an error — one unhealthy peer isn't a
+	// system failure, the balancer just routes around it.
+	if strings.HasPrefix(low, "probe ") {
+		if strings.Contains(low, "status=error") || strings.Contains(low, "status=timeout") {
+			return "warn"
+		}
 		return "info"
 	}
 
