@@ -114,22 +114,31 @@ func (p *Prober) ProbeOne(ep subscription.Endpoint) subscription.Endpoint {
 	updated := ep // copy
 
 	probedAddr := ep.Address
-	var perr error
-	if socksAddr := ep.Config["socks5_addr"]; socksAddr != "" {
-		// SOCKS5 probe: send a CONNECT to a well-known target so the
-		// measurement reflects the whole tunnel (sing-box + remote moav
-		// server + reachability of the test target), not just the loopback.
-		probedAddr = socksAddr
-		updated.LatencyMs, updated.Status, perr = socksConnect(socksAddr, p.probeTarget(), p.Timeout)
-	} else {
-		switch ep.Protocol {
-		case "sidecar":
-			probedAddr = "127.0.0.1:1080"
-			updated.LatencyMs, updated.Status, perr = tcpConnect("127.0.0.1:1080", p.Timeout)
-		default:
-			updated.LatencyMs, updated.Status, perr = tcpConnect(ep.Address, p.Timeout)
+	// One probe attempt against whichever address applies to this endpoint.
+	// SOCKS5 probe (socks5_addr set) sends a CONNECT to a well-known target so
+	// the measurement reflects the whole tunnel, not just the loopback.
+	attempt := func() (int64, string, error) {
+		if socksAddr := ep.Config["socks5_addr"]; socksAddr != "" {
+			probedAddr = socksAddr
+			return socksConnect(socksAddr, p.probeTarget(), p.Timeout)
 		}
+		if ep.Protocol == "sidecar" {
+			probedAddr = "127.0.0.1:1080"
+			return tcpConnect("127.0.0.1:1080", p.Timeout)
+		}
+		return tcpConnect(ep.Address, p.Timeout)
 	}
+
+	lat, status, perr := attempt()
+	// One retry on failure to ride out a transient blip — a momentary Reality
+	// handshake failure, a brief network hiccup, a sidecar mid-restart —
+	// so a healthy endpoint doesn't flap to "error" for a whole 30s cycle.
+	// Oks are never retried.
+	if status != "ok" {
+		time.Sleep(300 * time.Millisecond)
+		lat, status, perr = attempt()
+	}
+	updated.LatencyMs, updated.Status = lat, status
 
 	// Include the failure reason so the Debug tab shows WHY an endpoint is
 	// unhealthy, not just that it is. classifyLevel flags status=error/timeout
