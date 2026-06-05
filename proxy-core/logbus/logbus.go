@@ -214,12 +214,15 @@ func classifyLevel(s string) string {
 		return "info"
 	}
 
-	// Per-endpoint probe lines: a failing probe (status=error/timeout) is a
-	// warn so it surfaces in the Debug tab above the info stream; a healthy
-	// probe stays info. It's never an error — one unhealthy peer isn't a
-	// system failure, the balancer just routes around it.
+	// Per-endpoint probe lines surface their health so the Debug tab is useful:
+	//   status=error   → error (red; matches the endpoint's "error" status)
+	//   status=timeout → warn  (softer/transient)
+	//   status=ok      → info
 	if strings.HasPrefix(low, "probe ") {
-		if strings.Contains(low, "status=error") || strings.Contains(low, "status=timeout") {
+		if strings.Contains(low, "status=error") {
+			return "error"
+		}
+		if strings.Contains(low, "status=timeout") {
 			return "warn"
 		}
 		return "info"

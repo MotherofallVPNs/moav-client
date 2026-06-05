@@ -7,9 +7,8 @@ func TestClassifyLevel(t *testing.T) {
 		line string
 		want string
 	}{
-		// Per-endpoint probe results: healthy = info, failing = warn (so the
-		// Debug tab surfaces the reason above the info stream).
-		{"probe vless:192.0.2.10:443 via singbox:10800: status=error latency=598ms — tunnel TLS handshake: EOF", "warn"},
+		// Per-endpoint probe results: error = error, timeout = warn, ok = info.
+		{"probe vless:192.0.2.10:443 via singbox:10800: status=error latency=598ms — tunnel TLS handshake: EOF", "error"},
 		{"probe wireguard:192.0.2.10:51820 via singbox:10805: status=ok latency=247ms", "info"},
 		{"probe ss:192.0.2.10:8388 via singbox:10803: status=timeout latency=10000ms — i/o timeout", "warn"},
 		{"initial probe complete: 11 endpoints updated", "info"},
