@@ -94,6 +94,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/strategy", s.handleStrategy)
 	mux.HandleFunc("/api/logs", s.handleLogs)
 	mux.HandleFunc("/api/plugins", s.handlePlugins)
+	mux.HandleFunc("/api/block-direct", s.handleBlockDirect)
 	mux.HandleFunc("/api/sources", s.handleSources)
 	mux.HandleFunc("/api/sources/", s.handleSourceByName) // DELETE /api/sources/<name>
 	mux.HandleFunc("/api/sources/reload", s.handleSourcesReload)
@@ -1507,4 +1508,54 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("api: write JSON: %v", err)
 	}
+}
+
+// handleBlockDirect gets/sets the block_direct kill-switch. PUT applies it
+// live to the rule engine + balancer (no restart) and persists to config.yaml.
+func (s *Server) handleBlockDirect(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, map[string]interface{}{"enabled": s.engine.BlockDirect()})
+	case http.MethodPut:
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.engine.SetBlockDirect(body.Enabled)
+		s.balancer.SetBlockDirect(body.Enabled)
+		if err := s.persistBlockDirect(body.Enabled); err != nil {
+			log.Printf("api: block_direct=%v applied live but persist failed: %v", body.Enabled, err)
+			writeJSON(w, map[string]interface{}{"enabled": body.Enabled, "warning": "applied but not saved to config.yaml: " + err.Error()})
+			return
+		}
+		log.Printf("api: block_direct set to %v", body.Enabled)
+		writeJSON(w, map[string]interface{}{"enabled": body.Enabled})
+	default:
+		http.Error(w, "GET or PUT", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) persistBlockDirect(v bool) error {
+	raw, err := os.ReadFile(s.configPath())
+	if err != nil {
+		return err
+	}
+	var root map[string]interface{}
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return err
+	}
+	pl, _ := root["plugins"].(map[string]interface{})
+	if pl == nil {
+		pl = map[string]interface{}{}
+		root["plugins"] = pl
+	}
+	pl["block_direct"] = v
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.configPath(), out, 0o644)
 }

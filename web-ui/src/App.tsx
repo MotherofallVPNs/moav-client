@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import EndpointTable from "./components/EndpointTable";
+import BlockDirectToggle from "./components/BlockDirectToggle";
 import ConfigEditor from "./components/ConfigEditor";
 import Analytics from "./components/Analytics";
 import Settings from "./components/Settings";
@@ -239,13 +240,16 @@ export default function App() {
         }}
       >
         {tab === "endpoints" && (
-          <EndpointTable
-            refreshTick={refreshTick}
-            onHealthChange={(h, t) => {
-              setHealthy(h);
-              setTotal(t);
-            }}
-          />
+          <>
+            <BlockDirectToggle refreshTick={refreshTick} />
+            <EndpointTable
+              refreshTick={refreshTick}
+              onHealthChange={(h, t) => {
+                setHealthy(h);
+                setTotal(t);
+              }}
+            />
+          </>
         )}
         {tab === "sources" && <Sources refreshTick={refreshTick} />}
         {tab === "analytics" && <Analytics refreshTick={refreshTick} />}

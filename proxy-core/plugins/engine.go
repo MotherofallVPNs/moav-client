@@ -81,6 +81,13 @@ func (e *Engine) SetBlockDirect(v bool) {
 	e.mu.Unlock()
 }
 
+// BlockDirect reports whether the no-direct kill-switch is on.
+func (e *Engine) BlockDirect() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.blockDirect
+}
+
 // NewEngine returns an Engine with the given rules. Rules without IDs are
 // assigned sequential ones so the API can edit/delete them.
 func NewEngine(rules []Rule) *Engine {
