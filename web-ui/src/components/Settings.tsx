@@ -53,7 +53,7 @@ export default function Settings({ refreshTick }: Props) {
 
   // Exposure section state.
   const [exposure, setExposure] = useState<Exposure>("loopback");
-  const [authUser, setAuthUser] = useState("");
+  const [authUser, setAuthUser] = useState("moav");
   const [authPass, setAuthPass] = useState("");
   const [exposureSaving, setExposureSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);

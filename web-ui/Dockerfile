@@ -9,6 +9,7 @@ RUN npm run build
 # only needed during dev; production just serves the static dist.
 FROM nginx:1.27-alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
-# Keep the docker-compose contract — listen on 3000 inside the container.
-RUN sed -i 's/listen\(.*\)80;/listen\1 3000;/' /etc/nginx/conf.d/default.conf
+# Custom server block: listens on 3000 (compose contract) + sets cache headers
+# so a fresh build's hashed bundle is picked up instead of a stale index.html.
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 3000

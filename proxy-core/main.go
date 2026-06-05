@@ -438,10 +438,13 @@ func main() {
 			socksPass = v
 		}
 	}
-	// A password is enough to turn auth on; the username may be empty (the
-	// client then authenticates with an empty username). Requiring both would
+	// A password is enough to turn auth on. If no username was given, default to
+	// "moav" so clients have a predictable username. Requiring both would
 	// silently leave the proxy open when someone sets only a password.
 	if socksPass != "" {
+		if socksUser == "" {
+			socksUser = "moav"
+		}
 		proxyServer = proxyServer.WithAuth(socksUser, socksPass)
 	}
 	apiServer := api.New(cfg.Proxy.APIPort, *cfgPath, statePath, b, eng)
