@@ -61,6 +61,14 @@ services:
     networks:
       - moav-net
     restart: unless-stopped
+    healthcheck:
+      # Healthy if there's no config yet (idling) OR the generated config
+      # parses — catches a bad generator without flagging a correct idle.
+      test: ["CMD-SHELL", "[ ! -s /etc/sing-box/singbox.json ] || sing-box check -c /etc/sing-box/singbox.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # SNI spoofing sidecar — slips a decoy ClientHello onto the wire BEFORE
   # the real TLS handshake, so DPI sees the fake SNI on the connection.
@@ -90,6 +98,14 @@ services:
         while [ ! -s /etc/xray/xray.json ]; do sleep 1; done
         echo "[xray] config detected, starting"
         exec /usr/bin/xray run -c /etc/xray/xray.json
+    healthcheck:
+      # xray only gets a config when the bundle has xhttp/splithttp endpoints;
+      # otherwise it idles. Healthy if no config yet OR the config parses.
+      test: ["CMD-SHELL", "[ ! -s /etc/xray/xray.json ] || xray run -test -c /etc/xray/xray.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     volumes:
       - ./data:/etc/xray
     networks:
