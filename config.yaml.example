@@ -20,15 +20,20 @@ load_balancing:
   probe_on_start: true
 
 plugins:
-  torrent_block: true
+  # Off by default — the only enabled rule out of the box is the Iran-direct
+  # one below. Enable torrent-blocking / ad-blocking / etc. from the dashboard
+  # Plugins tab (curated templates ship disabled).
+  torrent_block: false
   # Kill-switch: when true, the balancer's involuntary direct fallback (used
   # when every endpoint is down) is dropped instead of dialing direct, so the
   # host never leaks an unproxied connection. Explicit `direct` routing rules
   # below are ALWAYS honored — they take priority over the kill-switch.
   block_direct: false
-  # Default: Iranian destinations bypass the proxy (kept domestic); everything
-  # else goes through the balancer. Add more rules from the dashboard Plugins
-  # tab (templates ship disabled).
+  # Only default-enabled rule: Iranian destinations bypass the proxy and go
+  # direct, so domestic traffic keeps your real (Iranian) IP — this avoids both
+  # breaking IR sites that block foreign IPs and signalling "this user is on a
+  # VPN". Matches IP-literal destinations in geoip/ir.txt; hostname targets are
+  # not resolved here (see geoip/README.md). Everything else is proxied.
   routing_rules:
     - match: {type: geoip, value: ir}
       action: direct
