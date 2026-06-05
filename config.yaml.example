@@ -21,17 +21,16 @@ load_balancing:
 
 plugins:
   torrent_block: true
-  # Kill-switch: when true, anything that would go direct (a `direct` rule OR
-  # the balancer's all-endpoints-failed fallback) is dropped instead, so the
-  # host never makes an unproxied connection. Leave false to allow direct
-  # fallback (e.g. LAN-direct rules) when proxies are down.
+  # Kill-switch: when true, the balancer's involuntary direct fallback (used
+  # when every endpoint is down) is dropped instead of dialing direct, so the
+  # host never leaks an unproxied connection. Explicit `direct` routing rules
+  # below are ALWAYS honored — they take priority over the kill-switch.
   block_direct: false
+  # Default: Iranian destinations bypass the proxy (kept domestic); everything
+  # else goes through the balancer. Add more rules from the dashboard Plugins
+  # tab (templates ship disabled).
   routing_rules:
     - match: {type: geoip, value: ir}
-      action: proxy
-    - match: {type: domain, value: tracker.thepiratebay.org}
-      action: block
-    - match: {type: ip_cidr, value: 10.0.0.0/8}
       action: direct
 
 # sing-box performs the actual protocol cryptography (VLESS/Reality/Trojan/

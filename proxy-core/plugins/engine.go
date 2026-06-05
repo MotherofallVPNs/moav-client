@@ -69,8 +69,10 @@ type Rule struct {
 type Engine struct {
 	mu    sync.RWMutex
 	rules []Rule
-	// blockDirect, when set, turns every DecisionDirect into DecisionBlock —
-	// a kill-switch so nothing ever leaves the host unproxied.
+	// blockDirect mirrors the kill-switch state for the API (GET
+	// /api/block-direct). Enforcement lives in the balancer — explicit
+	// `direct` rules are always honored; only the involuntary fallback is
+	// blocked.
 	blockDirect bool
 }
 
@@ -134,9 +136,9 @@ func (e *Engine) Evaluate(host string, port int, protocolHint string) Decision {
 			continue
 		}
 		if matchExpr(r.Match, host, port, protocolHint) {
-			if r.Action == DecisionDirect && e.blockDirect {
-				return DecisionBlock
-			}
+			// Explicit rules always win, including `direct` — block_direct
+			// only stops the balancer's *involuntary* direct fallback (when
+			// every endpoint is down), not a deliberate `direct` rule.
 			return r.Action
 		}
 	}

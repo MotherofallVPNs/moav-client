@@ -9,9 +9,17 @@ All notable changes to moav-client are documented here. Format loosely follows
 - **Block-direct kill-switch toggle in the dashboard** — surfaced the
   `block_direct` flag (previously config-only) as a toggle above the Endpoints
   table. New `GET/PUT /api/block-direct` applies it live to the rule engine +
-  balancer (no restart) and persists to `config.yaml`. When on, anything that
-  would go direct — a `direct` routing rule or the all-endpoints-down fallback —
-  is dropped instead.
+  balancer (no restart) and persists to `config.yaml`. When on and any `direct`
+  rules are enabled, the toggle names them (that traffic still bypasses the
+  proxy).
+
+### Changed
+- **`block_direct` now honors explicit `direct` rules.** The kill-switch drops
+  only the balancer's *involuntary* fallback (all endpoints down); a deliberate
+  `direct` rule (e.g. `lan-direct`, `geoip:ir → direct`) takes priority and is
+  always honored. Previously it overrode every `direct` to block.
+- **Default routing rules** trimmed to a single `geoip:ir → direct` (Iranian
+  destinations bypass the proxy); other templates ship disabled.
 
 ## [1.0.0] — 2026-06-05
 

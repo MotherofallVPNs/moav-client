@@ -146,13 +146,17 @@ Actions: `proxy` (default — go through the balancer), `direct` (bypass), `bloc
 
 ### Block direct (kill-switch)
 
-`plugins.block_direct: true` is a leak kill-switch: any connection that would
-otherwise go **direct** is dropped instead. That covers both a `direct`
-routing rule *and* the balancer's last-resort fallback when every endpoint is
-down — so the host never makes an unproxied connection that would expose its
-real IP. Default `false` (direct fallback allowed). Turn it on when "proxy or
-nothing" is a hard requirement; note it will also break intentional
-`direct` rules like `lan-direct`.
+`plugins.block_direct: true` (also a toggle above the Endpoints table) drops
+the balancer's **involuntary** direct fallback — the dial it would otherwise
+make when *every* endpoint is down — so a downed proxy pool can't leak the real
+IP. Default `false`.
+
+**Explicit `direct` rules always win** and are honored even with the kill-switch
+on — so `geoip:ir → direct` keeps sending Iranian destinations direct, and a
+`lan-direct` rule keeps LAN access working. When the kill-switch is on and any
+`direct` rules are enabled, the dashboard toggle names them, since that traffic
+still bypasses the proxy. For a strict no-direct policy, turn the kill-switch on
+*and* disable your `direct` rules.
 
 Curated templates ship with the binary and surface in the dashboard's `+ from template…` picker — all rules land disabled so you can review before enabling:
 

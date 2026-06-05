@@ -54,7 +54,7 @@ func TestEngine_FirstMatchWins(t *testing.T) {
 	}
 }
 
-func TestEngine_BlockDirect(t *testing.T) {
+func TestEngine_BlockDirectHonorsExplicitDirect(t *testing.T) {
 	rules := []Rule{
 		{Match: MatchExpr{Type: "domain", Value: "example.com"}, Action: DecisionDirect, Enabled: true},
 	}
@@ -62,13 +62,14 @@ func TestEngine_BlockDirect(t *testing.T) {
 	if got := eng.Evaluate("example.com", 80, "tcp"); got != DecisionDirect {
 		t.Fatalf("baseline: want DecisionDirect, got %d", got)
 	}
+	// block_direct must NOT override an explicit `direct` rule — it only
+	// blocks the balancer's involuntary fallback (tested in the balancer).
 	eng.SetBlockDirect(true)
-	if got := eng.Evaluate("example.com", 80, "tcp"); got != DecisionBlock {
-		t.Errorf("block_direct on: want DecisionBlock, got %d", got)
+	if got := eng.Evaluate("example.com", 80, "tcp"); got != DecisionDirect {
+		t.Errorf("explicit direct rule must be honored under block_direct, got %d", got)
 	}
-	// Non-matching host still proxies (block_direct only rewrites direct).
 	if got := eng.Evaluate("other.example", 443, "tcp"); got != DecisionProxy {
-		t.Errorf("block_direct should not affect proxy default, got %d", got)
+		t.Errorf("non-matching host should proxy, got %d", got)
 	}
 }
 

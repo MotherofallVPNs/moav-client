@@ -27,10 +27,12 @@ through a chosen endpoint). Start there.
   one-time `WARN … rules matching geoip:<cc> are INERT`. Generate the list:
   `scripts/update-geoip.sh <cc>`.
 
-### `block_direct` broke local/LAN access
-- With `plugins.block_direct: true`, *all* direct dials are dropped — including
-  `lan-direct`-style rules. Turn it off, or don't rely on direct rules while
-  it's on.
+### `block_direct` and direct rules
+- The kill-switch only drops the *involuntary* fallback (when every endpoint is
+  down). Explicit `direct` rules (e.g. `lan-direct`, `geoip:ir → direct`) are
+  always honored — LAN/Iran-direct still work with it on. For a strict
+  no-direct policy, also disable those rules. The dashboard toggle lists any
+  active `direct` rules when the kill-switch is on.
 
 ### A sidecar container is up but not tunneling
 - Sidecars need their config: MasterDNS (`domain`+`key`), AmneziaWG/TrustTunnel
