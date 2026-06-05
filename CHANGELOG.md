@@ -3,6 +3,16 @@
 All notable changes to moav-client are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Block-direct kill-switch toggle in the dashboard** — surfaced the
+  `block_direct` flag (previously config-only) as a toggle above the Endpoints
+  table. New `GET/PUT /api/block-direct` applies it live to the rule engine +
+  balancer (no restart) and persists to `config.yaml`. When on, anything that
+  would go direct — a `direct` routing rule or the all-endpoints-down fallback —
+  is dropped instead.
+
 ## [1.0.0] — 2026-06-05
 
 First public release. A local client for [MoaV](https://github.com/shayanb/MoaV)
