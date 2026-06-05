@@ -1,0 +1,33 @@
+name: update-geoip
+
+# Refresh geoip/<cc>.txt CIDR lists weekly from upstream sources.
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Mondays 04:17 UTC
+  workflow_dispatch:
+    inputs:
+      ccs:
+        description: "Space-separated country codes"
+        default: "ir"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regenerate lists
+        run: bash scripts/update-geoip.sh ${{ github.event.inputs.ccs || 'ir' }}
+      - name: Commit if changed
+        run: |
+          if [[ -n "$(git status --porcelain geoip/)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add geoip/
+            git commit -m "chore(geoip): refresh CIDR lists [skip ci]"
+            git push
+          else
+            echo "geoip lists unchanged"
+          fi
