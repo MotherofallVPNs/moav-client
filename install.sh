@@ -386,6 +386,29 @@ status="$(docker compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Statu
 echo ""
 say "$C_DIM" "  $status"
 
+# ---------- install the `moav-client` command globally ----------------------
+# Symlink the management wrapper into PATH so it's usable from anywhere (the
+# wrapper resolves the symlink back to this install dir). Best-effort: skip
+# quietly if we can't write and have no sudo.
+GLOBAL_BIN="/usr/local/bin/moav-client"
+WRAPPER="$INSTALL_DIR/moav-client"
+HAVE_GLOBAL=
+if [[ -x "$WRAPPER" ]]; then
+  if [[ -w "$(dirname "$GLOBAL_BIN")" ]]; then
+    ln -sf "$WRAPPER" "$GLOBAL_BIN" && HAVE_GLOBAL=1
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo ln -sf "$WRAPPER" "$GLOBAL_BIN" 2>/dev/null && HAVE_GLOBAL=1
+  fi
+  if [[ -n "$HAVE_GLOBAL" ]]; then
+    ok "installed 'moav-client' command → $GLOBAL_BIN"
+  else
+    warn "couldn't symlink to $GLOBAL_BIN (no write access / no sudo) — use ./moav-client from $INSTALL_DIR"
+  fi
+fi
+# CLI prefix used in the closing tips: bare command if global, else ./relative.
+MC="moav-client"
+[[ -z "$HAVE_GLOBAL" ]] && MC="./moav-client"
+
 # ---------- done -----------------------------------------------------------
 hdr "✓ moav-client is up"
 
@@ -398,7 +421,7 @@ cat <<DONE
   Next steps:
     • Open the dashboard ${C_DIM}(http://localhost:3001)${C_RESET} and verify endpoints in the ${C_BOLD}Endpoints${C_RESET} tab.
     • Quick test: ${C_DIM}curl --socks5-hostname localhost:1080 https://api.ipify.org${C_RESET}
-    • Manage from CLI: ${C_DIM}./moav-client status | up | down | logs ...${C_RESET}
+    • Manage from CLI: ${C_DIM}${MC} status | up | down | logs ...${C_RESET}
     • Run on LAN / public: dashboard → ${C_BOLD}Settings → Network exposure${C_RESET}.
     • Import another moav server's bundle: dashboard → ${C_BOLD}Sources → drop .zip${C_RESET}.
 DONE
