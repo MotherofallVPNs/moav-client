@@ -63,7 +63,10 @@ export default function Sources({ refreshTick }: Props) {
   const refresh = async () => {
     try {
       const r = await fetch(`${API_BASE}/api/sources`);
-      setData(await r.json());
+      const j = (await r.json()) as SourcesResp;
+      // Backend can send sources: null (no sources) — normalise so the render
+      // never reads .length on null.
+      setData({ ...j, sources: j.sources ?? [] });
     } catch {
       // ignore
     }

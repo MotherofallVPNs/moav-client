@@ -474,7 +474,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var rows []srcRow
+	rows := []srcRow{} // non-nil so JSON is [] not null when there are no sources
 	if parsed.Subscription.File != "" || parsed.Subscription.URL != "" || len(parsed.Subscription.WireGuardFiles) > 0 {
 		rows = append(rows, srcRow{
 			Name:      "default",
