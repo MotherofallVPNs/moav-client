@@ -335,8 +335,13 @@ export default function Settings({ refreshTick }: Props) {
         <div style={{ marginTop: "0.4rem", color: theme.textDim, fontSize: "0.72rem" }}>
           After saving, run{" "}
           <code>docker compose up -d --force-recreate proxy-core web-ui</code> (or{" "}
-          <code>./moav-client restart</code>) to apply the new bind.
+          <code>moav-client restart</code>) to apply the new bind.
         </div>
+      </section>
+
+      <section style={{ marginBottom: "1.5rem" }}>
+        <h3 style={section()}>access &amp; urls</h3>
+        <ConnectionInfo refreshTick={refreshTick} onFlash={flash} />
       </section>
 
       <section style={{ marginBottom: "1.5rem" }}>
@@ -457,4 +462,102 @@ const blurb = (): React.CSSProperties => ({
   margin: "0 0 0.75rem",
   color: theme.textDim,
   fontSize: "0.78rem",
+});
+
+interface ExposureInfo {
+  exposure: string;
+  auth_username?: string;
+  auth_password?: string;
+}
+
+const MODE_META: Record<string, { label: string; desc: string; color: string }> = {
+  loopback: { label: "Loopback", desc: "This machine only — other devices can't reach it.", color: theme.textDim },
+  lan: { label: "LAN", desc: "Reachable from devices on your local network.", color: theme.green },
+  public: { label: "Public", desc: "Internet-facing — actual reach depends on your firewall / NAT.", color: theme.red },
+};
+
+// ConnectionInfo shows the current network-accessibility mode and the URLs to
+// reach each service, derived from how you're currently connected (the page's
+// hostname). Clears up the common mix-up: the dashboard is :3001, the SOCKS5
+// proxy is :1080 (a proxy, not a web page).
+function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlash: (m: string, ok: boolean) => void }) {
+  const [info, setInfo] = useState<ExposureInfo | null>(null);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/exposure`).then((r) => r.json()).then(setInfo).catch(() => {});
+  }, [refreshTick]);
+
+  const host = (typeof window !== "undefined" && window.location.hostname) || "localhost";
+  const onLocalhost = host === "localhost" || host === "127.0.0.1";
+  const mode = info?.exposure ?? "loopback";
+  const meta = MODE_META[mode] ?? MODE_META.loopback;
+  const hasAuth = !!(info?.auth_username || info?.auth_password);
+
+  const services = [
+    { name: "Dashboard", url: `http://${host}:3001`, hint: "open in a browser" },
+    { name: "SOCKS5 proxy", url: `socks5h://${host}:1080`, hint: hasAuth ? "auth required" : "no auth set" },
+    { name: "HTTP proxy", url: `http://${host}:8081`, hint: "" },
+    { name: "REST / WS API", url: `http://${host}:8088`, hint: "" },
+  ];
+
+  const copy = (s: string) => {
+    navigator.clipboard?.writeText(s);
+    onFlash("copied", true);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.7rem", flexWrap: "wrap" }}>
+        <span style={{ padding: "2px 9px", borderRadius: 4, fontSize: "0.7rem", fontWeight: 700, fontFamily: theme.mono, textTransform: "uppercase", color: meta.color, border: `1px solid ${meta.color}66`, background: meta.color + "1a" }}>
+          {meta.label}
+        </span>
+        <span style={{ color: theme.textDim, fontSize: "0.74rem" }}>{meta.desc}</span>
+      </div>
+
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, padding: "0.5rem 0.65rem", background: theme.surface2 }}>
+        {services.map((s) => (
+          <div key={s.name} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "3px 0" }}>
+            <span style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text, minWidth: 96 }}>{s.name}</span>
+            <code style={{ fontSize: "0.74rem", color: theme.blue, wordBreak: "break-all", flex: 1 }}>
+              {s.url}
+              {s.hint && <span style={{ color: theme.textDim }}> · {s.hint}</span>}
+            </code>
+            <button onClick={() => copy(s.url)} style={miniBtn()}>copy</button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: "0.7rem", fontSize: "0.72rem", color: theme.textDim, lineHeight: 1.5 }}>
+        {onLocalhost ? (
+          <>
+            Shown as <code>localhost</code> because you're on this machine. To reach the dashboard from a{" "}
+            <strong>phone / another device</strong>: set exposure to <strong>LAN</strong> above, recreate
+            proxy-core, then browse to <code>http://&lt;this-machine-LAN-IP&gt;:3001</code> — the{" "}
+            <strong>dashboard is port 3001</strong>, not 1080 (1080 is the SOCKS5 proxy, not a web page).
+          </>
+        ) : (
+          <>
+            Connected via <code>{host}</code>. The <strong>dashboard is :3001</strong>; point another
+            device's <strong>proxy setting</strong> (not its address bar) at the SOCKS5 address above.
+          </>
+        )}
+        {(mode === "lan" || mode === "public") && !hasAuth && (
+          <div style={{ color: theme.yellow, marginTop: 4 }}>
+            ⚠ No SOCKS5 auth set while exposed — anyone on the network can use the proxy. Add a
+            username/password above.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const miniBtn = (): React.CSSProperties => ({
+  padding: "0.2rem 0.5rem",
+  background: "transparent",
+  color: theme.textDim,
+  border: `1px solid ${theme.border}`,
+  borderRadius: 4,
+  cursor: "pointer",
+  fontFamily: theme.mono,
+  fontSize: "0.66rem",
 });

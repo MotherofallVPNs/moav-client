@@ -1139,6 +1139,9 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 			"exposure":          defaultStr(cur["MOAV_EXPOSURE"], "loopback"),
 			"socks5_bind":       defaultStr(cur["SOCKS5_BIND"], "127.0.0.1"),
 			"http_bind":         defaultStr(cur["HTTP_BIND"], "127.0.0.1"),
+			"api_bind":          defaultStr(cur["API_BIND"], "127.0.0.1"),
+			"ui_bind":           defaultStr(cur["UI_BIND"], "127.0.0.1"),
+			"ports":             map[string]int{"dashboard": 3001, "socks5": 1080, "http": 8081, "api": 8088},
 			"auth_username":     cur["SOCKS5_USERNAME"],
 			"auth_password":     maskSecret(cur["SOCKS5_PASSWORD"]),
 			"dashboard_user":    cur["MOAV_DASHBOARD_USER"],
@@ -1178,6 +1181,10 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 		kv["SOCKS5_BIND"] = bindAddr
 		kv["HTTP_BIND"] = bindAddr
 		kv["UI_BIND"] = bindAddr
+		// The dashboard (web-ui) derives its API URL from the browser's
+		// hostname, so the API must bind the same interface as the UI —
+		// otherwise the dashboard loads over LAN but can't reach :8088.
+		kv["API_BIND"] = bindAddr
 		if body.Auth.Username != "" {
 			kv["SOCKS5_USERNAME"] = body.Auth.Username
 		}
