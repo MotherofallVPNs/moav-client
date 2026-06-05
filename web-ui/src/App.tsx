@@ -12,6 +12,20 @@ import Diagnostics from "./components/Diagnostics";
 import { theme } from "./theme";
 import { API_BASE } from "./apiBase";
 
+// Tracks whether the viewport is phone-width so layout can stack instead of
+// overflowing. 640px ≈ the point where the topbar + tables stop fitting.
+function useIsMobile(breakpoint = 640): boolean {
+  const [mobile, setMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+  useEffect(() => {
+    const onResize = () => setMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+  return mobile;
+}
+
 type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "diag" | "config";
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -103,13 +117,14 @@ export default function App() {
   }, []);
 
   const refresh = () => setRefreshTick((t) => t + 1);
+  const isMobile = useIsMobile();
 
   return (
     <div
       style={{
         maxWidth: 1100,
         margin: "0 auto",
-        padding: "1.5rem 2rem",
+        padding: isMobile ? "1rem 0.6rem" : "1.5rem 2rem",
         fontFamily: theme.sans,
         color: theme.text,
         minHeight: "100vh",
@@ -119,8 +134,10 @@ export default function App() {
       <header
         style={{
           display: "flex",
+          flexDirection: isMobile ? "column" : "row",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: isMobile ? "flex-start" : "center",
+          gap: isMobile ? "0.6rem" : 0,
           paddingBottom: "1rem",
           marginBottom: "1.25rem",
           borderBottom: `1px solid ${theme.border}`,
@@ -152,12 +169,13 @@ export default function App() {
               fontSize: "0.62rem",
               letterSpacing: "0.15em",
               textTransform: "uppercase",
+              display: isMobile ? "none" : "inline",
             }}
           >
             mother of all VPNs
           </span>
         </h1>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
           <span
             style={{
               color: theme.textDim,
@@ -236,7 +254,10 @@ export default function App() {
           background: theme.surface,
           border: `1px solid ${theme.border}`,
           borderRadius: 8,
-          padding: "1.25rem",
+          padding: isMobile ? "0.85rem 0.7rem" : "1.25rem",
+          // Wide tables (Endpoints, per-endpoint stats) scroll sideways within
+          // the card on narrow screens instead of overflowing the viewport.
+          overflowX: "auto",
         }}
       >
         {tab === "endpoints" && (

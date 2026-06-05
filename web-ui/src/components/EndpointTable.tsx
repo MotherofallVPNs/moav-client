@@ -117,7 +117,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
 
   return (
     <div>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse" }}>
         <thead>
           <tr>
             {["Name", "Source", "Protocol", "Address", "Latency", "Status", "Priority", "Enabled"].map((h) => (

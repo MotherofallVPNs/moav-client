@@ -409,7 +409,7 @@ export default function Analytics({ refreshTick }: Props) {
 
       {/* Per-endpoint table */}
       <Section title="Per-endpoint">
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
           <thead>
             <tr>
               {["Endpoint", "Dials", "Err", "Failovers", "↑", "↓", "Last dial", "Last error"].map((h) => (
