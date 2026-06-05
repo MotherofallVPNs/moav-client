@@ -268,7 +268,8 @@ export default function Sources({ refreshTick }: Props) {
       )}
 
       {/* Sources table */}
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse" }}>
         <thead>
           <tr>
             {["Name", "Source", "Endpoints", "Healthy", ""].map((h) => (
@@ -325,6 +326,7 @@ export default function Sources({ refreshTick }: Props) {
           )}
         </tbody>
       </table>
+      </div>
 
       {toast && (
         <div

@@ -409,6 +409,7 @@ export default function Analytics({ refreshTick }: Props) {
 
       {/* Per-endpoint table */}
       <Section title="Per-endpoint">
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
           <thead>
             <tr>
@@ -472,6 +473,7 @@ export default function Analytics({ refreshTick }: Props) {
             )}
           </tbody>
         </table>
+        </div>
       </Section>
     </div>
   );

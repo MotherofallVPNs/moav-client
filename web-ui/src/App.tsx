@@ -11,20 +11,7 @@ import Footer from "./components/Footer";
 import Diagnostics from "./components/Diagnostics";
 import { theme } from "./theme";
 import { API_BASE } from "./apiBase";
-
-// Tracks whether the viewport is phone-width so layout can stack instead of
-// overflowing. 640px ≈ the point where the topbar + tables stop fitting.
-function useIsMobile(breakpoint = 640): boolean {
-  const [mobile, setMobile] = useState(
-    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
-  );
-  useEffect(() => {
-    const onResize = () => setMobile(window.innerWidth < breakpoint);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [breakpoint]);
-  return mobile;
-}
+import { useIsMobile } from "./useIsMobile";
 
 type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "diag" | "config";
 
@@ -255,9 +242,6 @@ export default function App() {
           border: `1px solid ${theme.border}`,
           borderRadius: 8,
           padding: isMobile ? "0.85rem 0.7rem" : "1.25rem",
-          // Wide tables (Endpoints, per-endpoint stats) scroll sideways within
-          // the card on narrow screens instead of overflowing the viewport.
-          overflowX: "auto",
         }}
       >
         {tab === "endpoints" && (

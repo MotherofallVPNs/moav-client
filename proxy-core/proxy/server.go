@@ -47,10 +47,13 @@ func (s *Server) WithAuth(username, password string) *Server {
 func (s *Server) ListenAndServeSOCKS5(ctx context.Context) error {
 	conf := &gosocks5.Config{}
 
-	if s.authUsername != "" && s.authPassword != "" {
+	// A password alone turns auth on; the username may be empty (clients then
+	// send an empty username). Requiring both would leave the proxy open when
+	// someone sets only a password.
+	if s.authPassword != "" {
 		creds := gosocks5.StaticCredentials{s.authUsername: s.authPassword}
 		conf.AuthMethods = []gosocks5.Authenticator{gosocks5.UserPassAuthenticator{Credentials: creds}}
-		log.Printf("SOCKS5 auth enabled for user %q", s.authUsername)
+		log.Printf("SOCKS5 auth enabled (user %q)", s.authUsername)
 	}
 
 	conf.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {

@@ -421,17 +421,27 @@ func main() {
 	tb := &plugins.TorrentBlocker{Enabled: cfg.Plugins.TorrentBlock}
 
 	proxyServer := proxy.NewServer(cfg.Proxy.SOCKS5Port, cfg.Proxy.HTTPPort, b, eng, tb)
-	// SOCKS5 auth: prefer .env vars (set by the dashboard's Network exposure
-	// tab) over config.yaml; this way users who flip exposure→LAN in the UI
-	// don't have to re-edit YAML to get auth applied.
+	// SOCKS5 auth precedence: .env FILE (live, written by the dashboard) >
+	// process env (baked into the container at creation by env_file) >
+	// config.yaml. Reading the file means a plain `restart` re-applies an
+	// auth change from the dashboard — without it, env_file values only
+	// refresh on a full container recreate.
+	envFile := readDotEnv(".env")
 	socksUser, socksPass := cfg.Proxy.Auth.Username, cfg.Proxy.Auth.Password
-	if v := os.Getenv("SOCKS5_USERNAME"); v != "" {
-		socksUser = v
+	for _, v := range []string{os.Getenv("SOCKS5_USERNAME"), envFile["SOCKS5_USERNAME"]} {
+		if v != "" {
+			socksUser = v
+		}
 	}
-	if v := os.Getenv("SOCKS5_PASSWORD"); v != "" {
-		socksPass = v
+	for _, v := range []string{os.Getenv("SOCKS5_PASSWORD"), envFile["SOCKS5_PASSWORD"]} {
+		if v != "" {
+			socksPass = v
+		}
 	}
-	if socksUser != "" && socksPass != "" {
+	// A password is enough to turn auth on; the username may be empty (the
+	// client then authenticates with an empty username). Requiring both would
+	// silently leave the proxy open when someone sets only a password.
+	if socksPass != "" {
 		proxyServer = proxyServer.WithAuth(socksUser, socksPass)
 	}
 	apiServer := api.New(cfg.Proxy.APIPort, *cfgPath, statePath, b, eng)
@@ -450,6 +460,29 @@ func main() {
 			log.Fatalf("fatal: %v", err)
 		}
 	}
+}
+
+// readDotEnv parses a KEY=VALUE .env file into a map. Best-effort: returns an
+// empty map if the file is missing. Lets a dashboard-written auth change apply
+// on a plain restart (the container's env_file only refreshes on recreate).
+func readDotEnv(path string) map[string]string {
+	out := map[string]string{}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		out[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
+	}
+	return out
 }
 
 // writeConfigIfChanged atomically writes content to path via .tmp + rename.

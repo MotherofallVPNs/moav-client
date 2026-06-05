@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { theme, statusColor, statusBg } from "../theme";
 import { displayEndpointName } from "../display";
 import { API_BASE, WS_BASE } from "../apiBase";
+import { useIsMobile } from "../useIsMobile";
 
 export interface Endpoint {
   ID: string;
@@ -40,6 +41,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const isMobile = useIsMobile();
   const wsRef = useRef<WebSocket | null>(null);
 
   const apply = (eps: Endpoint[]) => {
@@ -114,6 +116,92 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
     if (n === ep.Priority) return;
     patch(ep.ID, { priority: n });
   };
+
+  const statusPill = (ep: Endpoint) => (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "0.15rem 0.55rem",
+        borderRadius: 12,
+        fontSize: "0.65rem",
+        fontWeight: 600,
+        fontFamily: theme.mono,
+        letterSpacing: "0.05em",
+        textTransform: "uppercase",
+        whiteSpace: "nowrap",
+        background: ep.Enabled ? statusBg(ep.Status) : "rgba(110, 118, 129, 0.15)",
+        color: ep.Enabled ? statusColor(ep.Status) : theme.textDim,
+        border: `1px solid ${ep.Enabled ? statusColor(ep.Status) : theme.textDim}44`,
+      }}
+    >
+      {ep.Enabled ? (ep.Status || "unknown") : "disabled"}
+    </span>
+  );
+
+  if (isMobile) {
+    return (
+      <div>
+        {endpoints.length === 0 ? (
+          <div style={{ color: theme.textDim, fontSize: "0.82rem" }}>No endpoints loaded.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+            {endpoints.map((ep) => (
+              <div
+                key={ep.ID}
+                style={{
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: 8,
+                  padding: "0.65rem 0.75rem",
+                  background: theme.surface2,
+                  opacity: ep.Enabled ? 1 : 0.55,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                  <div style={{ fontWeight: 600, fontSize: "0.88rem", wordBreak: "break-word" }}>
+                    {displayEndpointName(ep.Name, ep.ID)}
+                  </div>
+                  {statusPill(ep)}
+                </div>
+                <div style={{ marginTop: 3, fontFamily: theme.mono, fontSize: "0.7rem", color: theme.textDim, wordBreak: "break-all" }}>
+                  <span style={{ color: theme.green }}>{ep.Source || "—"}</span>{" · "}
+                  <span style={{ color: theme.blue }}>
+                    {ep.Protocol === "sidecar" ? (ep.Config?.sidecar_kind ?? "sidecar") : ep.Protocol}
+                  </span>{" · "}
+                  {ep.Address}
+                </div>
+                <div style={{ marginTop: 9, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.text }}>
+                    {ep.LatencyMs >= 0 ? `${ep.LatencyMs} ms` : "— ms"}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.7rem", color: theme.textDim, fontFamily: theme.mono }}>
+                      prio
+                      <select
+                        value={ep.Priority}
+                        disabled={pendingId === ep.ID}
+                        onChange={(e) => commitPriority(ep, e.target.value)}
+                        style={{ padding: "0.25rem 0.35rem", borderRadius: 4, fontSize: "0.82rem", fontFamily: theme.mono }}
+                      >
+                        {Array.from({ length: 11 }, (_, i) => (
+                          <option key={i} value={i}>{i}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <Switch checked={ep.Enabled} onChange={() => toggleEnabled(ep)} disabled={pendingId === ep.ID} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {toast && (
+          <div style={{ position: "fixed", bottom: 16, left: 16, right: 16, padding: "0.6rem 1rem", background: toast.ok ? theme.green : theme.red, color: theme.bg, borderRadius: 6, fontSize: "0.78rem", fontFamily: theme.mono, fontWeight: 600, textAlign: "center" }}>
+            {toast.msg}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>

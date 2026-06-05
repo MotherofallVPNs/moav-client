@@ -56,6 +56,8 @@ export default function Settings({ refreshTick }: Props) {
   const [authUser, setAuthUser] = useState("");
   const [authPass, setAuthPass] = useState("");
   const [exposureSaving, setExposureSaving] = useState(false);
+  const [savedBanner, setSavedBanner] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/exposure`)
@@ -135,11 +137,28 @@ export default function Settings({ refreshTick }: Props) {
         flash(`Failed: ${data?.error || res.statusText}`, false);
         return;
       }
-      flash(data.note ?? "Exposure saved.", true);
+      setSavedBanner(true);
+      flash("Saved to .env.", true);
     } catch (e) {
       flash(`Could not save: ${(e as Error).message}`, false);
     } finally {
       setExposureSaving(false);
+    }
+  };
+
+  // Restart proxy-core (and web-ui) via the API so auth / config changes from
+  // the dashboard take effect — no terminal needed. (A loopback↔LAN bind
+  // change still needs a full recreate; see the banner note.)
+  const applyNow = async () => {
+    setApplying(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/reload`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      flash(data.note ?? (data.ok === false ? "Couldn't restart automatically — run the command." : "Restarting proxy-core…"), data.ok !== false);
+    } catch (e) {
+      flash(`Apply failed: ${(e as Error).message}`, false);
+    } finally {
+      setTimeout(() => setApplying(false), 4000);
     }
   };
 
@@ -332,11 +351,44 @@ export default function Settings({ refreshTick }: Props) {
         >
           {exposureSaving ? "saving…" : "save exposure"}
         </button>
-        <div style={{ marginTop: "0.4rem", color: theme.textDim, fontSize: "0.72rem" }}>
-          After saving, run{" "}
-          <code>docker compose up -d --force-recreate proxy-core web-ui</code> (or{" "}
-          <code>moav-client restart</code>) to apply the new bind.
-        </div>
+
+        {savedBanner && (
+          <div
+            style={{
+              marginTop: "0.85rem",
+              padding: "0.75rem 0.85rem",
+              border: `1px solid ${theme.yellow}66`,
+              borderLeft: `3px solid ${theme.yellow}`,
+              borderRadius: 6,
+              background: theme.surface2,
+            }}
+          >
+            <div style={{ fontSize: "0.78rem", color: theme.text, marginBottom: "0.55rem", lineHeight: 1.5 }}>
+              Saved to <code>.env</code>. To apply:
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.6rem" }}>
+              <button onClick={applyNow} disabled={applying} style={applyBtn(applying)}>
+                {applying ? "restarting…" : "↻ Apply now (restart proxy-core)"}
+              </button>
+              <span style={{ fontSize: "0.7rem", color: theme.textDim }}>applies auth / password changes</span>
+            </div>
+            <div style={{ fontSize: "0.72rem", color: theme.textDim, lineHeight: 1.5 }}>
+              Changing the <strong>loopback ↔ LAN/public</strong> mode rebinds the ports, which needs a full
+              recreate (the restart above can't do that):
+            </div>
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginTop: "0.4rem", flexWrap: "wrap" }}>
+              <code style={{ fontSize: "0.7rem", color: theme.blue, wordBreak: "break-all", flex: 1 }}>
+                docker compose up -d --force-recreate proxy-core web-ui
+              </code>
+              <button
+                onClick={() => { navigator.clipboard?.writeText("docker compose up -d --force-recreate proxy-core web-ui"); flash("command copied", true); }}
+                style={miniBtn()}
+              >
+                copy
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section style={{ marginBottom: "1.5rem" }}>
@@ -560,4 +612,16 @@ const miniBtn = (): React.CSSProperties => ({
   cursor: "pointer",
   fontFamily: theme.mono,
   fontSize: "0.66rem",
+});
+
+const applyBtn = (busy: boolean): React.CSSProperties => ({
+  padding: "0.4rem 0.85rem",
+  background: theme.yellow,
+  color: theme.bg,
+  border: "none",
+  borderRadius: 4,
+  cursor: busy ? "wait" : "pointer",
+  fontFamily: theme.mono,
+  fontSize: "0.72rem",
+  fontWeight: 600,
 });
