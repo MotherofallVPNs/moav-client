@@ -1074,27 +1074,41 @@ func (s *Server) addSourceToConfig(res *bundles.Result) error {
 	srcs = append(srcs, entry)
 	sub["sources"] = srcs
 
-	if res.MasterDNSDomain != "" && res.MasterDNSKey != "" {
+	// Wire sidecar configs the bundle carried (without enabling — the user
+	// decides). sidecarCfg returns the config sub-map for a kind, creating
+	// the section as needed.
+	sidecarCfg := func(kind string) map[string]any {
 		sidecars, _ := root["sidecars"].(map[string]any)
 		if sidecars == nil {
 			sidecars = map[string]any{}
 			root["sidecars"] = sidecars
 		}
-		md, _ := sidecars["masterdns"].(map[string]any)
-		if md == nil {
-			md = map[string]any{}
-			sidecars["masterdns"] = md
+		sc, _ := sidecars[kind].(map[string]any)
+		if sc == nil {
+			sc = map[string]any{}
+			sidecars[kind] = sc
 		}
-		mdCfg, _ := md["config"].(map[string]any)
-		if mdCfg == nil {
-			mdCfg = map[string]any{}
-			md["config"] = mdCfg
+		cfg, _ := sc["config"].(map[string]any)
+		if cfg == nil {
+			cfg = map[string]any{}
+			sc["config"] = cfg
 		}
-		mdCfg["domain"] = res.MasterDNSDomain
-		mdCfg["key"] = res.MasterDNSKey
+		return cfg
+	}
+
+	if res.MasterDNSDomain != "" && res.MasterDNSKey != "" {
+		md := sidecarCfg("masterdns")
+		md["domain"] = res.MasterDNSDomain
+		md["key"] = res.MasterDNSKey
 		if res.MasterDNSMethod != "" {
-			mdCfg["method"] = res.MasterDNSMethod
+			md["method"] = res.MasterDNSMethod
 		}
+	}
+	if res.AmneziaWGConfPath != "" {
+		sidecarCfg("amneziawg")["source_path"] = relativeIfPossible(res.AmneziaWGConfPath)
+	}
+	if res.TrustTunnelPath != "" {
+		sidecarCfg("trusttunnel")["source_path"] = relativeIfPossible(res.TrustTunnelPath)
 	}
 
 	out, err := yaml.Marshal(root)

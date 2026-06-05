@@ -195,7 +195,17 @@ services:
     profiles: [tor, all-sidecars]
     networks: [moav-net]
     restart: unless-stopped
-    # exposes SOCKS5 on 9050 (default). matches SidecarManager.
+    # Tor SOCKS5 on :9150 (matches SidecarManager). Override the image's
+    # default healthcheck — it fetches a Facebook .onion over the circuit,
+    # which is strict and slow/blocked on many networks, leaving the
+    # container "unhealthy" while the proxy works fine. A port-open check
+    # reflects readiness; the moav probe validates real egress.
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9150"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   psiphon-data:

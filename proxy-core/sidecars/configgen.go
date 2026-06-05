@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // GenerateConfigs writes per-sidecar config files into baseDir using the
@@ -181,7 +182,33 @@ func writeTrustTunnel(baseDir string, c map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", src, err)
 	}
-	return writeAtomic(filepath.Join(baseDir, "trusttunnel", "client.toml"), raw)
+	// The bundle ships a [listener.tun] stanza (needs a TUN device). The
+	// sidecar runs the client in SOCKS5 mode instead. Bind to loopback —
+	// the client refuses a non-loopback SOCKS listener without auth, and the
+	// sidecar's socat forwards 0.0.0.0:5600 → 127.0.0.1:5601 so proxy-core
+	// can reach it over moav-net without auth plumbing.
+	out := stripListenerSections(string(raw)) + "\n[listener.socks]\naddress = \"127.0.0.1:5601\"\n"
+	return writeAtomic(filepath.Join(baseDir, "trusttunnel", "client.toml"), []byte(out))
+}
+
+// stripListenerSections drops every TOML section whose header starts with
+// "[listener" (e.g. [listener], [listener.tun]) so the caller can append its
+// own listener stanza.
+func stripListenerSections(s string) string {
+	var b strings.Builder
+	inListener := false
+	for _, line := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "[") {
+			inListener = strings.HasPrefix(t, "[listener")
+		}
+		if inListener {
+			continue
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func writeAtomic(path string, body []byte) error {
