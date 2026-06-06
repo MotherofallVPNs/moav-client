@@ -55,6 +55,10 @@ export default function Settings({ refreshTick }: Props) {
   const [exposure, setExposure] = useState<Exposure>("loopback");
   const [authUser, setAuthUser] = useState("moav");
   const [authPass, setAuthPass] = useState("");
+  // Dashboard/API admin auth — separate from the proxy creds above.
+  const [dashUser, setDashUser] = useState("moav");
+  const [dashPass, setDashPass] = useState("");
+  const [dashSet, setDashSet] = useState(false); // a password is already on file
   const [exposureSaving, setExposureSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -65,7 +69,9 @@ export default function Settings({ refreshTick }: Props) {
       .then((d) => {
         if (d.exposure) setExposure(d.exposure as Exposure);
         if (d.auth_username) setAuthUser(d.auth_username);
-        // We never receive the unmasked password back; show only a hint.
+        if (d.dashboard_user) setDashUser(d.dashboard_user);
+        // Passwords come back masked; we only learn whether one is set.
+        if (d.dashboard_pass) setDashSet(true);
       })
       .catch(() => {});
     fetch(`${API_BASE}/api/stats`)
@@ -130,6 +136,7 @@ export default function Settings({ refreshTick }: Props) {
         body: JSON.stringify({
           exposure,
           auth: { username: authUser, password: authPass },
+          dashboard: { username: dashUser, password: dashPass },
         }),
       });
       const data = await res.json();
@@ -137,6 +144,7 @@ export default function Settings({ refreshTick }: Props) {
         flash(`Failed: ${data?.error || res.statusText}`, false);
         return;
       }
+      if (dashPass) setDashSet(true);
       setSavedBanner(true);
       flash("Saved to .env.", true);
     } catch (e) {
@@ -152,9 +160,9 @@ export default function Settings({ refreshTick }: Props) {
   const applyNow = async () => {
     setApplying(true);
     try {
-      const res = await fetch(`${API_BASE}/api/sources/reload`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/exposure/apply`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      flash(data.note ?? (data.ok === false ? "Couldn't restart automatically — run the command." : "Restarting proxy-core…"), data.ok !== false);
+      flash(data.note ?? (data.ok === false ? "Couldn't restart automatically — run the command." : "Applying…"), data.ok !== false);
     } catch (e) {
       flash(`Apply failed: ${(e as Error).message}`, false);
     } finally {
@@ -290,45 +298,113 @@ export default function Settings({ refreshTick }: Props) {
         </div>
 
         {exposure !== "loopback" && (
-          <div style={{ marginTop: "0.75rem", padding: "0.75rem", border: `1px solid ${theme.border}`, borderRadius: 6, background: theme.surface2 }}>
-            <div style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.textDim, marginBottom: 6 }}>
-              SOCKS5 authentication (recommended for LAN, mandatory for public)
+          <>
+            {/* Proxy access — the SOCKS5/HTTP exit. Optional; open by default. */}
+            <div style={{ marginTop: "0.75rem", padding: "0.75rem", border: `1px solid ${theme.border}`, borderRadius: 6, background: theme.surface2 }}>
+              <div style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text, marginBottom: 2, fontWeight: 600 }}>
+                1 · Proxy access <span style={{ color: theme.textDim, fontWeight: 400 }}>(SOCKS5 / HTTP)</span>
+              </div>
+              <div style={{ fontFamily: theme.mono, fontSize: "0.68rem", color: theme.textDim, marginBottom: 8 }}>
+                Who may use your VPN exit. Leave blank = open to anyone who can reach the port. Mandatory for public.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
+                <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
+                <input
+                  type="text"
+                  value={authUser}
+                  onChange={(e) => setAuthUser(e.target.value)}
+                  placeholder="moav"
+                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+                />
+                <span />
+                <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
+                <input
+                  type="text"
+                  value={authPass}
+                  onChange={(e) => setAuthPass(e.target.value)}
+                  placeholder="•••••••••"
+                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+                />
+                <button
+                  onClick={() => setAuthPass(randomPassword())}
+                  style={{
+                    padding: "0.35rem 0.7rem",
+                    background: "transparent",
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: 4,
+                    fontFamily: theme.mono,
+                    fontSize: "0.7rem",
+                    color: theme.textDim,
+                    cursor: "pointer",
+                  }}
+                >
+                  generate
+                </button>
+              </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
-              <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
-              <input
-                type="text"
-                value={authUser}
-                onChange={(e) => setAuthUser(e.target.value)}
-                placeholder="moav"
-                style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
-              />
-              <span />
-              <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
-              <input
-                type="text"
-                value={authPass}
-                onChange={(e) => setAuthPass(e.target.value)}
-                placeholder="•••••••••"
-                style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
-              />
-              <button
-                onClick={() => setAuthPass(randomPassword())}
-                style={{
-                  padding: "0.35rem 0.7rem",
-                  background: "transparent",
-                  border: `1px solid ${theme.border}`,
-                  borderRadius: 4,
-                  fontFamily: theme.mono,
-                  fontSize: "0.7rem",
-                  color: theme.textDim,
-                  cursor: "pointer",
-                }}
-              >
-                generate
-              </button>
+
+            {/* Dashboard & API login — protects this control panel itself. */}
+            <div
+              style={{
+                marginTop: "0.6rem",
+                padding: "0.75rem",
+                border: `1px solid ${!dashSet && !dashPass ? theme.red : theme.border}`,
+                borderRadius: 6,
+                background: theme.surface2,
+              }}
+            >
+              <div style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text, marginBottom: 2, fontWeight: 600 }}>
+                2 · Dashboard &amp; API login <span style={{ color: theme.textDim, fontWeight: 400 }}>(admin)</span>
+              </div>
+              <div style={{ fontFamily: theme.mono, fontSize: "0.68rem", color: theme.textDim, marginBottom: 8 }}>
+                Protects this dashboard + API. Without it, anyone on the network can view endpoints and toggle your proxy.
+              </div>
+              {!dashSet && !dashPass && (
+                <div style={{ color: theme.red, fontSize: "0.72rem", marginBottom: 8, fontFamily: theme.mono }}>
+                  ⚠ No dashboard password set — the control panel is open on the network. Set one below.
+                </div>
+              )}
+              {dashSet && (
+                <div style={{ color: theme.green, fontSize: "0.72rem", marginBottom: 8, fontFamily: theme.mono }}>
+                  ✓ A dashboard password is set. Leave blank to keep it; type a new one to change.
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
+                <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
+                <input
+                  type="text"
+                  value={dashUser}
+                  onChange={(e) => setDashUser(e.target.value)}
+                  placeholder="moav"
+                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+                />
+                <span />
+                <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
+                <input
+                  type="text"
+                  value={dashPass}
+                  onChange={(e) => setDashPass(e.target.value)}
+                  placeholder={dashSet ? "•••• (unchanged)" : "•••••••••"}
+                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+                />
+                <button
+                  onClick={() => setDashPass(randomPassword())}
+                  style={{
+                    padding: "0.35rem 0.7rem",
+                    background: "transparent",
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: 4,
+                    fontFamily: theme.mono,
+                    fontSize: "0.7rem",
+                    color: theme.textDim,
+                    cursor: "pointer",
+                  }}
+                >
+                  generate
+                </button>
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         <button
@@ -368,13 +444,14 @@ export default function Settings({ refreshTick }: Props) {
             </div>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.6rem" }}>
               <button onClick={applyNow} disabled={applying} style={applyBtn(applying)}>
-                {applying ? "restarting…" : "↻ Apply now (restart proxy-core)"}
+                {applying ? "restarting…" : "↻ Apply now (restart dashboard + proxy)"}
               </button>
               <span style={{ fontSize: "0.7rem", color: theme.textDim }}>applies auth / password changes</span>
             </div>
             <div style={{ fontSize: "0.72rem", color: theme.textDim, lineHeight: 1.5 }}>
-              Changing the <strong>loopback ↔ LAN/public</strong> mode rebinds the ports, which needs a full
-              recreate (the restart above can't do that):
+              If you just enabled a dashboard password you may be asked to log in after it restarts. Changing the{" "}
+              <strong>loopback ↔ LAN/public</strong> mode rebinds the ports, which needs a full recreate (the
+              restart above can't do that):
             </div>
             <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", marginTop: "0.4rem", flexWrap: "wrap" }}>
               <code style={{ fontSize: "0.7rem", color: theme.blue, wordBreak: "break-all", flex: 1 }}>

@@ -184,6 +184,11 @@ const input: React.CSSProperties = {
   borderRadius: 4,
   fontSize: "0.85rem",
   fontFamily: theme.mono,
+  // Without these a text input keeps its intrinsic width and overflows the
+  // grid's 1fr column on narrow (mobile) screens.
+  width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
 };
 const chip = (color: string, active: boolean): React.CSSProperties => ({
   padding: "0.35rem 0.75rem",

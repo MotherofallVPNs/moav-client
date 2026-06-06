@@ -114,6 +114,10 @@ services:
 
   web-ui:
     build: ./web-ui
+    env_file:
+      # MOAV_DASHBOARD_USER / MOAV_DASHBOARD_PASS → nginx generates dashboard
+      # basic-auth from these at startup (40-moav-auth.sh).
+      - .env
     ports:
       - "${UI_BIND:-127.0.0.1}:3001:3000"
     depends_on:
@@ -121,12 +125,13 @@ services:
     networks:
       - moav-net
     restart: unless-stopped
-    environment:
-      - VITE_API_URL=http://proxy-core:8088
+    volumes:
+      # Live .env so a restart re-reads dashboard creds the user just set
+      # (same bytes proxy-core writes from the Network exposure setting).
+      - ./.env:/etc/moav/.env:ro
     healthcheck:
-      # 127.0.0.1, not localhost — localhost resolves to ::1 in the container
-      # but nginx listens IPv4-only, so localhost gives connection-refused.
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
+      # /healthz is exempt from basic-auth so the check passes when auth is on.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

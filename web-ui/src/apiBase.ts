@@ -1,17 +1,24 @@
-// Resolve where the dashboard should fetch / WebSocket the API.
+// Resolve where the dashboard talks to the API.
 //
-// At build time we can't know if the user will visit http://localhost:3001
-// (loopback) or http://192.168.1.10:3001 (LAN exposure). So we derive the
-// API URL from the page's current location and just swap the port to 8088.
-// VITE_API_URL still wins if explicitly set (useful for `npm run dev`).
+// By default we use the SAME ORIGIN as the page and let the web server
+// (nginx in the default stack, Caddy in the https profile) reverse-proxy
+// /api/* and /api/ws to proxy-core. Single-origin means optional dashboard
+// basic-auth set on that server covers the UI and the API together, and there
+// is no separate :8088 to expose or hit with mixed-content/CORS.
+//
+// VITE_API_URL still wins if explicitly set (useful for `npm run dev` against a
+// proxy-core running somewhere else). `npm run dev` otherwise works via the
+// vite dev-server proxy (see vite.config.ts), which forwards /api to :8088.
 const explicit = import.meta.env.VITE_API_URL as string | undefined;
+const hasExplicit = !!(explicit && explicit.length > 0);
 
-function fromLocation(): string {
-  if (typeof window === "undefined") return "http://localhost:8088";
-  const proto = window.location.protocol === "https:" ? "https:" : "http:";
-  const host = window.location.hostname || "localhost";
-  return `${proto}//${host}:8088`;
+function wsSameOrigin(): string {
+  if (typeof window === "undefined") return "ws://localhost:8088";
+  const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  // window.location.host already includes the port.
+  return `${wsProto}//${window.location.host}`;
 }
 
-export const API_BASE = explicit && explicit.length > 0 ? explicit : fromLocation();
-export const WS_BASE = API_BASE.replace(/^http/, "ws");
+// Empty base = relative URLs (`/api/...`) resolved against the current origin.
+export const API_BASE = hasExplicit ? (explicit as string) : "";
+export const WS_BASE = hasExplicit ? (explicit as string).replace(/^http/, "ws") : wsSameOrigin();

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { theme } from "../theme";
 import { API_BASE } from "../apiBase";
+import { useIsMobile } from "../useIsMobile";
 
 // TODO: when the repo is made public, update GITHUB_URL to the canonical
 // upstream — currently points at the private fork used during development.
@@ -40,6 +41,7 @@ function flag(cc?: string): string {
 
 export default function Footer() {
   const [info, setInfo] = useState<VersionResp | null>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     let cancelled = false;
@@ -82,10 +84,11 @@ export default function Footer() {
         paddingTop: "1rem",
         borderTop: `1px solid ${theme.border}`,
         display: "flex",
+        flexDirection: isMobile ? "column" : "row",
         justifyContent: "space-between",
-        alignItems: "center",
+        alignItems: isMobile ? "flex-start" : "center",
         flexWrap: "wrap",
-        gap: "0.5rem",
+        gap: isMobile ? "0.75rem" : "0.5rem",
         fontSize: "0.72rem",
         fontFamily: theme.mono,
         color: theme.textDim,
@@ -110,11 +113,21 @@ export default function Footer() {
           </span>
         )}
       </div>
-      <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
         <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" style={link}>
           ↗ github
         </a>
-        <span style={{ color: theme.textDim }}>· mother of all VPNs</span>
+        <a href="https://moav.sh" target="_blank" rel="noopener noreferrer" style={link}>
+          ↗ moav.sh
+        </a>
+        <a
+          href="https://moav.sh"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...link, color: theme.textDim }}
+        >
+          Mother of all VPNs
+        </a>
       </div>
     </footer>
   );

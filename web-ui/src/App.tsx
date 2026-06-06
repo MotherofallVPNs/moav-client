@@ -27,18 +27,20 @@ const TAB_LABELS: Record<Tab, string> = {
 };
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
-  padding: "0.55rem 1.1rem",
-  border: "1px solid transparent",
-  borderBottom: active ? `2px solid ${theme.green}` : "2px solid transparent",
-  background: "none",
+  padding: "0.5rem 0.85rem",
+  border: `1px solid ${active ? theme.green : theme.border}`,
+  borderRadius: 6,
+  background: active ? theme.greenDim : theme.surface2,
   cursor: "pointer",
-  fontWeight: active ? 600 : 400,
-  color: active ? theme.text : theme.textDim,
-  fontSize: "0.78rem",
+  fontWeight: active ? 700 : 500,
+  color: active ? theme.green : theme.textDim,
+  fontSize: "0.72rem",
   fontFamily: theme.mono,
-  letterSpacing: "0.02em",
+  letterSpacing: "0.03em",
   textTransform: "uppercase" as const,
-  transition: "color 0.15s, border-color 0.15s",
+  transition: "all 0.15s",
+  whiteSpace: "nowrap",
+  textAlign: "center",
 });
 
 const btn: React.CSSProperties = {
@@ -149,18 +151,23 @@ export default function App() {
             style={{ height: 24, width: "auto", display: "block" }}
           />
           MoaV<span style={{ color: theme.green }}>-client</span>
-          <span
+          <a
+            href="https://moav.sh"
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
               marginLeft: 8,
               color: theme.textDim,
               fontSize: "0.62rem",
               letterSpacing: "0.15em",
               textTransform: "uppercase",
+              textDecoration: "none",
               display: isMobile ? "none" : "inline",
             }}
+            title="Mother of all VPNs — moav.sh"
           >
-            mother of all VPNs
-          </span>
+            Mother of all VPNs
+          </a>
         </h1>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
           <span
@@ -219,13 +226,14 @@ export default function App() {
         </div>
       </header>
 
-      {/* Tab bar */}
+      {/* Tab bar — pills; even grid on mobile, wrapping row on desktop. */}
       <nav
         style={{
-          display: "flex",
-          borderBottom: `1px solid ${theme.border}`,
+          display: isMobile ? "grid" : "flex",
+          gridTemplateColumns: isMobile ? "repeat(3, 1fr)" : undefined,
+          gap: "0.4rem",
+          flexWrap: isMobile ? undefined : "wrap",
           marginBottom: "1.25rem",
-          flexWrap: "wrap",
         }}
       >
         {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (

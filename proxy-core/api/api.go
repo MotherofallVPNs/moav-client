@@ -98,6 +98,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/sources", s.handleSources)
 	mux.HandleFunc("/api/sources/", s.handleSourceByName) // DELETE /api/sources/<name>
 	mux.HandleFunc("/api/sources/reload", s.handleSourcesReload)
+	mux.HandleFunc("/api/exposure/apply", s.handleExposureApply)
 	mux.HandleFunc("/api/bundles", s.handleBundleUpload)
 	mux.HandleFunc("/api/backup", s.handleBackup)
 	mux.HandleFunc("/api/restore", s.handleRestore)
@@ -621,6 +622,49 @@ func (s *Server) handleSourcesReload(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := c.Restart(ctx, id); err != nil {
 			log.Printf("api: reload: restart failed: %v", err)
+		}
+	}()
+}
+
+// handleExposureApply restarts web-ui (nginx → regenerates dashboard basic-auth
+// from .env) and proxy-core (re-reads SOCKS5 + API auth from .env). This applies
+// auth/password changes without a terminal. A loopback↔LAN *bind* change still
+// needs `docker compose up -d --force-recreate` because that re-maps host ports,
+// which a restart can't do.
+func (s *Server) handleExposureApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	if !dockerctl.Available() {
+		writeJSON(w, map[string]interface{}{
+			"ok":   false,
+			"note": "docker socket not mounted; run: docker compose up -d --force-recreate proxy-core web-ui",
+		})
+		return
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":   true,
+		"note": "Applying — restarting dashboard and proxy. Reconnecting in a few seconds (you may be asked to log in if you set a dashboard password).",
+	})
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		c := dockerctl.New()
+		// Restart web-ui first (it doesn't kill this process); proxy-core last.
+		for _, svc := range []string{"web-ui", "proxy-core"} {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			id, err := c.FindContainerByService(ctx, svc)
+			if err != nil || id == "" {
+				log.Printf("api: apply: couldn't find %s container: %v", svc, err)
+				cancel()
+				continue
+			}
+			if err := c.Restart(ctx, id); err != nil {
+				log.Printf("api: apply: restart %s failed: %v", svc, err)
+			} else {
+				log.Printf("api: apply: restarted %s", svc)
+			}
+			cancel()
 		}
 	}()
 }
@@ -1475,8 +1519,22 @@ func (s *Server) broadcast(eps []subscription.Endpoint) {
 func withBasicAuth(h http.Handler) http.Handler {
 	user := os.Getenv("MOAV_DASHBOARD_USER")
 	pass := os.Getenv("MOAV_DASHBOARD_PASS")
-	if user == "" || pass == "" {
+	// Prefer the live .env file so a plain restart applies creds the dashboard
+	// just wrote (the baked container env stays stale until a full recreate).
+	envFile := readEnvKV(".env")
+	if v := envFile["MOAV_DASHBOARD_USER"]; v != "" {
+		user = v
+	}
+	if v := envFile["MOAV_DASHBOARD_PASS"]; v != "" {
+		pass = v
+	}
+	// A password alone enables auth; default the username to "moav" (matches the
+	// web-ui nginx entrypoint).
+	if pass == "" {
 		return h
+	}
+	if user == "" {
+		user = "moav"
 	}
 	expected := user + ":" + pass
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
