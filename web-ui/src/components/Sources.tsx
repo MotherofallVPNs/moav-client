@@ -363,9 +363,12 @@ export default function Sources({ refreshTick }: Props) {
                   × remove
                 </button>
               </div>
-              <div style={{ fontFamily: theme.mono, color: theme.textDim, fontSize: "0.7rem", wordBreak: "break-all", marginTop: 4 }}>
-                {src.file || src.url || "—"}
-              </div>
+              {/* Show a remote URL (useful info) but not the local file path. */}
+              {src.url && (
+                <div style={{ fontFamily: theme.mono, color: theme.textDim, fontSize: "0.7rem", wordBreak: "break-all", marginTop: 4 }}>
+                  {src.url}
+                </div>
+              )}
               <Tags tags={src.tags} />
               <div style={{ display: "flex", gap: "1.25rem", marginTop: 6, fontFamily: theme.mono, fontSize: "0.74rem" }}>
                 <span style={{ color: theme.textDim }}>
@@ -383,7 +386,7 @@ export default function Sources({ refreshTick }: Props) {
           <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["Name", "Source", "Endpoints", "Healthy", ""].map((h) => (
+                {["Name", "Components", "Endpoints", "Healthy", ""].map((h) => (
                   <th key={h} style={th}>
                     {h}
                   </th>
@@ -395,7 +398,7 @@ export default function Sources({ refreshTick }: Props) {
                 <tr key={src.name} style={{ borderTop: `1px solid ${theme.border}` }}>
                   <td style={{ ...td, fontFamily: theme.mono, color: theme.green, fontWeight: 600 }}>{src.name}</td>
                   <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim, fontSize: "0.72rem", wordBreak: "break-all" }}>
-                    {src.file || src.url || "—"}
+                    {src.url && <div>{src.url}</div>}
                     <Tags tags={src.tags} />
                   </td>
                   <td style={{ ...td, fontFamily: theme.mono }}>{src.endpoints}</td>
