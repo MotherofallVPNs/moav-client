@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { theme } from "../theme";
-import { API_BASE, WS_BASE } from "../apiBase";
+import { API_BASE, openWS } from "../apiBase";
 import { displayEndpointId } from "../display";
 import { copyText } from "../clipboard";
 
@@ -59,23 +59,34 @@ export default function Debug({ refreshTick }: Props) {
   }, [refreshTick]);
 
   useEffect(() => {
-    const ws = new WebSocket(`${WS_BASE}/api/ws`);
-    wsRef.current = ws;
-    ws.onmessage = (ev) => {
-      try {
-        const frame = JSON.parse(ev.data as string);
-        if (frame.log && !pausedRef.current) {
-          setEvents((prev) => {
-            const next = [...prev, frame.log as LogEvent];
-            if (next.length > RING_LIMIT) next.splice(0, next.length - RING_LIMIT);
-            return next;
-          });
-        }
-      } catch {
-        // ignore
+    let closed = false;
+    let ws: WebSocket | null = null;
+    openWS("/api/ws").then((sock) => {
+      if (closed) {
+        sock.close();
+        return;
       }
+      ws = sock;
+      wsRef.current = sock;
+      sock.onmessage = (ev) => {
+        try {
+          const frame = JSON.parse(ev.data as string);
+          if (frame.log && !pausedRef.current) {
+            setEvents((prev) => {
+              const next = [...prev, frame.log as LogEvent];
+              if (next.length > RING_LIMIT) next.splice(0, next.length - RING_LIMIT);
+              return next;
+            });
+          }
+        } catch {
+          // ignore
+        }
+      };
+    });
+    return () => {
+      closed = true;
+      ws?.close();
     };
-    return () => ws.close();
   }, []);
 
   useEffect(() => {

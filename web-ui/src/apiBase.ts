@@ -22,3 +22,23 @@ function wsSameOrigin(): string {
 // Empty base = relative URLs (`/api/...`) resolved against the current origin.
 export const API_BASE = hasExplicit ? (explicit as string) : "";
 export const WS_BASE = hasExplicit ? (explicit as string).replace(/^http/, "ws") : wsSameOrigin();
+
+// openWS opens a WebSocket to `path`, first fetching a short-lived ticket over
+// an authenticated request and appending it as ?ticket=. Browsers (iOS Safari
+// especially) don't send cached basic-auth credentials on a WS handshake, so
+// the ticket is how the WS authenticates. When no dashboard password is set the
+// ticket endpoint still returns one and the server ignores it — so this path is
+// uniform whether or not auth is enabled.
+export async function openWS(path: string): Promise<WebSocket> {
+  let url = `${WS_BASE}${path}`;
+  try {
+    const r = await fetch(`${API_BASE}/api/ws-ticket`);
+    if (r.ok) {
+      const { ticket } = await r.json();
+      if (ticket) url += `${path.includes("?") ? "&" : "?"}ticket=${encodeURIComponent(ticket)}`;
+    }
+  } catch {
+    // No ticket (e.g. auth off / endpoint missing) — open without it.
+  }
+  return new WebSocket(url);
+}

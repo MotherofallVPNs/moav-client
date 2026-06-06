@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { theme } from "../theme";
-import { API_BASE, WS_BASE } from "../apiBase";
+import { API_BASE } from "../apiBase";
 
 
 type Action = "proxy" | "direct" | "block";

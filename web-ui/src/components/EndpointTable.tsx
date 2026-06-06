@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { theme, statusColor, statusBg } from "../theme";
 import { displayEndpointName } from "../display";
-import { API_BASE, WS_BASE } from "../apiBase";
+import { API_BASE, openWS } from "../apiBase";
 import { useIsMobile } from "../useIsMobile";
 
 export interface Endpoint {
@@ -57,19 +57,30 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
       .catch(() => {});
   }, [refreshTick]);
 
-  // Persistent WS stream.
+  // Persistent WS stream (ticket-authenticated — see openWS).
   useEffect(() => {
-    const ws = new WebSocket(`${WS_BASE}/api/ws`);
-    wsRef.current = ws;
-    ws.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data as string);
-        if (data.endpoints) apply(data.endpoints as Endpoint[]);
-      } catch {
-        // ignore
+    let closed = false;
+    let ws: WebSocket | null = null;
+    openWS("/api/ws").then((sock) => {
+      if (closed) {
+        sock.close();
+        return;
       }
+      ws = sock;
+      wsRef.current = sock;
+      sock.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data as string);
+          if (data.endpoints) apply(data.endpoints as Endpoint[]);
+        } catch {
+          // ignore
+        }
+      };
+    });
+    return () => {
+      closed = true;
+      ws?.close();
     };
-    return () => ws.close();
   }, []);
 
   const flash = (msg: string, ok: boolean) => {

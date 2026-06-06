@@ -49,6 +49,9 @@ type Server struct {
 	// WebSocket hub: broadcast endpoint updates to connected clients.
 	hubMu   sync.RWMutex
 	clients map[chan []byte]struct{}
+
+	// Short-lived tickets authenticating the WebSocket handshake.
+	tickets *wsTickets
 }
 
 // New creates an API Server.
@@ -62,6 +65,7 @@ func New(port int, cfgPath, statePath string, b *balancer.Balancer, eng *plugins
 		engine:    eng,
 		config:    map[string]interface{}{},
 		clients:   map[chan []byte]struct{}{},
+		tickets:   newWSTickets(),
 	}
 }
 
@@ -106,7 +110,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("/api/diag", s.handleDiag)
 	mux.HandleFunc("/api/snispoof", s.handleSNISpoof)
 	mux.HandleFunc("/api/exposure", s.handleExposure)
-	mux.Handle("/api/ws", websocket.Handler(s.handleWebSocket))
+	mux.HandleFunc("/api/ws-ticket", s.handleWSTicket)
+	mux.HandleFunc("/api/ws", s.handleWSUpgrade)
 
 	addr := fmt.Sprintf("0.0.0.0:%d", s.port)
 	log.Printf("API listening on %s", addr)
@@ -1486,6 +1491,25 @@ func (s *Server) configPath() string {
 	return "config.yaml"
 }
 
+// handleWSTicket issues a short-lived WebSocket ticket. It sits behind
+// withBasicAuth, so only an authenticated caller can obtain one.
+func (s *Server) handleWSTicket(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]string{"ticket": s.tickets.issue()})
+}
+
+// handleWSUpgrade validates the WebSocket ticket (only when a dashboard
+// password is configured) before delegating to the upgrade handler. /api/ws is
+// exempt from basic-auth (browsers don't send creds on WS handshakes), so the
+// ticket is what guards it. On failure we 401 WITHOUT a WWW-Authenticate header
+// so the browser doesn't pop a basic-auth dialog.
+func (s *Server) handleWSUpgrade(w http.ResponseWriter, r *http.Request) {
+	if dashboardAuthConfigured() && !s.tickets.consume(r.URL.Query().Get("ticket")) {
+		http.Error(w, "ws ticket required", http.StatusUnauthorized)
+		return
+	}
+	websocket.Handler(s.handleWebSocket).ServeHTTP(w, r)
+}
+
 // handleWebSocket streams endpoint updates AND live log events to the
 // connected client. Frames are JSON objects; consumers dispatch on the
 // keys present ("endpoints" vs "log").
@@ -1576,7 +1600,9 @@ func withBasicAuth(h http.Handler) http.Handler {
 	}
 	expected := user + ":" + pass
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/healthz" || r.Method == http.MethodOptions {
+		// /api/ws is guarded by a ticket (browsers can't send basic-auth on a
+		// WS handshake); /api/healthz must stay reachable for liveness probes.
+		if r.URL.Path == "/api/healthz" || r.URL.Path == "/api/ws" || r.Method == http.MethodOptions {
 			h.ServeHTTP(w, r)
 			return
 		}

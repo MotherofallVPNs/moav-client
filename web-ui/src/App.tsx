@@ -123,6 +123,29 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Header health count, independent of the active tab — the Endpoints tab also
+  // feeds it via onHealthChange, but it isn't mounted on other tabs, so poll.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch(`${API_BASE}/api/endpoints`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (cancelled || !d?.endpoints) return;
+          const eps = d.endpoints as { Status: string; Enabled: boolean }[];
+          setTotal(eps.length);
+          setHealthy(eps.filter((e) => e.Status === "ok" && e.Enabled).length);
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [refreshTick]);
+
   const refresh = () => setRefreshTick((t) => t + 1);
   const isMobile = useIsMobile();
 
