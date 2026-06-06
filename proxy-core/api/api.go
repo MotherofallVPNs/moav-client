@@ -440,6 +440,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 // counting endpoints per source from the live balancer pool. The dashboard's
 // Sources tab uses this as a "which moav servers am I connected to" view.
 func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		s.handleAddSource(w, r)
+		return
+	}
 	type srcRow struct {
 		Name      string   `json:"name"`
 		File      string   `json:"file,omitempty"`
@@ -609,6 +613,104 @@ func (s *Server) handleSourceByName(w http.ResponseWriter, r *http.Request) {
 		"removed": name,
 		"note":    "Source removed from config.yaml. POST /api/sources/reload (or restart proxy-core) to unload its endpoints.",
 	})
+}
+
+// handleAddSource adds a source from pasted text — either a subscription URL or
+// pasted V2Ray URIs / base64 subscription content. URLs are stored as
+// subscription.url; pasted content is written to data/<name>/subscription.txt
+// and stored as subscription.file. A reload applies it. This intentionally
+// accepts any standard V2Ray config, not just MoaV bundles.
+func (s *Server) handleAddSource(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	name := sanitizeSourceName(body.Name)
+	if name == "" {
+		http.Error(w, "a source name (letters, digits, . _ -) is required", http.StatusBadRequest)
+		return
+	}
+	url := strings.TrimSpace(body.URL)
+	text := strings.TrimSpace(body.Text)
+	// A single http(s) line in the text box is treated as a subscription URL.
+	if url == "" && looksLikeURL(text) {
+		url, text = text, ""
+	}
+	if url == "" && text == "" {
+		http.Error(w, "provide a subscription URL or pasted URIs", http.StatusBadRequest)
+		return
+	}
+
+	entry := map[string]any{"name": name}
+	if url != "" {
+		entry["url"] = url
+	} else {
+		dir := filepath.Join("data", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			http.Error(w, "create data dir: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		path := filepath.Join(dir, "subscription.txt")
+		if err := os.WriteFile(path, []byte(text+"\n"), 0o644); err != nil {
+			http.Error(w, "write subscription: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		entry["file"] = path
+	}
+
+	dup := false
+	if err := editYAMLFile(s.configPath(), func(root yamlMap) error {
+		srcs := root.child("subscription").seq("sources")
+		for _, item := range srcs.Content {
+			if item.Kind == yaml.MappingNode && (yamlMap{item}).scalarString("name") == name {
+				dup = true
+				return errSkipWrite
+			}
+		}
+		srcs.Content = append(srcs.Content, yamlNodeOf(entry))
+		return nil
+	}); err != nil {
+		http.Error(w, "write config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if dup {
+		http.Error(w, "a source named "+name+" already exists", http.StatusConflict)
+		return
+	}
+	log.Printf("api: added source %q (%s) — reload to load its endpoints", name, map[bool]string{true: "url", false: "pasted"}[url != ""])
+	writeJSON(w, map[string]interface{}{
+		"ok":   true,
+		"name": name,
+		"note": "Source added. Hit Reload to load its endpoints.",
+		"kind": map[bool]string{true: "url", false: "file"}[url != ""],
+	})
+}
+
+// sanitizeSourceName keeps only filesystem/identifier-safe characters so a
+// source name can also be a data/<name>/ directory.
+func sanitizeSourceName(s string) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func looksLikeURL(s string) bool {
+	s = strings.TrimSpace(s)
+	if strings.ContainsAny(s, "\n\r") {
+		return false
+	}
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
 // handleSourcesReload triggers a self-restart of proxy-core via the docker

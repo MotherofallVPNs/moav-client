@@ -1,17 +1,50 @@
-// Display helpers — keep canonical IDs intact in storage / wire format,
-// but strip the redundant "sidecar" prefix in the dashboard render layer.
-//
-// Backend names look like:
-//   ID:         sidecar:psiphon
-//   Name:       sidecar-psiphon
-//   Protocol:   sidecar
-//   Config.sidecar_kind: psiphon
-// Users see the kind already in the chip/colored label; the prefix is noise.
+// Display helpers — keep canonical IDs intact in storage / wire format, but
+// render clean, consistent labels in the dashboard. The Source column already
+// shows which bundle an endpoint came from, so the NAME doesn't repeat it:
+//   "MoaV-Hysteria2-beezhantest2"  → "Hysteria2"
+//   "beezhantest2/wireguard"       → "WireGuard"
+//   "sidecar-masterdns"            → "MasterDNS"
 
-export function displayEndpointName(name: string, id?: string): string {
-  const src = name || id || "";
-  // "sidecar-psiphon" → "psiphon"; leaves regular names alone.
-  return src.replace(/^sidecar[-_]/, "").replace(/^sidecar:/, "");
+// Pretty-case for known lowercase protocol / sidecar kinds.
+const PRETTY: Record<string, string> = {
+  wireguard: "WireGuard",
+  amneziawg: "AmneziaWG",
+  masterdns: "MasterDNS",
+  trusttunnel: "TrustTunnel",
+  psiphon: "Psiphon",
+  tor: "Tor",
+  dnstt: "DNSTT",
+  slipstream: "Slipstream",
+  hysteria2: "Hysteria2",
+  vless: "VLESS",
+  vmess: "VMess",
+  trojan: "Trojan",
+  tuic: "TUIC",
+  ss: "Shadowsocks",
+  shadowsocks: "Shadowsocks",
+};
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function displayEndpointName(name: string, id?: string, source?: string): string {
+  let s = name || id || "";
+  // Strip sidecar prefixes ("sidecar-masterdns" / "sidecar:masterdns").
+  s = s.replace(/^sidecar[-_:]/, "");
+  // Strip a leading "MoaV-" decoration.
+  s = s.replace(/^MoaV[-_]/i, "");
+  // Strip the source/bundle decoration: "<label>-<source>", "<label>/<source>",
+  // or a leading "<source>/<label>".
+  if (source) {
+    const src = escapeRegex(source);
+    s = s.replace(new RegExp(`[-_/]${src}$`, "i"), "");
+    s = s.replace(new RegExp(`^${src}[-_/]`, "i"), "");
+  }
+  s = s.trim();
+  const key = s.toLowerCase();
+  if (PRETTY[key]) return PRETTY[key];
+  return s || name || id || "";
 }
 
 // For per-connection flow rows. They show "vless · vless:1.2.3.4:443" or

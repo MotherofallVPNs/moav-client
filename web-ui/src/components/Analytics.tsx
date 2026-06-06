@@ -255,7 +255,7 @@ export default function Analytics({ refreshTick }: Props) {
       const rowBytes = row.bytes_up + row.bytes_down;
       if (rowBytes > b.repBytes) {
         b.repBytes = rowBytes;
-        b.endpointName = displayEndpointName(row.name, row.id);
+        b.endpointName = displayEndpointName(row.name, row.id, row.source);
       }
       if (rowBytes > 0) b.endpointCount++;
       b.dials += row.dials;
@@ -429,7 +429,7 @@ export default function Analytics({ refreshTick }: Props) {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
                     <span style={{ fontFamily: theme.mono, color: theme.text, fontWeight: 600, fontSize: "0.82rem", wordBreak: "break-word" }}>
-                      {displayEndpointName(row.name, row.id)}
+                      {displayEndpointName(row.name, row.id, row.source)}
                     </span>
                     <span style={{ color: statusColor(row.status), fontFamily: theme.mono, fontSize: "0.72rem", whiteSpace: "nowrap" }}>
                       ● {row.status}
@@ -474,7 +474,7 @@ export default function Analytics({ refreshTick }: Props) {
                   .map((row) => (
                     <tr key={row.id} style={{ borderTop: `1px solid ${theme.border}` }}>
                       <td style={td}>
-                        <div>{displayEndpointName(row.name, row.id)}</div>
+                        <div>{displayEndpointName(row.name, row.id, row.source)}</div>
                         <div style={{ color: theme.textDim, fontSize: "0.68rem", fontFamily: theme.mono }}>
                           {resolveLabel(row)} · {row.address}{" "}
                           <span style={{ color: statusColor(row.status) }}>● {row.status}</span>

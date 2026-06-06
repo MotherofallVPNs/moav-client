@@ -3,6 +3,7 @@ import { theme } from "../theme";
 import { API_BASE, openWS } from "../apiBase";
 import { displayEndpointId } from "../display";
 import { copyText } from "../clipboard";
+import { useIsMobile } from "../useIsMobile";
 
 
 type Level = "info" | "warn" | "error";
@@ -251,7 +252,13 @@ function fmtBytesShort(n: number): string {
 }
 
 function FlowsPane({ refreshTick }: { refreshTick?: number }) {
+  const isMobile = useIsMobile();
   const [flows, setFlows] = useState<Flow[]>([]);
+
+  const flowEndpoint = (fl: Flow) =>
+    fl.protocol === "sidecar"
+      ? displayEndpointId(fl.endpoint_id)
+      : `${fl.protocol}${fl.endpoint_id ? ` · ${displayEndpointId(fl.endpoint_id)}` : ""}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -310,34 +317,63 @@ function FlowsPane({ refreshTick }: { refreshTick?: number }) {
           {flows
             .slice()
             .reverse()
-            .map((fl) => (
-              <div
-                key={fl.id}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "60px 1fr 1fr 70px 70px 80px",
-                  gap: "0.5rem",
-                  padding: "4px 0.75rem",
-                  borderTop: `1px solid ${theme.border}`,
-                  color: fl.result.startsWith("error") ? theme.red : theme.text,
-                }}
-              >
-                <span style={{ color: theme.textDim }}>#{fl.id}</span>
-                <span style={{ color: theme.blue, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.dest}>
-                  {fl.dest}
-                </span>
-                <span style={{ color: theme.green, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.endpoint_id}>
-                  {fl.protocol === "sidecar"
-                    ? displayEndpointId(fl.endpoint_id)
-                    : `${fl.protocol}${fl.endpoint_id ? ` · ${displayEndpointId(fl.endpoint_id)}` : ""}`}
-                </span>
-                <span style={{ color: theme.text }}>↑{fmtBytesShort(fl.bytes_up)}</span>
-                <span style={{ color: theme.text }}>↓{fmtBytesShort(fl.bytes_down)}</span>
-                <span style={{ color: theme.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.result}>
-                  {fl.result}
-                </span>
-              </div>
-            ))}
+            .map((fl) =>
+              isMobile ? (
+                // Stacked layout — the desktop grid squished dest/endpoint to
+                // nothing on a phone. Line 1: id + bytes + result; line 2: dest;
+                // line 3: via endpoint.
+                <div
+                  key={fl.id}
+                  style={{
+                    padding: "6px 0.75rem",
+                    borderTop: `1px solid ${theme.border}`,
+                    color: fl.result.startsWith("error") ? theme.red : theme.text,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ color: theme.textDim }}>#{fl.id}</span>
+                    <span>
+                      <span style={{ color: theme.text }}>↑{fmtBytesShort(fl.bytes_up)}</span>{" "}
+                      <span style={{ color: theme.text }}>↓{fmtBytesShort(fl.bytes_down)}</span>
+                    </span>
+                    <span style={{ color: fl.result.startsWith("error") ? theme.red : theme.textDim, whiteSpace: "nowrap" }}>
+                      {fl.result}
+                    </span>
+                  </div>
+                  <div style={{ color: theme.blue, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.dest}>
+                    {fl.dest}
+                  </div>
+                  <div style={{ color: theme.green, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.endpoint_id}>
+                    → {flowEndpoint(fl)}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  key={fl.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "60px 1fr 1fr 70px 70px 80px",
+                    gap: "0.5rem",
+                    padding: "4px 0.75rem",
+                    borderTop: `1px solid ${theme.border}`,
+                    color: fl.result.startsWith("error") ? theme.red : theme.text,
+                  }}
+                >
+                  <span style={{ color: theme.textDim }}>#{fl.id}</span>
+                  <span style={{ color: theme.blue, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.dest}>
+                    {fl.dest}
+                  </span>
+                  <span style={{ color: theme.green, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.endpoint_id}>
+                    {flowEndpoint(fl)}
+                  </span>
+                  <span style={{ color: theme.text }}>↑{fmtBytesShort(fl.bytes_up)}</span>
+                  <span style={{ color: theme.text }}>↓{fmtBytesShort(fl.bytes_down)}</span>
+                  <span style={{ color: theme.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.result}>
+                    {fl.result}
+                  </span>
+                </div>
+              )
+            )}
         </div>
       )}
     </div>

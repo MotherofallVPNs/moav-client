@@ -169,7 +169,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
                   <div style={{ fontWeight: 600, fontSize: "0.88rem", wordBreak: "break-word" }}>
-                    {displayEndpointName(ep.Name, ep.ID)}
+                    {displayEndpointName(ep.Name, ep.ID, ep.Source)}
                   </div>
                   {statusPill(ep)}
                 </div>
@@ -243,7 +243,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
                 }}
               >
                 <td style={td}>
-                  <div>{displayEndpointName(ep.Name, ep.ID)}</div>
+                  <div>{displayEndpointName(ep.Name, ep.ID, ep.Source)}</div>
                   {ep.Protocol === "sidecar" && (
                     <div style={{ fontSize: "0.65rem", color: theme.textDim, marginTop: 2, fontFamily: theme.mono }}>
                       {ep.Config?.sidecar_kind ?? "?"}

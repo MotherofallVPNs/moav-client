@@ -103,7 +103,41 @@ export default function Sources({ refreshTick }: Props) {
   const [lastUpload, setLastUpload] = useState<UploadResult | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [reloading, setReloading] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addText, setAddText] = useState("");
+  const [adding, setAdding] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const addTextSource = async () => {
+    if (!addName.trim() || !addText.trim()) {
+      flash("A name and a URL / pasted URIs are required.", false);
+      return;
+    }
+    setAdding(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: addName.trim(), text: addText.trim() }),
+      });
+      if (!r.ok) {
+        const msg = await r.text();
+        flash(`Add failed: ${msg.slice(0, 160)}`, false);
+        return;
+      }
+      const data = await r.json();
+      flash(data.note ?? "Source added. Hit Reload.", true);
+      setAddName("");
+      setAddText("");
+      setAddOpen(false);
+      await refresh();
+    } catch (e) {
+      flash(`Add failed: ${(e as Error).message}`, false);
+    } finally {
+      setAdding(false);
+    }
+  };
 
   const refresh = async () => {
     try {
@@ -270,6 +304,62 @@ export default function Sources({ refreshTick }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Add a source by pasting a subscription URL or URIs (any V2Ray config). */}
+      <div style={{ marginBottom: addOpen ? "0.6rem" : "1rem" }}>
+        <button
+          onClick={() => setAddOpen((o) => !o)}
+          style={{
+            background: "none",
+            border: "none",
+            color: theme.blue,
+            cursor: "pointer",
+            fontFamily: theme.mono,
+            fontSize: "0.74rem",
+            padding: 0,
+          }}
+        >
+          {addOpen ? "− cancel" : "+ or paste a subscription URL / URIs"}
+        </button>
+      </div>
+
+      {addOpen && (
+        <div
+          style={{
+            marginBottom: "1rem",
+            padding: "0.75rem",
+            background: theme.surface2,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 6,
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+          }}
+        >
+          <input
+            type="text"
+            value={addName}
+            onChange={(e) => setAddName(e.target.value)}
+            placeholder="source name (e.g. my-provider)"
+            style={{ padding: "0.4rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem", width: "100%", minWidth: 0, boxSizing: "border-box" }}
+          />
+          <textarea
+            value={addText}
+            onChange={(e) => setAddText(e.target.value)}
+            placeholder={"https://… subscription URL\n— or paste one or more —\nvless://…\nvmess://…\ntrojan://…"}
+            rows={5}
+            style={{ padding: "0.4rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.78rem", width: "100%", minWidth: 0, boxSizing: "border-box", resize: "vertical" }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "0.68rem", color: theme.textDim, fontFamily: theme.mono }}>
+              Accepts any standard V2Ray config — not just MoaV. Trust the source.
+            </span>
+            <button onClick={addTextSource} disabled={adding} style={chipBtn(theme.green)}>
+              {adding ? "adding…" : "add source"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {helpOpen && (
         <div
