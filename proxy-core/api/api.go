@@ -29,8 +29,8 @@ import (
 	"github.com/ibeezhan/moav-client/proxy-core/prober"
 	"github.com/ibeezhan/moav-client/proxy-core/state"
 	"github.com/ibeezhan/moav-client/proxy-core/subscription"
-	"gopkg.in/yaml.v3"
 	"golang.org/x/net/websocket"
+	"gopkg.in/yaml.v3"
 )
 
 // Server is the API HTTP server.
@@ -260,14 +260,14 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	directIP, directCC := directIPCache.Read()
 	proxyIP, proxyCC := proxyIPCache.Read()
 	writeJSON(w, map[string]interface{}{
-		"version":         cmd.Version,
-		"commit":          buildCommit,
-		"uptime_sec":      int(time.Since(startedAt).Seconds()),
-		"public_ip":       directIP, // alias kept for the older footer fetch
-		"direct_ip":       directIP,
-		"direct_country":  directCC,
-		"proxy_ip":        proxyIP,
-		"proxy_country":   proxyCC,
+		"version":        cmd.Version,
+		"commit":         buildCommit,
+		"uptime_sec":     int(time.Since(startedAt).Seconds()),
+		"public_ip":      directIP, // alias kept for the older footer fetch
+		"direct_ip":      directIP,
+		"direct_country": directCC,
+		"proxy_ip":       proxyIP,
+		"proxy_country":  proxyCC,
 	})
 }
 
@@ -311,10 +311,11 @@ func observedProxyIPRefresh() (string, string) {
 // `loc=XX` line — exactly what we need for the footer flag emoji.
 //
 // Response format (text/plain):
-//   fl=...
-//   ip=1.2.3.4
-//   loc=US
-//   ...
+//
+//	fl=...
+//	ip=1.2.3.4
+//	loc=US
+//	...
 func lookupIPCountry(c *http.Client, _ string) (string, string) {
 	resp, err := c.Get("https://www.cloudflare.com/cdn-cgi/trace")
 	if err != nil {
@@ -518,65 +519,54 @@ func (s *Server) handleSourceByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw, err := os.ReadFile(s.configPath())
-	if err != nil {
-		http.Error(w, "read config: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	var root map[string]any
-	if err := yaml.Unmarshal(raw, &root); err != nil {
-		http.Error(w, "parse config: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	sub, _ := root["subscription"].(map[string]any)
-	if sub == nil {
+	removed := false
+	noSubBlock := false
+	err := editYAMLFile(s.configPath(), func(root yamlMap) error {
+		subNode := root.get("subscription")
+		if subNode == nil || subNode.Kind != yaml.MappingNode {
+			noSubBlock = true
+			return errSkipWrite
+		}
+		sub := yamlMap{subNode}
+		if name == "default" {
+			// Clear the legacy single-source fields.
+			if sub.get("file") != nil {
+				sub.set("file", "")
+				removed = true
+			}
+			if sub.get("url") != nil {
+				sub.set("url", "")
+				removed = true
+			}
+			if sub.get("wireguard_files") != nil {
+				sub.setNode("wireguard_files", yamlNodeOf([]any{}))
+				removed = true
+			}
+		} else if srcs := sub.get("sources"); srcs != nil && srcs.Kind == yaml.SequenceNode {
+			kept := srcs.Content[:0:0]
+			for _, item := range srcs.Content {
+				if item.Kind == yaml.MappingNode && (yamlMap{item}).scalarString("name") == name {
+					removed = true
+					continue
+				}
+				kept = append(kept, item)
+			}
+			srcs.Content = kept
+		}
+		if !removed {
+			return errSkipWrite // nothing changed — leave the file untouched
+		}
+		return nil
+	})
+	if noSubBlock {
 		http.Error(w, "no subscription block in config", http.StatusNotFound)
 		return
-	}
-
-	removed := false
-	if name == "default" {
-		// Clear the legacy single-source fields.
-		if _, ok := sub["file"]; ok {
-			sub["file"] = ""
-			removed = true
-		}
-		if _, ok := sub["url"]; ok {
-			sub["url"] = ""
-			removed = true
-		}
-		if _, ok := sub["wireguard_files"]; ok {
-			sub["wireguard_files"] = []any{}
-			removed = true
-		}
-	} else {
-		srcs, _ := sub["sources"].([]any)
-		var kept []any
-		for _, entry := range srcs {
-			m, _ := entry.(map[string]any)
-			if m == nil {
-				kept = append(kept, entry)
-				continue
-			}
-			if n, _ := m["name"].(string); n == name {
-				removed = true
-				continue
-			}
-			kept = append(kept, entry)
-		}
-		sub["sources"] = kept
 	}
 	if !removed {
 		http.Error(w, "no such source: "+name, http.StatusNotFound)
 		return
 	}
-
-	out, err := yaml.Marshal(root)
 	if err != nil {
-		http.Error(w, "marshal: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := os.WriteFile(s.configPath(), out, 0o644); err != nil {
 		http.Error(w, "write config: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -721,41 +711,37 @@ func (s *Server) handleSNISpoof(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		raw, err := os.ReadFile(s.configPath())
-		if err != nil {
-			http.Error(w, "read config: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		var root map[string]any
-		if err := yaml.Unmarshal(raw, &root); err != nil {
-			http.Error(w, "parse config: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		section, _ := root["sni_spoof"].(map[string]any)
-		if section == nil {
-			section = map[string]any{
-				"listen_host": "0.0.0.0",
-				"dial_host":   "sni-spoof",
-				"base_port":   12800,
-				"output_path": "data/sni-spoof.json",
+		err := editYAMLFile(s.configPath(), func(root yamlMap) error {
+			section := root.child("sni_spoof")
+			// Seed required keys if the section is new.
+			if section.get("listen_host") == nil {
+				section.set("listen_host", "0.0.0.0")
 			}
-			root["sni_spoof"] = section
-		}
-		if body.Enabled != nil {
-			section["enabled"] = *body.Enabled
-		}
-		if body.DefaultFakeSNI != nil {
-			section["default_fake_sni"] = *body.DefaultFakeSNI
-		}
-		if body.DefaultUTLS != nil {
-			section["default_utls"] = *body.DefaultUTLS
-		}
-		out, _ := yaml.Marshal(root)
-		if err := os.WriteFile(s.configPath(), out, 0o644); err != nil {
-			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
+			if section.get("dial_host") == nil {
+				section.set("dial_host", "sni-spoof")
+			}
+			if section.get("base_port") == nil {
+				section.set("base_port", 12800)
+			}
+			if section.get("output_path") == nil {
+				section.set("output_path", "data/sni-spoof.json")
+			}
+			if body.Enabled != nil {
+				section.set("enabled", *body.Enabled)
+			}
+			if body.DefaultFakeSNI != nil {
+				section.set("default_fake_sni", *body.DefaultFakeSNI)
+			}
+			if body.DefaultUTLS != nil {
+				section.set("default_utls", *body.DefaultUTLS)
+			}
+			return nil
+		})
+		if err != nil {
+			http.Error(w, "write config: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		log.Printf("api: sni_spoof updated (enabled=%v default_fake_sni=%v)", section["enabled"], section["default_fake_sni"])
+		log.Printf("api: sni_spoof updated via API")
 		writeJSON(w, map[string]any{
 			"ok":   true,
 			"note": "config.yaml updated. POST /api/sources/reload (or ./moav-client restart) to apply.",
@@ -943,10 +929,10 @@ func (s *Server) diagTrace(w http.ResponseWriter, target string) {
 		results = append(results, row)
 	}
 	writeJSON(w, map[string]interface{}{
-		"type":     "trace",
-		"target":   target,
-		"binary":   "(none — using TCP-TTL fallback)",
-		"hops":     results,
+		"type":   "trace",
+		"target": target,
+		"binary": "(none — using TCP-TTL fallback)",
+		"hops":   results,
 	})
 }
 
@@ -1018,7 +1004,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("api: restored %d files from backup zip — restart to apply", n)
 	writeJSON(w, map[string]interface{}{
-		"ok":            true,
+		"ok":             true,
 		"files_restored": n,
 		"note":           "Run /api/sources/reload (or ./moav-client restart) to load the restored config.",
 	})
@@ -1093,75 +1079,39 @@ func (s *Server) handleBundleUpload(w http.ResponseWriter, r *http.Request) {
 // to the just-extracted bundle. If masterdns parameters were detected, also
 // updates sidecars.masterdns.config (without enabling — user decides).
 func (s *Server) addSourceToConfig(res *bundles.Result) error {
-	raw, err := os.ReadFile(s.configPath())
-	if err != nil {
-		return err
-	}
-	var root map[string]any
-	if err := yaml.Unmarshal(raw, &root); err != nil {
-		return err
-	}
-
-	sub, _ := root["subscription"].(map[string]any)
-	if sub == nil {
-		sub = map[string]any{}
-		root["subscription"] = sub
-	}
-	srcs, _ := sub["sources"].([]any)
-
-	entry := map[string]any{"name": res.Name}
-	if res.SubscriptionPath != "" {
-		entry["file"] = relativeIfPossible(res.SubscriptionPath)
-	}
-	if res.WireGuardConfPath != "" {
-		entry["wireguard_files"] = []any{relativeIfPossible(res.WireGuardConfPath)}
-	}
-	srcs = append(srcs, entry)
-	sub["sources"] = srcs
-
-	// Wire sidecar configs the bundle carried (without enabling — the user
-	// decides). sidecarCfg returns the config sub-map for a kind, creating
-	// the section as needed.
-	sidecarCfg := func(kind string) map[string]any {
-		sidecars, _ := root["sidecars"].(map[string]any)
-		if sidecars == nil {
-			sidecars = map[string]any{}
-			root["sidecars"] = sidecars
+	return editYAMLFile(s.configPath(), func(root yamlMap) error {
+		srcs := root.child("subscription").seq("sources")
+		entry := map[string]any{"name": res.Name}
+		if res.SubscriptionPath != "" {
+			entry["file"] = relativeIfPossible(res.SubscriptionPath)
 		}
-		sc, _ := sidecars[kind].(map[string]any)
-		if sc == nil {
-			sc = map[string]any{}
-			sidecars[kind] = sc
+		if res.WireGuardConfPath != "" {
+			entry["wireguard_files"] = []any{relativeIfPossible(res.WireGuardConfPath)}
 		}
-		cfg, _ := sc["config"].(map[string]any)
-		if cfg == nil {
-			cfg = map[string]any{}
-			sc["config"] = cfg
-		}
-		return cfg
-	}
+		srcs.Content = append(srcs.Content, yamlNodeOf(entry))
 
-	if res.MasterDNSDomain != "" && res.MasterDNSKey != "" {
-		md := sidecarCfg("masterdns")
-		md["domain"] = res.MasterDNSDomain
-		md["key"] = res.MasterDNSKey
-		if res.MasterDNSMethod != "" {
-			md["method"] = res.MasterDNSMethod
+		// Wire sidecar configs the bundle carried (without enabling — the user
+		// decides). sidecarCfg returns the config sub-mapping for a kind,
+		// creating the sidecars.<kind>.config path as needed.
+		sidecarCfg := func(kind string) yamlMap {
+			return root.child("sidecars").child(kind).child("config")
 		}
-	}
-	if res.AmneziaWGConfPath != "" {
-		sidecarCfg("amneziawg")["source_path"] = relativeIfPossible(res.AmneziaWGConfPath)
-	}
-	if res.TrustTunnelPath != "" {
-		sidecarCfg("trusttunnel")["source_path"] = relativeIfPossible(res.TrustTunnelPath)
-	}
-
-	out, err := yaml.Marshal(root)
-	if err != nil {
-		return err
-	}
-	// In-place write (bind-mount can't atomic-rename).
-	return os.WriteFile(s.configPath(), out, 0o644)
+		if res.MasterDNSDomain != "" && res.MasterDNSKey != "" {
+			md := sidecarCfg("masterdns")
+			md.set("domain", res.MasterDNSDomain)
+			md.set("key", res.MasterDNSKey)
+			if res.MasterDNSMethod != "" {
+				md.set("method", res.MasterDNSMethod)
+			}
+		}
+		if res.AmneziaWGConfPath != "" {
+			sidecarCfg("amneziawg").set("source_path", relativeIfPossible(res.AmneziaWGConfPath))
+		}
+		if res.TrustTunnelPath != "" {
+			sidecarCfg("trusttunnel").set("source_path", relativeIfPossible(res.TrustTunnelPath))
+		}
+		return nil
+	})
 }
 
 // handleExposure reads/writes the .env file that docker-compose uses to
@@ -1171,7 +1121,9 @@ func (s *Server) addSourceToConfig(res *bundles.Result) error {
 //   - "public"   → same as lan; the user's firewall is what makes it public
 //
 // PUT body: {"exposure": "loopback"|"lan"|"public",
-//             "auth": {"username": "...", "password": "..."}}
+//
+//	"auth": {"username": "...", "password": "..."}}
+//
 // Auth is optional and only meaningfully strict for lan/public.
 func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 	envPath := ".env"
@@ -1192,21 +1144,21 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 			dashPass = cur["MOAV_DASHBOARD_PASS"]
 		}
 		writeJSON(w, map[string]interface{}{
-			"exposure":          defaultStr(cur["MOAV_EXPOSURE"], "loopback"),
-			"socks5_bind":       defaultStr(cur["SOCKS5_BIND"], "127.0.0.1"),
-			"http_bind":         defaultStr(cur["HTTP_BIND"], "127.0.0.1"),
-			"api_bind":          defaultStr(cur["API_BIND"], "127.0.0.1"),
-			"ui_bind":           defaultStr(cur["UI_BIND"], "127.0.0.1"),
-			"ports":             map[string]int{"dashboard": 3001, "socks5": 1080, "http": 8081, "api": 8088},
-			"lan_ip":            localLANIP(),
-			"auth_username":     cur["SOCKS5_USERNAME"],
-			"auth_password":     authPass,
-			"auth_set":          cur["SOCKS5_PASSWORD"] != "",
-			"dashboard_user":    cur["MOAV_DASHBOARD_USER"],
-			"dashboard_pass":    dashPass,
-			"dashboard_set":     cur["MOAV_DASHBOARD_PASS"] != "",
-			"secrets_revealed":  revealed,
-			"note":              "After changing exposure, run: docker compose up -d --force-recreate proxy-core",
+			"exposure":         defaultStr(cur["MOAV_EXPOSURE"], "loopback"),
+			"socks5_bind":      defaultStr(cur["SOCKS5_BIND"], "127.0.0.1"),
+			"http_bind":        defaultStr(cur["HTTP_BIND"], "127.0.0.1"),
+			"api_bind":         defaultStr(cur["API_BIND"], "127.0.0.1"),
+			"ui_bind":          defaultStr(cur["UI_BIND"], "127.0.0.1"),
+			"ports":            map[string]int{"dashboard": 3001, "socks5": 1080, "http": 8081, "api": 8088},
+			"lan_ip":           localLANIP(),
+			"auth_username":    cur["SOCKS5_USERNAME"],
+			"auth_password":    authPass,
+			"auth_set":         cur["SOCKS5_PASSWORD"] != "",
+			"dashboard_user":   cur["MOAV_DASHBOARD_USER"],
+			"dashboard_pass":   dashPass,
+			"dashboard_set":    cur["MOAV_DASHBOARD_PASS"] != "",
+			"secrets_revealed": revealed,
+			"note":             "After changing exposure, run: docker compose up -d --force-recreate proxy-core",
 		})
 
 	case http.MethodPost, http.MethodPut:
@@ -1220,6 +1172,10 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 				Username string `json:"username"`
 				Password string `json:"password"`
 			} `json:"dashboard"`
+			// *Enabled: nil = leave as-is (set creds if provided); false =
+			// disable + clear the creds; true = enable (set from provided).
+			AuthEnabled      *bool `json:"auth_enabled"`
+			DashboardEnabled *bool `json:"dashboard_enabled"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -1245,17 +1201,29 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 		// hostname, so the API must bind the same interface as the UI —
 		// otherwise the dashboard loads over LAN but can't reach :8088.
 		kv["API_BIND"] = bindAddr
-		if body.Auth.Username != "" {
-			kv["SOCKS5_USERNAME"] = body.Auth.Username
+		// Proxy (SOCKS5) auth.
+		if body.AuthEnabled != nil && !*body.AuthEnabled {
+			delete(kv, "SOCKS5_USERNAME")
+			delete(kv, "SOCKS5_PASSWORD")
+		} else {
+			if body.Auth.Username != "" {
+				kv["SOCKS5_USERNAME"] = body.Auth.Username
+			}
+			if body.Auth.Password != "" {
+				kv["SOCKS5_PASSWORD"] = body.Auth.Password
+			}
 		}
-		if body.Auth.Password != "" {
-			kv["SOCKS5_PASSWORD"] = body.Auth.Password
-		}
-		if body.Dashboard.Username != "" {
-			kv["MOAV_DASHBOARD_USER"] = body.Dashboard.Username
-		}
-		if body.Dashboard.Password != "" {
-			kv["MOAV_DASHBOARD_PASS"] = body.Dashboard.Password
+		// Dashboard / API admin auth.
+		if body.DashboardEnabled != nil && !*body.DashboardEnabled {
+			delete(kv, "MOAV_DASHBOARD_USER")
+			delete(kv, "MOAV_DASHBOARD_PASS")
+		} else {
+			if body.Dashboard.Username != "" {
+				kv["MOAV_DASHBOARD_USER"] = body.Dashboard.Username
+			}
+			if body.Dashboard.Password != "" {
+				kv["MOAV_DASHBOARD_PASS"] = body.Dashboard.Password
+			}
 		}
 		if err := writeEnvKV(envPath, kv); err != nil {
 			http.Error(w, "write .env: "+err.Error(), http.StatusInternalServerError)
@@ -1365,7 +1333,8 @@ func relativeIfPossible(abs string) string {
 // handlePlugins reads or replaces the plugin engine rule list.
 // GET  → {rules, templates} for the Plugins tab to render both panes.
 // PUT  → replace entire rule list (atomic via Engine.SetRules).
-//        Body: {"rules": [{...Rule...}]}
+//
+//	Body: {"rules": [{...Rule...}]}
 func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1401,35 +1370,19 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 // read-map / patch / marshal approach used by handleSNISpoof. Comments in
 // config.yaml are not preserved (yaml.v3 map round-trip drops them).
 func (s *Server) persistRoutingRules(rules []plugins.Rule) error {
-	raw, err := os.ReadFile(s.configPath())
-	if err != nil {
-		return err
-	}
-	var root map[string]any
-	if err := yaml.Unmarshal(raw, &root); err != nil {
-		return err
-	}
-	section, _ := root["plugins"].(map[string]any)
-	if section == nil {
-		section = map[string]any{}
-		root["plugins"] = section
-	}
 	out := make([]map[string]any, 0, len(rules))
 	for _, r := range rules {
-		enabled := r.Enabled
 		out = append(out, map[string]any{
 			"match":   map[string]any{"type": r.Match.Type, "value": r.Match.Value},
 			"action":  r.ActionName,
-			"enabled": enabled,
+			"enabled": r.Enabled,
 			"note":    r.Note,
 		})
 	}
-	section["routing_rules"] = out
-	data, err := yaml.Marshal(root)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.configPath(), data, 0o644)
+	return editYAMLFile(s.configPath(), func(root yamlMap) error {
+		root.child("plugins").setNode("routing_rules", yamlNodeOf(out))
+		return nil
+	})
 }
 
 // handleLogs returns the in-memory log ring buffer. Optional ?level=

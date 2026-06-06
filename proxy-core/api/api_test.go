@@ -140,15 +140,58 @@ func TestExposure_RoundTrips(t *testing.T) {
 		}
 	}
 
-	// GET should report back the new exposure mode + masked passwords.
+	// GET reports the new exposure mode + set flags. Because a dashboard
+	// password is configured (MOAV_DASHBOARD_PASS), this request is treated as
+	// authenticated and the stored secrets are revealed (for the dashboard's
+	// recover/eye); they are masked only when the dashboard is open.
 	resp, _ = http.Get(ts.URL + "/api/exposure")
 	var got map[string]any
 	json.NewDecoder(resp.Body).Decode(&got)
 	if got["exposure"] != "lan" {
 		t.Errorf("GET exposure: want lan, got %v", got["exposure"])
 	}
+	if got["auth_set"] != true || got["dashboard_set"] != true {
+		t.Errorf("expected auth_set + dashboard_set true, got %v / %v", got["auth_set"], got["dashboard_set"])
+	}
+	if got["secrets_revealed"] != true {
+		t.Errorf("expected secrets_revealed=true when a dashboard password is set, got %v", got["secrets_revealed"])
+	}
+	if got["auth_password"] != "p" {
+		t.Errorf("expected revealed password %q, got %v", "p", got["auth_password"])
+	}
+}
+
+func TestExposure_MasksWhenDashboardOpen(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	os.WriteFile(cfgPath, []byte("proxy: {}\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, ".env"), []byte(""), 0o644)
+	old, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(old)
+
+	_, mux := newTestMux(t, cfgPath, filepath.Join(dir, "state.json"), nil)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// Proxy password set, but NO dashboard password → panel is open, so the
+	// stored secret must come back masked, not in the clear.
+	payload := `{"exposure":"lan","auth":{"username":"u","password":"p"}}`
+	req, _ := http.NewRequest("PUT", ts.URL+"/api/exposure", bytes.NewBufferString(payload))
+	req.Header.Set("Content-Type", "application/json")
+	http.DefaultClient.Do(req)
+
+	resp, _ := http.Get(ts.URL + "/api/exposure")
+	var got map[string]any
+	json.NewDecoder(resp.Body).Decode(&got)
+	if got["auth_set"] != true {
+		t.Errorf("expected auth_set true, got %v", got["auth_set"])
+	}
+	if got["secrets_revealed"] != false {
+		t.Errorf("expected secrets_revealed=false with no dashboard password, got %v", got["secrets_revealed"])
+	}
 	if got["auth_password"] == "p" {
-		t.Errorf("password not masked: %v", got["auth_password"])
+		t.Errorf("password must be masked when the dashboard is open, got %v", got["auth_password"])
 	}
 }
 

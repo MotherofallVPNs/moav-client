@@ -57,11 +57,13 @@ export default function Settings({ refreshTick }: Props) {
   const [authUser, setAuthUser] = useState("moav");
   const [authPass, setAuthPass] = useState("");
   const [authSet, setAuthSet] = useState(false); // proxy password already on file
+  const [authEnabled, setAuthEnabled] = useState(false); // require proxy auth
   const [showAuthPass, setShowAuthPass] = useState(false);
   // Dashboard/API admin auth — separate from the proxy creds above.
   const [dashUser, setDashUser] = useState("moav");
   const [dashPass, setDashPass] = useState("");
   const [dashSet, setDashSet] = useState(false); // a password is already on file
+  const [dashEnabled, setDashEnabled] = useState(false); // require dashboard login
   const [showDashPass, setShowDashPass] = useState(false);
   // True when the API returned the real (not masked) stored passwords — only
   // happens once the dashboard itself is auth-protected.
@@ -82,6 +84,8 @@ export default function Settings({ refreshTick }: Props) {
         if (d.dashboard_user) setDashUser(d.dashboard_user);
         setAuthSet(!!d.auth_set);
         setDashSet(!!d.dashboard_set);
+        setAuthEnabled(!!d.auth_set);
+        setDashEnabled(!!d.dashboard_set);
         // Only prefill the fields when the API returned real (revealed)
         // secrets — otherwise the values are masked dots and we must NOT echo
         // them back into the inputs (that would save the dots as the password).
@@ -155,6 +159,8 @@ export default function Settings({ refreshTick }: Props) {
           exposure,
           auth: { username: authUser, password: authPass },
           dashboard: { username: dashUser, password: dashPass },
+          auth_enabled: authEnabled,
+          dashboard_enabled: dashEnabled,
         }),
       });
       const data = await res.json();
@@ -162,7 +168,8 @@ export default function Settings({ refreshTick }: Props) {
         flash(`Failed: ${data?.error || res.statusText}`, false);
         return;
       }
-      if (dashPass) setDashSet(true);
+      setAuthSet(authEnabled && (authSet || !!authPass));
+      setDashSet(dashEnabled && (dashSet || !!dashPass));
       setSavedBanner(true);
       setInfoTick((t) => t + 1);
       flash("Saved to .env.", true);
@@ -320,53 +327,65 @@ export default function Settings({ refreshTick }: Props) {
           <>
             {/* Proxy access — the SOCKS5/HTTP exit. Optional; open by default. */}
             <div style={{ marginTop: "0.75rem", padding: "0.75rem", border: `1px solid ${theme.border}`, borderRadius: 6, background: theme.surface2 }}>
-              <div style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text, marginBottom: 2, fontWeight: 600 }}>
-                1 · Proxy access <span style={{ color: theme.textDim, fontWeight: 400 }}>(SOCKS5 / HTTP)</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginBottom: 2 }}>
+                <div style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text, fontWeight: 600 }}>
+                  1 · Proxy access <span style={{ color: theme.textDim, fontWeight: 400 }}>(SOCKS5 / HTTP)</span>
+                </div>
+                <AuthEnableToggle on={authEnabled} onChange={setAuthEnabled} />
               </div>
               <div style={{ fontFamily: theme.mono, fontSize: "0.68rem", color: theme.textDim, marginBottom: 8 }}>
-                Who may use your VPN exit. Leave blank = open to anyone who can reach the port. Mandatory for public.
+                Who may use your VPN exit. Off = open to anyone who can reach the port. Mandatory for public.
               </div>
-              <div style={statusLine(authSet)}>
-                {authSet
-                  ? revealed
-                    ? "✓ password set (shown below — click show)"
-                    : "✓ password set · enable the dashboard login below to reveal it here"
-                  : "✗ no password — the proxy is open to anyone who can reach the port"}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
-                <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
-                <input
-                  type="text"
-                  value={authUser}
-                  onChange={(e) => setAuthUser(e.target.value)}
-                  placeholder="moav"
-                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem", width: "100%", minWidth: 0, boxSizing: "border-box" }}
-                />
-                <span />
-                <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
-                <PwField
-                  value={authPass}
-                  onChange={setAuthPass}
-                  show={showAuthPass}
-                  onToggle={() => setShowAuthPass((s) => !s)}
-                  placeholder={authSet && !revealed ? "•••• unchanged — type to replace" : "set a password (optional)"}
-                />
-                <button
-                  onClick={() => { setAuthPass(randomPassword()); setShowAuthPass(true); }}
-                  style={{
-                    padding: "0.35rem 0.7rem",
-                    background: "transparent",
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 4,
-                    fontFamily: theme.mono,
-                    fontSize: "0.7rem",
-                    color: theme.textDim,
-                    cursor: "pointer",
-                  }}
-                >
-                  generate
-                </button>
-              </div>
+              {!authEnabled ? (
+                <div style={{ ...statusLine(false), color: theme.textDim }}>
+                  Auth off — the proxy is open to anyone who can reach the port.
+                  {authSet && " Turning this off and saving clears the stored password."}
+                </div>
+              ) : (
+                <>
+                  <div style={statusLine(authSet)}>
+                    {authSet
+                      ? revealed
+                        ? "✓ password set (shown below — click show)"
+                        : "✓ password set · enable the dashboard login below to reveal it here"
+                      : "✗ no password yet — set one below"}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
+                    <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
+                    <input
+                      type="text"
+                      value={authUser}
+                      onChange={(e) => setAuthUser(e.target.value)}
+                      placeholder="moav"
+                      style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem", width: "100%", minWidth: 0, boxSizing: "border-box" }}
+                    />
+                    <span />
+                    <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
+                    <PwField
+                      value={authPass}
+                      onChange={setAuthPass}
+                      show={showAuthPass}
+                      onToggle={() => setShowAuthPass((s) => !s)}
+                      placeholder={authSet && !revealed ? "•••• unchanged — type to replace" : "set a password"}
+                    />
+                    <button
+                      onClick={() => { setAuthPass(randomPassword()); setShowAuthPass(true); }}
+                      style={{
+                        padding: "0.35rem 0.7rem",
+                        background: "transparent",
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 4,
+                        fontFamily: theme.mono,
+                        fontSize: "0.7rem",
+                        color: theme.textDim,
+                        cursor: "pointer",
+                      }}
+                    >
+                      generate
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Dashboard & API login — protects this control panel itself. */}
@@ -374,58 +393,70 @@ export default function Settings({ refreshTick }: Props) {
               style={{
                 marginTop: "0.6rem",
                 padding: "0.75rem",
-                border: `1px solid ${!dashSet && !dashPass ? theme.red : theme.border}`,
+                border: `1px solid ${!dashEnabled ? theme.red : theme.border}`,
                 borderRadius: 6,
                 background: theme.surface2,
               }}
             >
-              <div style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text, marginBottom: 2, fontWeight: 600 }}>
-                2 · Dashboard &amp; API login <span style={{ color: theme.textDim, fontWeight: 400 }}>(admin)</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", marginBottom: 2 }}>
+                <div style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text, fontWeight: 600 }}>
+                  2 · Dashboard &amp; API login <span style={{ color: theme.textDim, fontWeight: 400 }}>(admin)</span>
+                </div>
+                <AuthEnableToggle on={dashEnabled} onChange={setDashEnabled} />
               </div>
               <div style={{ fontFamily: theme.mono, fontSize: "0.68rem", color: theme.textDim, marginBottom: 8 }}>
                 Protects this dashboard + API. Without it, anyone on the network can view endpoints and toggle your proxy.
               </div>
-              <div style={statusLine(dashSet)}>
-                {dashSet
-                  ? revealed
-                    ? "✓ dashboard login set (shown below — click show). Leave blank to keep."
-                    : "✓ dashboard login set. Leave blank to keep; type a new one to change."
-                  : "✗ not set — anyone on the network can open this panel. Set one below."}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
-                <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
-                <input
-                  type="text"
-                  value={dashUser}
-                  onChange={(e) => setDashUser(e.target.value)}
-                  placeholder="moav"
-                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem", width: "100%", minWidth: 0, boxSizing: "border-box" }}
-                />
-                <span />
-                <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
-                <PwField
-                  value={dashPass}
-                  onChange={setDashPass}
-                  show={showDashPass}
-                  onToggle={() => setShowDashPass((s) => !s)}
-                  placeholder={dashSet && !revealed ? "•••• unchanged — type to replace" : "set a password"}
-                />
-                <button
-                  onClick={() => { setDashPass(randomPassword()); setShowDashPass(true); }}
-                  style={{
-                    padding: "0.35rem 0.7rem",
-                    background: "transparent",
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 4,
-                    fontFamily: theme.mono,
-                    fontSize: "0.7rem",
-                    color: theme.textDim,
-                    cursor: "pointer",
-                  }}
-                >
-                  generate
-                </button>
-              </div>
+              {!dashEnabled ? (
+                <div style={{ ...statusLine(false), color: theme.red }}>
+                  ⚠ Login off — anyone on the network can open this panel.
+                  {dashSet && " Turning this off and saving clears the stored password."}
+                </div>
+              ) : (
+                <>
+                  <div style={statusLine(dashSet)}>
+                    {dashSet
+                      ? revealed
+                        ? "✓ dashboard login set (shown below — click show). Leave blank to keep."
+                        : "✓ dashboard login set. Leave blank to keep; type a new one to change."
+                      : "✗ no password yet — set one below."}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
+                    <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
+                    <input
+                      type="text"
+                      value={dashUser}
+                      onChange={(e) => setDashUser(e.target.value)}
+                      placeholder="moav"
+                      style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem", width: "100%", minWidth: 0, boxSizing: "border-box" }}
+                    />
+                    <span />
+                    <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
+                    <PwField
+                      value={dashPass}
+                      onChange={setDashPass}
+                      show={showDashPass}
+                      onToggle={() => setShowDashPass((s) => !s)}
+                      placeholder={dashSet && !revealed ? "•••• unchanged — type to replace" : "set a password"}
+                    />
+                    <button
+                      onClick={() => { setDashPass(randomPassword()); setShowDashPass(true); }}
+                      style={{
+                        padding: "0.35rem 0.7rem",
+                        background: "transparent",
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 4,
+                        fontFamily: theme.mono,
+                        fontSize: "0.7rem",
+                        color: theme.textDim,
+                        cursor: "pointer",
+                      }}
+                    >
+                      generate
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}
@@ -622,6 +653,33 @@ const statusLine = (set: boolean): React.CSSProperties => ({
   marginBottom: 8,
   color: set ? theme.green : theme.red,
 });
+
+// Small on/off pill for enabling/disabling an auth section. Off → the section's
+// credentials are cleared on save.
+function AuthEnableToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!on)}
+      style={{
+        padding: "0.2rem 0.6rem",
+        borderRadius: 12,
+        border: `1px solid ${on ? theme.green : theme.border}`,
+        background: on ? theme.greenDim : "transparent",
+        color: on ? theme.green : theme.textDim,
+        fontFamily: theme.mono,
+        fontSize: "0.66rem",
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {on ? "● on" : "○ off"}
+    </button>
+  );
+}
 
 // Password input with a show/hide toggle. Default hidden; click "show" to
 // reveal what's typed (and, when prefilled from a revealed secret, the stored
