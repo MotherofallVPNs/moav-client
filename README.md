@@ -101,7 +101,7 @@ Every sidecar exposes its own SOCKS5 inbound on the `moav-net` Docker network; m
 | **Endpoints** | Live status & latency. Toggle each on/off (sidecar toggles also stop/start the docker container). Edit priority inline. Disabled rows show a `DISABLED` pill instead of a stale status. |
 | **Sources** | Import another MoaV server's bundle by dropping its `.zip` — extracts under `data/<name>/` and appends a `subscription.sources` entry. List / remove configured sources; trigger a reload. |
 | **Analytics** | Per-protocol upload/download cards with rolling 2-min sparklines, an overlay-area throughput chart of all protocols, per-endpoint table with dial / error / failover counts and last-error reason. |
-| **Plugins** | List, reorder, edit, enable/disable, delete routing rules. Add from a curated template catalog (LAN-direct, IR geoip proxy, BitTorrent trackers, ad domains, telemetry, port-80 block, Anthropic direct) — all disabled by default. Changes hot-apply, no restart. |
+| **Plugins** | List, reorder, edit, enable/disable, delete routing rules. Add from a curated template catalog — networking/privacy (LAN-direct, trackers, ad domains, telemetry, port-80 block) plus "selective app" sets (system updates, Zoom, iCloud, cloud sync, streaming, game downloads). All disabled by default; changes hot-apply and persist to `config.yaml`. See [docs/PLUGINS.md](docs/PLUGINS.md). |
 | **Settings** | Switch load-balancing strategy live (latency / priority / weighted random), "Probe all endpoints now", **Network exposure** (loopback / LAN / public with optional SOCKS5 auth, written to `.env`), SNI-spoof toggle, and config backup / restore. |
 | **Debug** | Streaming log tail (server-side per-level ring buffers, ~800 events each for info / warn / error so warnings aren't crowded out by info spam). Level chips with counts, substring filter, pause / autoscroll / copy / clear. Plus a per-connection flow table. |
 | **Diagnostics** | Run a connectivity check from proxy-core itself: TCP connect, DNS lookup, or TCP-TTL traceroute — optionally *through* a chosen endpoint's tunnel, to tell "my router can't reach this host" from "this endpoint's tunnel is down". |
@@ -158,15 +158,9 @@ on — so `geoip:ir → direct` keeps sending Iranian destinations direct, and a
 still bypasses the proxy. For a strict no-direct policy, turn the kill-switch on
 *and* disable your `direct` rules.
 
-Curated templates ship with the binary and surface in the dashboard's `+ from template…` picker — all rules land disabled so you can review before enabling:
+Curated templates ship with the binary and surface in the dashboard's `+ from template…` picker — all rules land disabled so you can review before enabling. Networking/privacy: `lan-direct`, `block-known-trackers`, `block-ad-networks`, `block-telemetry`, `force-tls-only`, `direct-anthropic`. "Selective app" (route by destination, not process): `block-system-updates`, `direct-zoom`, `direct-icloud`, `direct-cloud-sync`, `direct-streaming`, `direct-game-downloads`.
 
-- `lan-direct` — direct dial for RFC1918 / loopback / link-local CIDRs (practically required when SOCKS5 is set system-wide)
-- `ir-geo-proxy` — force IR geo CIDRs through the proxy
-- `block-known-trackers` — hard-block public BitTorrent trackers
-- `block-ad-networks` — conservative ad / tracking domain list
-- `block-telemetry` — opt-out telemetry endpoints (MS, Mozilla, JetBrains)
-- `force-tls-only` — block plain HTTP (port 80)
-- `direct-anthropic` — direct dial Anthropic / Claude APIs
+See **[docs/PLUGINS.md](docs/PLUGINS.md)** for the full catalog, every rule, the block-vs-direct rationale, and the "this isn't true per-app tunneling" caveat.
 
 ### GeoIP
 
@@ -233,6 +227,7 @@ The API server listens on `proxy.api_port` (default 8088). Responses are JSON; a
 ## Docs
 
 - [docs/INSTALL.md](docs/INSTALL.md) — headless / flag-driven install, network exposure
+- [docs/PLUGINS.md](docs/PLUGINS.md) — routing rules, the kill-switch, geoip, and the full template catalog
 - [docs/SIDECARS.md](docs/SIDECARS.md) — TrustTunnel, Psiphon, Tor, MasterDNS, AmneziaWG
 - [docs/SNI_SPOOFING.md](docs/SNI_SPOOFING.md) — optional decoy-ClientHello sidecar
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — sing-box bridge, balancer/failover, prober, docker control
