@@ -86,15 +86,24 @@ export default function Footer() {
         display: "flex",
         flexDirection: isMobile ? "column" : "row",
         justifyContent: "space-between",
-        alignItems: isMobile ? "flex-start" : "center",
+        alignItems: "center",
         flexWrap: "wrap",
-        gap: isMobile ? "0.75rem" : "0.5rem",
+        gap: isMobile ? "0.6rem" : "0.5rem",
         fontSize: "0.72rem",
         fontFamily: theme.mono,
         color: theme.textDim,
+        textAlign: "center",
       }}
     >
-      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: isMobile ? "0.4rem 1rem" : "1rem",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <span>
           MoaV-<span style={{ color: theme.green }}>client</span>{" "}
           <span style={{ color: theme.text }}>{info?.version ?? "—"}</span>
@@ -113,7 +122,7 @@ export default function Footer() {
           </span>
         )}
       </div>
-      <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
         <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" style={link}>
           ↗ github
         </a>

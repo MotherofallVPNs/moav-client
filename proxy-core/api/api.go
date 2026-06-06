@@ -1179,6 +1179,18 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		cur := readEnvKV(envPath)
+		// Reveal the stored passwords only when the dashboard is already
+		// behind basic-auth — in that case this request is authenticated (it
+		// passed nginx + withBasicAuth), so it's safe to return the real
+		// secrets for the dashboard's reveal/eye + recovery. When the panel is
+		// open (no dashboard password), keep them masked.
+		revealed := cur["MOAV_DASHBOARD_PASS"] != ""
+		authPass := maskSecret(cur["SOCKS5_PASSWORD"])
+		dashPass := maskSecret(cur["MOAV_DASHBOARD_PASS"])
+		if revealed {
+			authPass = cur["SOCKS5_PASSWORD"]
+			dashPass = cur["MOAV_DASHBOARD_PASS"]
+		}
 		writeJSON(w, map[string]interface{}{
 			"exposure":          defaultStr(cur["MOAV_EXPOSURE"], "loopback"),
 			"socks5_bind":       defaultStr(cur["SOCKS5_BIND"], "127.0.0.1"),
@@ -1187,9 +1199,12 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 			"ui_bind":           defaultStr(cur["UI_BIND"], "127.0.0.1"),
 			"ports":             map[string]int{"dashboard": 3001, "socks5": 1080, "http": 8081, "api": 8088},
 			"auth_username":     cur["SOCKS5_USERNAME"],
-			"auth_password":     maskSecret(cur["SOCKS5_PASSWORD"]),
+			"auth_password":     authPass,
+			"auth_set":          cur["SOCKS5_PASSWORD"] != "",
 			"dashboard_user":    cur["MOAV_DASHBOARD_USER"],
-			"dashboard_pass":    maskSecret(cur["MOAV_DASHBOARD_PASS"]),
+			"dashboard_pass":    dashPass,
+			"dashboard_set":     cur["MOAV_DASHBOARD_PASS"] != "",
+			"secrets_revealed":  revealed,
 			"note":              "After changing exposure, run: docker compose up -d --force-recreate proxy-core",
 		})
 

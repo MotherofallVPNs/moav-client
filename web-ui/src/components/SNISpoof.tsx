@@ -32,6 +32,8 @@ const UTLS_OPTIONS = ["chrome", "firefox", "safari", "ios", "android", "edge", "
 export default function SNISpoof() {
   const [state, setState] = useState<SpoofState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [changed, setChanged] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   useEffect(() => {
@@ -62,11 +64,28 @@ export default function SNISpoof() {
         flash(`Save failed: ${data?.error ?? r.statusText}`, false);
         return;
       }
+      setChanged(true);
       flash(data.note ?? "Saved.", true);
     } catch (e) {
       flash(`Save failed: ${(e as Error).message}`, false);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Restart proxy-core so it regenerates sing-box + sni-spoof config with the
+  // new settings — no terminal needed. (The sni-spoof *container* still needs
+  // `docker compose --profile sni-spoof up -d` once; a restart can't create it.)
+  const applyNow = async () => {
+    setApplying(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/sources/reload`, { method: "POST" });
+      const data = await r.json().catch(() => ({}));
+      flash(data.note ?? (data.ok === false ? "Couldn't restart automatically — run the command." : "Restarting proxy-core…"), data.ok !== false);
+    } catch (e) {
+      flash(`Apply failed: ${(e as Error).message}`, false);
+    } finally {
+      setTimeout(() => setApplying(false), 4000);
     }
   };
 
@@ -106,6 +125,47 @@ export default function SNISpoof() {
           enable SNI spoofing
         </span>
       </label>
+
+      {changed && (
+        <div
+          style={{
+            marginBottom: "0.65rem",
+            padding: "0.7rem 0.8rem",
+            border: `1px solid ${theme.yellow}66`,
+            borderLeft: `3px solid ${theme.yellow}`,
+            borderRadius: 6,
+            background: theme.surface2,
+          }}
+        >
+          <div style={{ fontSize: "0.76rem", color: theme.text, marginBottom: "0.5rem", lineHeight: 1.5 }}>
+            Saved. Restart proxy-core to regenerate the tunnel config:
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.55rem" }}>
+            <button
+              onClick={applyNow}
+              disabled={applying}
+              style={{
+                padding: "0.4rem 0.85rem",
+                background: theme.yellow,
+                color: theme.bg,
+                border: "none",
+                borderRadius: 4,
+                cursor: applying ? "wait" : "pointer",
+                fontFamily: theme.mono,
+                fontSize: "0.72rem",
+                fontWeight: 600,
+              }}
+            >
+              {applying ? "restarting…" : "↻ Apply now (restart proxy-core)"}
+            </button>
+          </div>
+          <div style={{ fontSize: "0.7rem", color: theme.textDim, lineHeight: 1.5 }}>
+            First-time only: the spoofer runs as a profiled sidecar, so it also needs{" "}
+            <code style={{ color: theme.blue }}>docker compose --profile sni-spoof up -d sni-spoof</code>{" "}
+            to exist. Enabling spoofing without that container running will break the affected endpoints.
+          </div>
+        </div>
+      )}
 
       <div
         style={{

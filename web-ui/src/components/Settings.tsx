@@ -55,10 +55,16 @@ export default function Settings({ refreshTick }: Props) {
   const [exposure, setExposure] = useState<Exposure>("loopback");
   const [authUser, setAuthUser] = useState("moav");
   const [authPass, setAuthPass] = useState("");
+  const [authSet, setAuthSet] = useState(false); // proxy password already on file
+  const [showAuthPass, setShowAuthPass] = useState(false);
   // Dashboard/API admin auth — separate from the proxy creds above.
   const [dashUser, setDashUser] = useState("moav");
   const [dashPass, setDashPass] = useState("");
   const [dashSet, setDashSet] = useState(false); // a password is already on file
+  const [showDashPass, setShowDashPass] = useState(false);
+  // True when the API returned the real (not masked) stored passwords — only
+  // happens once the dashboard itself is auth-protected.
+  const [revealed, setRevealed] = useState(false);
   const [exposureSaving, setExposureSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -70,8 +76,16 @@ export default function Settings({ refreshTick }: Props) {
         if (d.exposure) setExposure(d.exposure as Exposure);
         if (d.auth_username) setAuthUser(d.auth_username);
         if (d.dashboard_user) setDashUser(d.dashboard_user);
-        // Passwords come back masked; we only learn whether one is set.
-        if (d.dashboard_pass) setDashSet(true);
+        setAuthSet(!!d.auth_set);
+        setDashSet(!!d.dashboard_set);
+        // Only prefill the fields when the API returned real (revealed)
+        // secrets — otherwise the values are masked dots and we must NOT echo
+        // them back into the inputs (that would save the dots as the password).
+        if (d.secrets_revealed) {
+          setRevealed(true);
+          if (d.auth_password) setAuthPass(d.auth_password);
+          if (d.dashboard_pass) setDashPass(d.dashboard_pass);
+        }
       })
       .catch(() => {});
     fetch(`${API_BASE}/api/stats`)
@@ -307,6 +321,13 @@ export default function Settings({ refreshTick }: Props) {
               <div style={{ fontFamily: theme.mono, fontSize: "0.68rem", color: theme.textDim, marginBottom: 8 }}>
                 Who may use your VPN exit. Leave blank = open to anyone who can reach the port. Mandatory for public.
               </div>
+              <div style={statusLine(authSet)}>
+                {authSet
+                  ? revealed
+                    ? "✓ password set (shown below — click show)"
+                    : "✓ password set · enable the dashboard login below to reveal it here"
+                  : "✗ no password — the proxy is open to anyone who can reach the port"}
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
                 <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
                 <input
@@ -314,19 +335,19 @@ export default function Settings({ refreshTick }: Props) {
                   value={authUser}
                   onChange={(e) => setAuthUser(e.target.value)}
                   placeholder="moav"
-                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem", width: "100%", minWidth: 0, boxSizing: "border-box" }}
                 />
                 <span />
                 <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
-                <input
-                  type="text"
+                <PwField
                   value={authPass}
-                  onChange={(e) => setAuthPass(e.target.value)}
-                  placeholder="•••••••••"
-                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+                  onChange={setAuthPass}
+                  show={showAuthPass}
+                  onToggle={() => setShowAuthPass((s) => !s)}
+                  placeholder={authSet && !revealed ? "•••• unchanged — type to replace" : "set a password (optional)"}
                 />
                 <button
-                  onClick={() => setAuthPass(randomPassword())}
+                  onClick={() => { setAuthPass(randomPassword()); setShowAuthPass(true); }}
                   style={{
                     padding: "0.35rem 0.7rem",
                     background: "transparent",
@@ -359,16 +380,13 @@ export default function Settings({ refreshTick }: Props) {
               <div style={{ fontFamily: theme.mono, fontSize: "0.68rem", color: theme.textDim, marginBottom: 8 }}>
                 Protects this dashboard + API. Without it, anyone on the network can view endpoints and toggle your proxy.
               </div>
-              {!dashSet && !dashPass && (
-                <div style={{ color: theme.red, fontSize: "0.72rem", marginBottom: 8, fontFamily: theme.mono }}>
-                  ⚠ No dashboard password set — the control panel is open on the network. Set one below.
-                </div>
-              )}
-              {dashSet && (
-                <div style={{ color: theme.green, fontSize: "0.72rem", marginBottom: 8, fontFamily: theme.mono }}>
-                  ✓ A dashboard password is set. Leave blank to keep it; type a new one to change.
-                </div>
-              )}
+              <div style={statusLine(dashSet)}>
+                {dashSet
+                  ? revealed
+                    ? "✓ dashboard login set (shown below — click show). Leave blank to keep."
+                    : "✓ dashboard login set. Leave blank to keep; type a new one to change."
+                  : "✗ not set — anyone on the network can open this panel. Set one below."}
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "0.4rem 0.75rem", alignItems: "center" }}>
                 <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>username</span>
                 <input
@@ -376,19 +394,19 @@ export default function Settings({ refreshTick }: Props) {
                   value={dashUser}
                   onChange={(e) => setDashUser(e.target.value)}
                   placeholder="moav"
-                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem", width: "100%", minWidth: 0, boxSizing: "border-box" }}
                 />
                 <span />
                 <span style={{ fontFamily: theme.mono, fontSize: "0.78rem", color: theme.textDim }}>password</span>
-                <input
-                  type="text"
+                <PwField
                   value={dashPass}
-                  onChange={(e) => setDashPass(e.target.value)}
-                  placeholder={dashSet ? "•••• (unchanged)" : "•••••••••"}
-                  style={{ padding: "0.35rem 0.55rem", borderRadius: 4, fontFamily: theme.mono, fontSize: "0.82rem" }}
+                  onChange={setDashPass}
+                  show={showDashPass}
+                  onToggle={() => setShowDashPass((s) => !s)}
+                  placeholder={dashSet && !revealed ? "•••• unchanged — type to replace" : "set a password"}
                 />
                 <button
-                  onClick={() => setDashPass(randomPassword())}
+                  onClick={() => { setDashPass(randomPassword()); setShowDashPass(true); }}
                   style={{
                     padding: "0.35rem 0.7rem",
                     background: "transparent",
@@ -593,10 +611,75 @@ const blurb = (): React.CSSProperties => ({
   fontSize: "0.78rem",
 });
 
+const statusLine = (set: boolean): React.CSSProperties => ({
+  fontFamily: theme.mono,
+  fontSize: "0.72rem",
+  marginBottom: 8,
+  color: set ? theme.green : theme.red,
+});
+
+// Password input with a show/hide toggle. Default hidden; click "show" to
+// reveal what's typed (and, when prefilled from a revealed secret, the stored
+// value too).
+function PwField({
+  value,
+  onChange,
+  show,
+  onToggle,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggle: () => void;
+  placeholder: string;
+}) {
+  return (
+    <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+      <input
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          padding: "0.35rem 3rem 0.35rem 0.55rem",
+          borderRadius: 4,
+          fontFamily: theme.mono,
+          fontSize: "0.82rem",
+          width: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
+        }}
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        title={show ? "hide" : "show"}
+        style={{
+          position: "absolute",
+          right: 4,
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: theme.textDim,
+          fontFamily: theme.mono,
+          fontSize: "0.62rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
+      >
+        {show ? "hide" : "show"}
+      </button>
+    </div>
+  );
+}
+
 interface ExposureInfo {
   exposure: string;
   auth_username?: string;
   auth_password?: string;
+  auth_set?: boolean;
+  dashboard_set?: boolean;
 }
 
 const MODE_META: Record<string, { label: string; desc: string; color: string }> = {
@@ -619,10 +702,11 @@ function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlas
   const onLocalhost = host === "localhost" || host === "127.0.0.1";
   const mode = info?.exposure ?? "loopback";
   const meta = MODE_META[mode] ?? MODE_META.loopback;
-  const hasAuth = !!(info?.auth_username || info?.auth_password);
+  const hasAuth = !!(info?.auth_set ?? (info?.auth_username || info?.auth_password));
+  const dashAuth = !!info?.dashboard_set;
 
   const services = [
-    { name: "Dashboard", url: `http://${host}:3001`, hint: "open in a browser" },
+    { name: "Dashboard", url: `http://${host}:3001`, hint: dashAuth ? "login required" : "open — no login" },
     { name: "SOCKS5 proxy", url: `socks5h://${host}:1080`, hint: hasAuth ? "auth required" : "no auth set" },
     { name: "HTTP proxy", url: `http://${host}:8081`, hint: "" },
     { name: "REST / WS API", url: `http://${host}:8088`, hint: "" },
@@ -643,14 +727,24 @@ function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlas
       </div>
 
       <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, padding: "0.5rem 0.65rem", background: theme.surface2 }}>
-        {services.map((s) => (
-          <div key={s.name} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "3px 0" }}>
-            <span style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text, minWidth: 96 }}>{s.name}</span>
-            <code style={{ fontSize: "0.74rem", color: theme.blue, wordBreak: "break-all", flex: 1 }}>
+        {services.map((s, i) => (
+          <div
+            key={s.name}
+            style={{
+              padding: "6px 0",
+              borderTop: i === 0 ? "none" : `1px solid ${theme.border}`,
+            }}
+          >
+            {/* Top line: label + copy, so the URL below gets the full width and
+                doesn't break mid-string in a cramped column. */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+              <span style={{ fontFamily: theme.mono, fontSize: "0.72rem", color: theme.text }}>{s.name}</span>
+              <button onClick={() => copy(s.url)} style={miniBtn()}>copy</button>
+            </div>
+            <code style={{ display: "block", fontSize: "0.74rem", color: theme.blue, wordBreak: "break-word", marginTop: 2 }}>
               {s.url}
               {s.hint && <span style={{ color: theme.textDim }}> · {s.hint}</span>}
             </code>
-            <button onClick={() => copy(s.url)} style={miniBtn()}>copy</button>
           </div>
         ))}
       </div>
@@ -668,6 +762,12 @@ function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlas
             Connected via <code>{host}</code>. The <strong>dashboard is :3001</strong>; point another
             device's <strong>proxy setting</strong> (not its address bar) at the SOCKS5 address above.
           </>
+        )}
+        {(mode === "lan" || mode === "public") && !dashAuth && (
+          <div style={{ color: theme.red, marginTop: 4 }}>
+            ⚠ No dashboard login set while exposed — anyone on the network can open this control panel.
+            Set one in “Dashboard &amp; API login” above.
+          </div>
         )}
         {(mode === "lan" || mode === "public") && !hasAuth && (
           <div style={{ color: theme.yellow, marginTop: 4 }}>
