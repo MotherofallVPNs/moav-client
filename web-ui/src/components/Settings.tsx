@@ -680,6 +680,7 @@ interface ExposureInfo {
   auth_password?: string;
   auth_set?: boolean;
   dashboard_set?: boolean;
+  lan_ip?: string;
 }
 
 const MODE_META: Record<string, { label: string; desc: string; color: string }> = {
@@ -698,18 +699,52 @@ function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlas
     fetch(`${API_BASE}/api/exposure`).then((r) => r.json()).then(setInfo).catch(() => {});
   }, [refreshTick]);
 
-  const host = (typeof window !== "undefined" && window.location.hostname) || "localhost";
-  const onLocalhost = host === "localhost" || host === "127.0.0.1";
+  const browserHost = (typeof window !== "undefined" && window.location.hostname) || "localhost";
+  const isLoopbackHost = browserHost === "localhost" || browserHost.startsWith("127.");
+  const isPrivateHost = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(browserHost);
   const mode = info?.exposure ?? "loopback";
   const meta = MODE_META[mode] ?? MODE_META.loopback;
   const hasAuth = !!(info?.auth_set ?? (info?.auth_username || info?.auth_password));
   const dashAuth = !!info?.dashboard_set;
 
+  // Resolve the address to show per exposure mode, entirely from local signals
+  // (the browser's own hostname + a backend interface hint) — no external IP
+  // lookup. `placeholder` means we genuinely can't know it from here.
+  let displayHost = browserHost;
+  let hostNote = "";
+  let placeholder = false;
+  if (mode === "loopback") {
+    displayHost = "127.0.0.1";
+  } else if (mode === "lan") {
+    // Trust the backend hint only for common home/native LAN ranges; in the
+    // default docker deployment its interface scan returns the bridge IP
+    // (172.x), which the user's other devices can't reach.
+    const usableLanIp = info?.lan_ip && /^(192\.168\.|10\.)/.test(info.lan_ip) ? info.lan_ip : "";
+    if (isPrivateHost) {
+      displayHost = browserHost; // you're already viewing over the LAN
+    } else if (usableLanIp) {
+      displayHost = usableLanIp;
+    } else {
+      displayHost = "<this-machine-LAN-IP>";
+      placeholder = true;
+      hostNote = "You're viewing locally, so the LAN IP isn't visible here — open this page from another device, or check your machine's network settings.";
+    }
+  } else {
+    // public
+    if (!isLoopbackHost && !isPrivateHost) {
+      displayHost = browserHost; // reached via a public IP / domain already
+    } else {
+      displayHost = "<your-public-IP-or-domain>";
+      placeholder = true;
+      hostNote = "Public reach needs a port-forward on your router; replace this with your public IP or domain.";
+    }
+  }
+
   const services = [
-    { name: "Dashboard", url: `http://${host}:3001`, hint: dashAuth ? "login required" : "open — no login" },
-    { name: "SOCKS5 proxy", url: `socks5h://${host}:1080`, hint: hasAuth ? "auth required" : "no auth set" },
-    { name: "HTTP proxy", url: `http://${host}:8081`, hint: "" },
-    { name: "REST / WS API", url: `http://${host}:8088`, hint: "" },
+    { name: "Dashboard", url: `http://${displayHost}:3001`, hint: dashAuth ? "login required" : "open — no login" },
+    { name: "SOCKS5 proxy", url: `socks5h://${displayHost}:1080`, hint: hasAuth ? "auth required" : "no auth set" },
+    { name: "HTTP proxy", url: `http://${displayHost}:8081`, hint: "" },
+    { name: "REST / WS API", url: `http://${displayHost}:8088`, hint: "" },
   ];
 
   const copy = (s: string) => {
@@ -750,17 +785,12 @@ function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlas
       </div>
 
       <div style={{ marginTop: "0.7rem", fontSize: "0.72rem", color: theme.textDim, lineHeight: 1.5 }}>
-        {onLocalhost ? (
-          <>
-            Shown as <code>localhost</code> because you're on this machine. To reach the dashboard from a{" "}
-            <strong>phone / another device</strong>: set exposure to <strong>LAN</strong> above, recreate
-            proxy-core, then browse to <code>http://&lt;this-machine-LAN-IP&gt;:3001</code> — the{" "}
-            <strong>dashboard is port 3001</strong>, not 1080 (1080 is the SOCKS5 proxy, not a web page).
-          </>
+        {hostNote ? (
+          <span style={{ color: placeholder ? theme.yellow : theme.textDim }}>{hostNote}</span>
         ) : (
           <>
-            Connected via <code>{host}</code>. The <strong>dashboard is :3001</strong>; point another
-            device's <strong>proxy setting</strong> (not its address bar) at the SOCKS5 address above.
+            The <strong>dashboard is :3001</strong>; point another device's <strong>proxy setting</strong>{" "}
+            (not its address bar) at the SOCKS5 address above — :1080 is a proxy, not a web page.
           </>
         )}
         {(mode === "lan" || mode === "public") && !dashAuth && (

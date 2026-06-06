@@ -93,8 +93,24 @@ function RestartButton() {
   );
 }
 
+const TAB_STORAGE_KEY = "moav.activeTab";
+
+function initialTab(): Tab {
+  if (typeof window === "undefined") return "endpoints";
+  const saved = window.localStorage.getItem(TAB_STORAGE_KEY);
+  return saved && saved in TAB_LABELS ? (saved as Tab) : "endpoints";
+}
+
 export default function App() {
-  const [tab, setTab] = useState<Tab>("endpoints");
+  const [tab, setTabState] = useState<Tab>(initialTab);
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    try {
+      window.localStorage.setItem(TAB_STORAGE_KEY, t);
+    } catch {
+      // private mode / storage disabled — non-fatal, tab just won't persist.
+    }
+  };
   const [healthy, setHealthy] = useState(0);
   const [total, setTotal] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);

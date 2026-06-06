@@ -1198,6 +1198,7 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 			"api_bind":          defaultStr(cur["API_BIND"], "127.0.0.1"),
 			"ui_bind":           defaultStr(cur["UI_BIND"], "127.0.0.1"),
 			"ports":             map[string]int{"dashboard": 3001, "socks5": 1080, "http": 8081, "api": 8088},
+			"lan_ip":            localLANIP(),
 			"auth_username":     cur["SOCKS5_USERNAME"],
 			"auth_password":     authPass,
 			"auth_set":          cur["SOCKS5_PASSWORD"] != "",
@@ -1270,6 +1271,32 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "GET or PUT required", http.StatusMethodNotAllowed)
 	}
+}
+
+// localLANIP returns the machine's primary private IPv4 (e.g. 192.168.x.x) by
+// enumerating interfaces locally — no external service. Empty if none found.
+// NOTE: inside a container with host networking this is the host's LAN IP;
+// with bridge networking it's the container IP, so the frontend falls back to
+// the browser's own hostname when this looks like a docker-internal address.
+func localLANIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, a := range addrs {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok || ipnet.IP.IsLoopback() {
+			continue
+		}
+		ip := ipnet.IP.To4()
+		if ip == nil {
+			continue
+		}
+		if ip.IsPrivate() {
+			return ip.String()
+		}
+	}
+	return ""
 }
 
 func readEnvKV(path string) map[string]string {
