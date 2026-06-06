@@ -8,8 +8,51 @@ interface Source {
   file?: string;
   url?: string;
   wireguard_files?: string[];
+  tags?: string[];
   endpoints: number;
   healthy: number;
+}
+
+// Component tags shown per source (mirrors the MoaV admin bundle tags). Color
+// keyed by component; unknown kinds fall back to a neutral chip.
+const TAG_COLOR: Record<string, string> = {
+  subscription: theme.blue,
+  wireguard: "#a78bfa",
+  amneziawg: "#fda4af",
+  masterdns: "#2dd4bf",
+  trusttunnel: "#c084fc",
+  psiphon: "#a3e635",
+  tor: "#818cf8",
+  dnstt: "#facc15",
+  slipstream: "#fb923c",
+};
+
+function Tags({ tags }: { tags?: string[] }) {
+  if (!tags || tags.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
+      {tags.map((t) => {
+        const c = TAG_COLOR[t] ?? theme.textDim;
+        return (
+          <span
+            key={t}
+            style={{
+              padding: "1px 7px",
+              borderRadius: 4,
+              border: `1px solid ${c}55`,
+              background: c + "1a",
+              color: c,
+              fontFamily: theme.mono,
+              fontSize: "0.64rem",
+              letterSpacing: "0.02em",
+            }}
+          >
+            {t}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 interface SourcesResp {
@@ -152,8 +195,17 @@ export default function Sources({ refreshTick }: Props) {
 
   return (
     <div>
-      {/* Compact upload row */}
-      <div style={{ display: "flex", gap: "0.75rem", alignItems: "stretch", marginBottom: "1rem" }}>
+      {/* Upload row — dropzone, then the ?/reload buttons. On mobile the
+          buttons drop to their own full-width row so nothing gets squished. */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: isMobile ? "column" : "row",
+          gap: "0.6rem",
+          alignItems: "stretch",
+          marginBottom: "1rem",
+        }}
+      >
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -165,17 +217,19 @@ export default function Sources({ refreshTick }: Props) {
           style={{
             flex: 1,
             display: "flex",
+            flexWrap: "wrap",
             alignItems: "center",
             justifyContent: "center",
-            gap: "0.5rem",
+            gap: "0.4rem",
             border: `1.5px dashed ${dragOver ? theme.green : theme.border}`,
             background: dragOver ? theme.greenDim : theme.surface2,
             borderRadius: 6,
-            padding: "0.75rem 1rem",
+            padding: "0.7rem 1rem",
             cursor: uploading ? "wait" : "pointer",
             color: theme.text,
             fontFamily: theme.mono,
             fontSize: "0.82rem",
+            minHeight: 44,
             transition: "all 0.15s ease",
           }}
         >
@@ -198,21 +252,23 @@ export default function Sources({ refreshTick }: Props) {
             }}
           />
         </div>
-        <button
-          onClick={() => setHelpOpen((o) => !o)}
-          style={chipBtn(theme.textDim)}
-          title="What is a bundle?"
-        >
-          ?
-        </button>
-        <button
-          onClick={reload}
-          disabled={reloading}
-          style={chipBtn(theme.blue)}
-          title="Restart proxy-core to load any new/removed sources"
-        >
-          {reloading ? "reloading…" : "↻ reload"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button
+            onClick={() => setHelpOpen((o) => !o)}
+            style={{ ...chipBtn(theme.textDim), flex: isMobile ? "0 0 auto" : undefined }}
+            title="What is a bundle?"
+          >
+            ?
+          </button>
+          <button
+            onClick={reload}
+            disabled={reloading}
+            style={{ ...chipBtn(theme.blue), flex: isMobile ? 1 : undefined }}
+            title="Restart proxy-core to load any new/removed sources"
+          >
+            {reloading ? "reloading…" : "↻ reload"}
+          </button>
+        </div>
       </div>
 
       {helpOpen && (
@@ -309,10 +365,8 @@ export default function Sources({ refreshTick }: Props) {
               </div>
               <div style={{ fontFamily: theme.mono, color: theme.textDim, fontSize: "0.7rem", wordBreak: "break-all", marginTop: 4 }}>
                 {src.file || src.url || "—"}
-                {src.wireguard_files && src.wireguard_files.length > 0 && (
-                  <span style={{ color: theme.blue, marginLeft: 6 }}>+ {src.wireguard_files.length} wg</span>
-                )}
               </div>
+              <Tags tags={src.tags} />
               <div style={{ display: "flex", gap: "1.25rem", marginTop: 6, fontFamily: theme.mono, fontSize: "0.74rem" }}>
                 <span style={{ color: theme.textDim }}>
                   endpoints <span style={{ color: theme.text }}>{src.endpoints}</span>
@@ -342,9 +396,7 @@ export default function Sources({ refreshTick }: Props) {
                   <td style={{ ...td, fontFamily: theme.mono, color: theme.green, fontWeight: 600 }}>{src.name}</td>
                   <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim, fontSize: "0.72rem", wordBreak: "break-all" }}>
                     {src.file || src.url || "—"}
-                    {src.wireguard_files && src.wireguard_files.length > 0 && (
-                      <span style={{ color: theme.blue, marginLeft: 6 }}>+ {src.wireguard_files.length} wg</span>
-                    )}
+                    <Tags tags={src.tags} />
                   </td>
                   <td style={{ ...td, fontFamily: theme.mono }}>{src.endpoints}</td>
                   <td style={{ ...td, fontFamily: theme.mono, color: src.healthy > 0 ? theme.green : theme.textDim }}>

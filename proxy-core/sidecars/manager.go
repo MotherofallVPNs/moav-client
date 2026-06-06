@@ -43,10 +43,14 @@ func (m *SidecarManager) EnabledEndpoints() []subscription.Endpoint {
 			continue
 		}
 		dockerAddr := fmt.Sprintf("%s:%d", e.dockerHost, e.port)
+		// If a bundle importer tagged this sidecar with its source, surface it
+		// as the endpoint's Source so the dashboard's Source column shows the
+		// originating bundle instead of the generic "sidecars" group.
 		ep := subscription.Endpoint{
 			ID:        "sidecar:" + e.name,
 			Protocol:  "sidecar",
 			Name:      "sidecar-" + e.name,
+			Source:    e.entry.Config["source"],
 			Address:   dockerAddr,
 			RawURI:    "sidecar://" + dockerAddr,
 			Priority:  e.priority,

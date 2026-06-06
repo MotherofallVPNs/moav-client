@@ -113,7 +113,11 @@ func main() {
 				continue
 			}
 			seen[ep.RawURI] = struct{}{}
-			ep.Source = source
+			// Keep a pre-set Source (sidecars tagged with their origin bundle);
+			// otherwise attribute to the group/source being added.
+			if ep.Source == "" {
+				ep.Source = source
+			}
 			// Namespace the ID by source so endpoints from two configs
 			// pointing at the same moav server (same protocol:host:port)
 			// don't collide. Sidecar IDs are already "sidecar:<kind>"

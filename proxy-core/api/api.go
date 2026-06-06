@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -444,6 +445,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 		File      string   `json:"file,omitempty"`
 		URL       string   `json:"url,omitempty"`
 		WGFiles   []string `json:"wireguard_files,omitempty"`
+		Tags      []string `json:"tags"`
 		Endpoints int      `json:"endpoints"`
 		Healthy   int      `json:"healthy"`
 	}
@@ -465,10 +467,34 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 				WireGuardFiles []string `yaml:"wireguard_files"`
 			} `yaml:"sources"`
 		} `yaml:"subscription"`
+		Sidecars map[string]struct {
+			Config map[string]string `yaml:"config"`
+		} `yaml:"sidecars"`
 	}
 	if err := yaml.Unmarshal(rawCfg, &parsed); err != nil {
 		http.Error(w, "parse config: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Map each source bundle to the sidecar kinds it configured (importer tags
+	// sidecars.<kind>.config.source with the bundle name).
+	sidecarsBySource := map[string][]string{}
+	for kind, sc := range parsed.Sidecars {
+		if src := sc.Config["source"]; src != "" {
+			sidecarsBySource[src] = append(sidecarsBySource[src], kind)
+		}
+	}
+	tagsFor := func(name, file, url string, wg []string) []string {
+		tags := []string{}
+		if file != "" || url != "" {
+			tags = append(tags, "subscription")
+		}
+		if len(wg) > 0 {
+			tags = append(tags, "wireguard")
+		}
+		sc := append([]string(nil), sidecarsBySource[name]...)
+		sort.Strings(sc)
+		return append(tags, sc...)
 	}
 
 	// Tally endpoints by Source.
@@ -488,6 +514,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			File:      parsed.Subscription.File,
 			URL:       parsed.Subscription.URL,
 			WGFiles:   parsed.Subscription.WireGuardFiles,
+			Tags:      tagsFor("default", parsed.Subscription.File, parsed.Subscription.URL, parsed.Subscription.WireGuardFiles),
 			Endpoints: endpointsBySource["default"],
 			Healthy:   healthyBySource["default"],
 		})
@@ -498,6 +525,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			File:      src.File,
 			URL:       src.URL,
 			WGFiles:   src.WireGuardFiles,
+			Tags:      tagsFor(src.Name, src.File, src.URL, src.WireGuardFiles),
 			Endpoints: endpointsBySource[src.Name],
 			Healthy:   healthyBySource[src.Name],
 		})
@@ -1097,9 +1125,13 @@ func (s *Server) addSourceToConfig(res *bundles.Result) error {
 
 		// Wire sidecar configs the bundle carried (without enabling — the user
 		// decides). sidecarCfg returns the config sub-mapping for a kind,
-		// creating the sidecars.<kind>.config path as needed.
+		// creating the sidecars.<kind>.config path as needed and tagging it with
+		// the source bundle so the dashboard can attribute it back (Sources tab
+		// tags + the sidecar endpoint's source label).
 		sidecarCfg := func(kind string) yamlMap {
-			return root.child("sidecars").child(kind).child("config")
+			c := root.child("sidecars").child(kind).child("config")
+			c.set("source", res.Name)
+			return c
 		}
 		if res.MasterDNSDomain != "" && res.MasterDNSKey != "" {
 			md := sidecarCfg("masterdns")
