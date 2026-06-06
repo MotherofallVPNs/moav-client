@@ -109,7 +109,7 @@ export default function Plugins({ refreshTick }: Props) {
       if (!r.ok) throw new Error(`${r.status}`);
       const data = await r.json();
       setRules((data.rules ?? next) as Rule[]);
-      flash("Applied.", true);
+      flash(data.note ?? "Applied.", true);
     } catch {
       setRules(prev);
       flash("Apply failed.", false);

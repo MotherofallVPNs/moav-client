@@ -408,11 +408,14 @@ func main() {
 		default:
 			action = plugins.DecisionProxy
 		}
+		// Absent `enabled` (older / hand-written configs) defaults to true.
+		enabled := rc.Enabled == nil || *rc.Enabled
 		engineRules = append(engineRules, plugins.Rule{
 			Match:      m,
 			Action:     action,
 			ActionName: plugins.DecisionName(action),
-			Enabled:    true,
+			Enabled:    enabled,
+			Note:       rc.Note,
 		})
 	}
 	eng := plugins.NewEngine(engineRules)

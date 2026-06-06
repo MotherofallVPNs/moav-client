@@ -131,6 +131,11 @@ type MatchExprConfig struct {
 type RoutingRuleConfig struct {
 	Match  MatchExprConfig `yaml:"match"`
 	Action string          `yaml:"action"`
+	// Enabled is a pointer so an absent field (older configs / hand-written
+	// rules) defaults to enabled, while the dashboard can persist an explicit
+	// false to keep a rule on file but inactive.
+	Enabled *bool  `yaml:"enabled,omitempty"`
+	Note    string `yaml:"note,omitempty"`
 }
 
 type PluginsConfig struct {

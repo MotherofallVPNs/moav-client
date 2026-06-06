@@ -1383,10 +1383,53 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 		}
 		s.engine.SetRules(body.Rules)
 		log.Printf("plugins: replaced rule list (%d rules) via API", len(body.Rules))
-		writeJSON(w, map[string]interface{}{"ok": true, "rules": s.engine.Rules()})
+		// Persist to config.yaml so enabled/disabled rules survive a restart.
+		note := "Rules applied live and saved to config.yaml."
+		if err := s.persistRoutingRules(s.engine.Rules()); err != nil {
+			log.Printf("plugins: persist to config.yaml failed: %v", err)
+			note = "Rules applied live, but saving to config.yaml failed: " + err.Error()
+		}
+		writeJSON(w, map[string]interface{}{"ok": true, "rules": s.engine.Rules(), "note": note})
 	default:
 		http.Error(w, "GET or PUT required", http.StatusMethodNotAllowed)
 	}
+}
+
+// persistRoutingRules writes the engine's current rule list back into
+// config.yaml's plugins.routing_rules block (preserving each rule's enabled
+// state + note), so dashboard edits survive a proxy-core restart. Mirrors the
+// read-map / patch / marshal approach used by handleSNISpoof. Comments in
+// config.yaml are not preserved (yaml.v3 map round-trip drops them).
+func (s *Server) persistRoutingRules(rules []plugins.Rule) error {
+	raw, err := os.ReadFile(s.configPath())
+	if err != nil {
+		return err
+	}
+	var root map[string]any
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return err
+	}
+	section, _ := root["plugins"].(map[string]any)
+	if section == nil {
+		section = map[string]any{}
+		root["plugins"] = section
+	}
+	out := make([]map[string]any, 0, len(rules))
+	for _, r := range rules {
+		enabled := r.Enabled
+		out = append(out, map[string]any{
+			"match":   map[string]any{"type": r.Match.Type, "value": r.Match.Value},
+			"action":  r.ActionName,
+			"enabled": enabled,
+			"note":    r.Note,
+		})
+	}
+	section["routing_rules"] = out
+	data, err := yaml.Marshal(root)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.configPath(), data, 0o644)
 }
 
 // handleLogs returns the in-memory log ring buffer. Optional ?level=

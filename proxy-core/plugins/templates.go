@@ -28,14 +28,6 @@ var Templates = []Template{
 		},
 	},
 	{
-		Key:   "ir-geo-proxy",
-		Title: "Proxy traffic to Iran",
-		Help:  "Routes destinations whose IP is in geoip/ir.txt through MoaV. Matches IP literals only — it does not resolve hostnames, so a '.ir' domain target isn't caught unless the client already passes an Iranian IP. This is the INVERSE of the default 'Iran → direct' rule (which keeps IR traffic off the VPN to avoid detection) — enable only one of the two.",
-		Rules: []Rule{
-			{Match: MatchExpr{Type: "geoip", Value: "ir"}, ActionName: "proxy", Note: "egress through MoaV for IR targets"},
-		},
-	},
-	{
 		Key:   "block-known-trackers",
 		Title: "Block well-known BitTorrent trackers",
 		Help:  "Hard-blocks a curated list of trackers. Complements the heuristic TorrentBlocker (which catches port + keyword patterns).",
