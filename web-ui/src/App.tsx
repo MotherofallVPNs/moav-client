@@ -58,7 +58,7 @@ const btn: React.CSSProperties = {
   transition: "border-color 0.15s",
 };
 
-function RestartButton() {
+function RestartButton({ fullWidth }: { fullWidth?: boolean }) {
   const [busy, setBusy] = useState(false);
   const click = async () => {
     if (!window.confirm("Restart proxy-core?\n\nApplies any pending config / source changes. The dashboard will reconnect in a few seconds.")) {
@@ -79,12 +79,14 @@ function RestartButton() {
       style={{
         fontFamily: theme.mono,
         fontSize: "0.7rem",
-        padding: "0.35rem 0.75rem",
-        borderRadius: 4,
+        padding: "0.4rem 0.75rem",
+        borderRadius: 6,
         border: `1px solid ${theme.yellow}`,
         background: busy ? theme.yellowDim : "transparent",
         color: theme.yellow,
         cursor: busy ? "wait" : "pointer",
+        width: fullWidth ? "100%" : undefined,
+        flex: fullWidth ? 1 : undefined,
       }}
       title="Restart proxy-core to apply pending config / source changes"
     >
@@ -141,8 +143,8 @@ export default function App() {
           display: "flex",
           flexDirection: isMobile ? "column" : "row",
           justifyContent: "space-between",
-          alignItems: isMobile ? "flex-start" : "center",
-          gap: isMobile ? "0.6rem" : 0,
+          alignItems: isMobile ? "stretch" : "center",
+          gap: isMobile ? "0.85rem" : 0,
           paddingBottom: "1rem",
           marginBottom: "1.25rem",
           borderBottom: `1px solid ${theme.border}`,
@@ -185,60 +187,60 @@ export default function App() {
             Mother of all VPNs
           </a>
         </h1>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-          <span
+        <div
+          style={{
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            alignItems: isMobile ? "stretch" : "center",
+            gap: isMobile ? "0.55rem" : "0.75rem",
+          }}
+        >
+          {/* status: clock + health */}
+          <div
             style={{
-              color: theme.textDim,
-              fontFamily: theme.mono,
-              fontSize: "0.7rem",
-            }}
-          >
-            {clock.toISOString().slice(11, 19)} UTC
-          </span>
-          <span
-            style={{
-              display: "inline-flex",
+              display: "flex",
               alignItems: "center",
-              padding: "0.25rem 0.7rem",
-              borderRadius: 12,
-              fontSize: "0.7rem",
-              fontWeight: 600,
-              fontFamily: theme.mono,
-              background:
-                total === 0
-                  ? theme.redDim
-                  : healthy === total
-                  ? theme.greenDim
-                  : theme.yellowDim,
-              color:
-                total === 0
-                  ? theme.red
-                  : healthy === total
-                  ? theme.green
-                  : theme.yellow,
-              border: `1px solid ${
-                total === 0
-                  ? theme.red
-                  : healthy === total
-                  ? theme.green
-                  : theme.yellow
-              }44`,
+              gap: "0.6rem",
+              justifyContent: isMobile ? "space-between" : "flex-end",
             }}
           >
-            ● {total === 0 ? "no endpoints" : `${healthy}/${total} healthy`}
-          </span>
-          <button
-            onClick={refresh}
-            style={{
-              ...btn,
-              borderColor: theme.blue,
-              color: theme.blue,
-            }}
-            title="Refresh all tabs (re-fetch endpoints / stats / logs in place)"
-          >
-            ↻ Refresh
-          </button>
-          <RestartButton />
+            <span style={{ color: theme.textDim, fontFamily: theme.mono, fontSize: "0.7rem" }}>
+              {clock.toISOString().slice(11, 19)} UTC
+            </span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "0.25rem 0.7rem",
+                borderRadius: 12,
+                fontSize: "0.7rem",
+                fontWeight: 600,
+                fontFamily: theme.mono,
+                background: total === 0 ? theme.redDim : healthy === total ? theme.greenDim : theme.yellowDim,
+                color: total === 0 ? theme.red : healthy === total ? theme.green : theme.yellow,
+                border: `1px solid ${total === 0 ? theme.red : healthy === total ? theme.green : theme.yellow}44`,
+              }}
+            >
+              ● {total === 0 ? "no endpoints" : `${healthy}/${total} healthy`}
+            </span>
+          </div>
+          {/* actions: refresh + apply/restart */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <button
+              onClick={refresh}
+              style={{
+                ...btn,
+                borderColor: theme.blue,
+                color: theme.blue,
+                flex: isMobile ? 1 : undefined,
+                justifyContent: "center",
+              }}
+              title="Refresh all tabs (re-fetch endpoints / stats / logs in place)"
+            >
+              ↻ Refresh
+            </button>
+            <RestartButton fullWidth={isMobile} />
+          </div>
         </div>
       </header>
 
