@@ -18,7 +18,7 @@ var Templates = []Template{
 	{
 		Key:   "lan-direct",
 		Title: "Direct dial for LAN ranges",
-		Help:  "Skips the proxy for RFC1918 / link-local destinations. Practically required so internal services (gateway UIs, NAS, printers) stay reachable when SOCKS5 is set system-wide.",
+		Help:  "Skips the proxy for RFC1918 / link-local destinations (matched as IP literals — the normal way LAN devices are addressed). Practically required so internal services (gateway UIs, NAS, printers) stay reachable when SOCKS5 is set system-wide.",
 		Rules: []Rule{
 			{Match: MatchExpr{Type: "ip_cidr", Value: "10.0.0.0/8"}, ActionName: "direct", Note: "RFC1918 (private)"},
 			{Match: MatchExpr{Type: "ip_cidr", Value: "172.16.0.0/12"}, ActionName: "direct", Note: "RFC1918 (private)"},
@@ -30,7 +30,7 @@ var Templates = []Template{
 	{
 		Key:   "ir-geo-proxy",
 		Title: "Proxy traffic to Iran",
-		Help:  "Forces DecisionProxy for destinations resolved (or matched literally) to Iranian CIDRs in geoip/ir.txt. Useful as an explicit rule above any 'direct' default.",
+		Help:  "Routes destinations whose IP is in geoip/ir.txt through MoaV. Matches IP literals only — it does not resolve hostnames, so a '.ir' domain target isn't caught unless the client already passes an Iranian IP. This is the INVERSE of the default 'Iran → direct' rule (which keeps IR traffic off the VPN to avoid detection) — enable only one of the two.",
 		Rules: []Rule{
 			{Match: MatchExpr{Type: "geoip", Value: "ir"}, ActionName: "proxy", Note: "egress through MoaV for IR targets"},
 		},

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { theme } from "../theme";
 import { API_BASE, WS_BASE } from "../apiBase";
 import { displayEndpointId } from "../display";
+import { copyText } from "../clipboard";
 
 
 type Level = "info" | "warn" | "error";
@@ -100,7 +101,7 @@ export default function Debug({ refreshTick }: Props) {
   const toggle = (lvl: Level) => setLevels((s) => ({ ...s, [lvl]: !s[lvl] }));
   const copyAll = () => {
     const txt = filtered.map((e) => `${fmtTime(e.ts)} [${e.level.toUpperCase()}] ${e.source}: ${e.message}`).join("\n");
-    navigator.clipboard?.writeText(txt);
+    copyText(txt);
   };
 
   return (

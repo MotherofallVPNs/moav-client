@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { theme } from "../theme";
 import { API_BASE } from "../apiBase";
+import { copyText } from "../clipboard";
 import SNISpoof from "./SNISpoof";
 
 type Strategy = "latency" | "priority" | "weighted";
@@ -68,6 +69,9 @@ export default function Settings({ refreshTick }: Props) {
   const [exposureSaving, setExposureSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
   const [applying, setApplying] = useState(false);
+  // Bumped after a successful save so the ACCESS & URLS panel re-fetches the
+  // new exposure mode instead of showing the stale one.
+  const [infoTick, setInfoTick] = useState(0);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/exposure`)
@@ -160,6 +164,7 @@ export default function Settings({ refreshTick }: Props) {
       }
       if (dashPass) setDashSet(true);
       setSavedBanner(true);
+      setInfoTick((t) => t + 1);
       flash("Saved to .env.", true);
     } catch (e) {
       flash(`Could not save: ${(e as Error).message}`, false);
@@ -476,7 +481,7 @@ export default function Settings({ refreshTick }: Props) {
                 docker compose up -d --force-recreate proxy-core web-ui
               </code>
               <button
-                onClick={() => { navigator.clipboard?.writeText("docker compose up -d --force-recreate proxy-core web-ui"); flash("command copied", true); }}
+                onClick={async () => { const ok = await copyText("docker compose up -d --force-recreate proxy-core web-ui"); flash(ok ? "command copied" : "copy failed — long-press to select", ok); }}
                 style={miniBtn()}
               >
                 copy
@@ -488,7 +493,7 @@ export default function Settings({ refreshTick }: Props) {
 
       <section style={{ marginBottom: "1.5rem" }}>
         <h3 style={section()}>access &amp; urls</h3>
-        <ConnectionInfo refreshTick={refreshTick} onFlash={flash} />
+        <ConnectionInfo refreshTick={(refreshTick ?? 0) + infoTick} onFlash={flash} />
       </section>
 
       <section style={{ marginBottom: "1.5rem" }}>
@@ -747,9 +752,9 @@ function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlas
     { name: "REST / WS API", url: `http://${displayHost}:8088`, hint: "" },
   ];
 
-  const copy = (s: string) => {
-    navigator.clipboard?.writeText(s);
-    onFlash("copied", true);
+  const copy = async (s: string) => {
+    const ok = await copyText(s);
+    onFlash(ok ? "copied" : "copy failed — long-press to select", ok);
   };
 
   return (
@@ -793,6 +798,12 @@ function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlas
             (not its address bar) at the SOCKS5 address above — :1080 is a proxy, not a web page.
           </>
         )}
+        <div style={{ marginTop: 4 }}>
+          <code>socks5h://</code> is intentional — the “h” means DNS is resolved at the proxy (no DNS
+          leaks). Apps that only take host/port: use just <code>{displayHost}:1080</code>, type SOCKS5.
+          These URLs reflect the <strong>saved</strong> mode; the actual port binding changes only after{" "}
+          <strong>Apply / recreate</strong>.
+        </div>
         {(mode === "lan" || mode === "public") && !dashAuth && (
           <div style={{ color: theme.red, marginTop: 4 }}>
             ⚠ No dashboard login set while exposed — anyone on the network can open this control panel.
