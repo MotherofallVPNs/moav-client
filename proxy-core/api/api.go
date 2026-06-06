@@ -450,6 +450,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 		URL       string   `json:"url,omitempty"`
 		WGFiles   []string `json:"wireguard_files,omitempty"`
 		Tags      []string `json:"tags"`
+		IsMoav    bool     `json:"is_moav"`
 		Endpoints int      `json:"endpoints"`
 		Healthy   int      `json:"healthy"`
 	}
@@ -469,6 +470,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 				URL            string   `yaml:"url"`
 				File           string   `yaml:"file"`
 				WireGuardFiles []string `yaml:"wireguard_files"`
+				Origin         string   `yaml:"origin"`
 			} `yaml:"sources"`
 		} `yaml:"subscription"`
 		Sidecars map[string]struct {
@@ -519,6 +521,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			URL:       parsed.Subscription.URL,
 			WGFiles:   parsed.Subscription.WireGuardFiles,
 			Tags:      tagsFor("default", parsed.Subscription.File, parsed.Subscription.URL, parsed.Subscription.WireGuardFiles),
+			IsMoav:    true,
 			Endpoints: endpointsBySource["default"],
 			Healthy:   healthyBySource["default"],
 		})
@@ -530,6 +533,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			URL:       src.URL,
 			WGFiles:   src.WireGuardFiles,
 			Tags:      tagsFor(src.Name, src.File, src.URL, src.WireGuardFiles),
+			IsMoav:    src.Origin != "custom", // bundle imports + legacy default to moav
 			Endpoints: endpointsBySource[src.Name],
 			Healthy:   healthyBySource[src.Name],
 		})
@@ -646,7 +650,9 @@ func (s *Server) handleAddSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry := map[string]any{"name": name}
+	// Pasted sources aren't MoaV bundles — mark them so the dashboard doesn't
+	// show the "moav" badge (bundle imports + legacy sources default to moav).
+	entry := map[string]any{"name": name, "origin": "custom"}
 	if url != "" {
 		entry["url"] = url
 	} else {

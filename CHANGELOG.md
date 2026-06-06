@@ -31,7 +31,9 @@ network-exposure controls, and the ability to add sources without a bundle.
   config, not just MoaV.
 - **Source component tags** (subscription / wireguard / the sidecar kinds a
   bundle configured) on the Sources tab, and **sidecar→bundle attribution** so
-  imported sidecars show their originating bundle instead of "sidecars".
+  imported sidecars show their originating bundle instead of "sidecars". MoaV
+  bundle imports are marked with a **`moav`** badge / `moav/<bundle>` source
+  label to distinguish them from pasted custom sources.
 - **Routing rules persist to `config.yaml`** — dashboard rule edits
   (add/enable/disable/reorder) now survive a restart.
 - **Comment-preserving config writes** — dashboard edits keep the comments,

@@ -42,11 +42,36 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const isMobile = useIsMobile();
+  const [moavSources, setMoavSources] = useState<Set<string>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
 
   const apply = (eps: Endpoint[]) => {
     setEndpoints(eps);
     onHealthChange?.(eps.filter((e) => e.Status === "ok" && e.Enabled).length, eps.length);
+  };
+
+  // Which sources came from a MoaV bundle → show a "moav/" prefix on the source.
+  useEffect(() => {
+    fetch(`${API_BASE}/api/sources`)
+      .then((r) => r.json())
+      .then((d) => {
+        const s = new Set<string>();
+        for (const x of (d.sources ?? []) as { name: string; is_moav?: boolean }[]) {
+          if (x.is_moav) s.add(x.name);
+        }
+        setMoavSources(s);
+      })
+      .catch(() => {});
+  }, [refreshTick]);
+
+  const renderSource = (src?: string) => {
+    if (!src) return <span style={{ color: theme.textDim }}>—</span>;
+    return (
+      <>
+        {moavSources.has(src) && <span style={{ color: theme.blue }}>moav/</span>}
+        <span style={{ color: theme.green }}>{src}</span>
+      </>
+    );
   };
 
   // Initial + on refresh tick.
@@ -174,7 +199,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
                   {statusPill(ep)}
                 </div>
                 <div style={{ marginTop: 3, fontFamily: theme.mono, fontSize: "0.7rem", color: theme.textDim, wordBreak: "break-all" }}>
-                  <span style={{ color: theme.green }}>{ep.Source || "—"}</span>{" · "}
+                  {renderSource(ep.Source)}{" · "}
                   <span style={{ color: theme.blue }}>
                     {ep.Protocol === "sidecar" ? (ep.Config?.sidecar_kind ?? "sidecar") : ep.Protocol}
                   </span>{" · "}
@@ -250,8 +275,8 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
                     </div>
                   )}
                 </td>
-                <td style={{ ...td, fontFamily: theme.mono, fontSize: "0.72rem", color: theme.green }}>
-                  {ep.Source || "—"}
+                <td style={{ ...td, fontFamily: theme.mono, fontSize: "0.72rem" }}>
+                  {renderSource(ep.Source)}
                 </td>
                 <td style={{ ...td, fontFamily: theme.mono, color: theme.blue }}>{ep.Protocol}</td>
                 <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim }}>{ep.Address}</td>

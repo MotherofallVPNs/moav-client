@@ -9,8 +9,30 @@ interface Source {
   url?: string;
   wireguard_files?: string[];
   tags?: string[];
+  is_moav?: boolean;
   endpoints: number;
   healthy: number;
+}
+
+function MoavBadge() {
+  return (
+    <span
+      style={{
+        padding: "1px 7px",
+        borderRadius: 4,
+        border: `1px solid ${theme.blue}66`,
+        background: theme.blue + "1a",
+        color: theme.blue,
+        fontFamily: theme.mono,
+        fontSize: "0.6rem",
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+      }}
+    >
+      moav
+    </span>
+  );
 }
 
 // Component tags shown per source (mirrors the MoaV admin bundle tags). Color
@@ -433,8 +455,11 @@ export default function Sources({ refreshTick }: Props) {
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-                <span style={{ fontFamily: theme.mono, color: theme.green, fontWeight: 600, fontSize: "0.85rem" }}>
-                  {src.name}
+                <span style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+                  {src.is_moav && <MoavBadge />}
+                  <span style={{ fontFamily: theme.mono, color: theme.green, fontWeight: 600, fontSize: "0.85rem" }}>
+                    {src.name}
+                  </span>
                 </span>
                 <button
                   onClick={() => removeSource(src.name)}
@@ -486,7 +511,12 @@ export default function Sources({ refreshTick }: Props) {
             <tbody>
               {data.sources.map((src) => (
                 <tr key={src.name} style={{ borderTop: `1px solid ${theme.border}` }}>
-                  <td style={{ ...td, fontFamily: theme.mono, color: theme.green, fontWeight: 600 }}>{src.name}</td>
+                  <td style={{ ...td, fontFamily: theme.mono, color: theme.green, fontWeight: 600 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                      {src.is_moav && <MoavBadge />}
+                      {src.name}
+                    </span>
+                  </td>
                   <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim, fontSize: "0.72rem", wordBreak: "break-all" }}>
                     {src.url && <div>{src.url}</div>}
                     <Tags tags={src.tags} />
