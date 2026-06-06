@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { theme, statusColor } from "../theme";
 import { API_BASE } from "../apiBase";
 import { displayEndpointName } from "../display";
+import { useIsMobile } from "../useIsMobile";
 
 
 interface StatRow {
@@ -167,6 +168,7 @@ interface Props {
 }
 
 export default function Analytics({ refreshTick }: Props) {
+  const isMobile = useIsMobile();
   const [stats, setStats] = useState<StatsResp>({ strategy: "", rows: [] });
 
   useEffect(() => {
@@ -407,73 +409,106 @@ export default function Analytics({ refreshTick }: Props) {
         </div>
       </Section>
 
-      {/* Per-endpoint table */}
+      {/* Per-endpoint — cards on mobile, table on desktop */}
       <Section title="Per-endpoint">
-        <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              {["Endpoint", "Dials", "Err", "Failovers", "↑", "↓", "Last dial", "Last error"].map((h) => (
-                <th key={h} style={th}>
-                  {h}
-                </th>
+        {stats.rows.length === 0 ? (
+          <div style={{ color: theme.textDim, fontSize: "0.8rem" }}>No stats yet.</div>
+        ) : isMobile ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+            {[...stats.rows]
+              .sort((a, b) => (b.bytes_up + b.bytes_down - (a.bytes_up + a.bytes_down)) || b.dials - a.dials)
+              .map((row) => (
+                <div
+                  key={row.id}
+                  style={{
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: 6,
+                    background: theme.surface2,
+                    padding: "0.7rem 0.75rem",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontFamily: theme.mono, color: theme.text, fontWeight: 600, fontSize: "0.82rem", wordBreak: "break-word" }}>
+                      {displayEndpointName(row.name, row.id)}
+                    </span>
+                    <span style={{ color: statusColor(row.status), fontFamily: theme.mono, fontSize: "0.72rem", whiteSpace: "nowrap" }}>
+                      ● {row.status}
+                    </span>
+                  </div>
+                  <div style={{ color: theme.textDim, fontSize: "0.7rem", fontFamily: theme.mono, marginTop: 2, wordBreak: "break-all" }}>
+                    {resolveLabel(row)} · {row.address}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.9rem", marginTop: 6, fontFamily: theme.mono, fontSize: "0.74rem" }}>
+                    <span style={{ color: theme.textDim }}>dials <span style={{ color: theme.text }}>{row.dials}</span></span>
+                    <span style={{ color: theme.textDim }}>err <span style={{ color: row.dial_errors > 0 ? theme.red : theme.text }}>{row.dial_errors}</span></span>
+                    <span style={{ color: theme.textDim }}>failovers <span style={{ color: theme.text }}>{row.failovers}</span></span>
+                    <span style={{ color: theme.textDim }}>last <span style={{ color: theme.text }}>{timeAgo(row.last_dial_unix)}</span></span>
+                  </div>
+                  <div style={{ display: "flex", gap: "1.25rem", marginTop: 4, fontFamily: theme.mono, fontSize: "0.78rem" }}>
+                    <span style={{ color: theme.green }}>↑ {fmtBytes(row.bytes_up)}</span>
+                    <span style={{ color: theme.blue }}>↓ {fmtBytes(row.bytes_down)}</span>
+                  </div>
+                  {row.last_error && (
+                    <div style={{ color: theme.red, fontSize: "0.68rem", fontFamily: theme.mono, marginTop: 4, wordBreak: "break-word" }}>
+                      {row.last_error}
+                    </div>
+                  )}
+                </div>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {stats.rows.length === 0 ? (
-              <tr>
-                <td colSpan={8} style={{ ...td, color: theme.textDim }}>
-                  No stats yet.
-                </td>
-              </tr>
-            ) : (
-              stats.rows
-                .sort((a, b) => (b.bytes_up + b.bytes_down - (a.bytes_up + a.bytes_down)) || b.dials - a.dials)
-                .map((row) => (
-                  <tr key={row.id} style={{ borderTop: `1px solid ${theme.border}` }}>
-                    <td style={td}>
-                      <div>{displayEndpointName(row.name, row.id)}</div>
-                      <div style={{ color: theme.textDim, fontSize: "0.68rem", fontFamily: theme.mono }}>
-                        {resolveLabel(row)} · {row.address}{" "}
-                        <span style={{ color: statusColor(row.status) }}>● {row.status}</span>
-                      </div>
-                    </td>
-                    <td style={{ ...td, fontFamily: theme.mono }}>{row.dials}</td>
-                    <td
-                      style={{
-                        ...td,
-                        color: row.dial_errors > 0 ? theme.red : theme.text,
-                        fontFamily: theme.mono,
-                      }}
-                    >
-                      {row.dial_errors}
-                    </td>
-                    <td style={{ ...td, fontFamily: theme.mono }}>{row.failovers}</td>
-                    <td style={{ ...td, fontFamily: theme.mono, color: theme.green }}>{fmtBytes(row.bytes_up)}</td>
-                    <td style={{ ...td, fontFamily: theme.mono, color: theme.blue }}>{fmtBytes(row.bytes_down)}</td>
-                    <td style={{ ...td, color: theme.textDim, fontFamily: theme.mono }}>{timeAgo(row.last_dial_unix)}</td>
-                    <td
-                      style={{
-                        ...td,
-                        color: theme.red,
-                        maxWidth: 240,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        fontFamily: theme.mono,
-                        fontSize: "0.68rem",
-                      }}
-                      title={row.last_error}
-                    >
-                      {row.last_error || "—"}
-                    </td>
-                  </tr>
-                ))
-            )}
-          </tbody>
-        </table>
-        </div>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Endpoint", "Dials", "Err", "Failovers", "↑", "↓", "Last dial", "Last error"].map((h) => (
+                    <th key={h} style={th}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...stats.rows]
+                  .sort((a, b) => (b.bytes_up + b.bytes_down - (a.bytes_up + a.bytes_down)) || b.dials - a.dials)
+                  .map((row) => (
+                    <tr key={row.id} style={{ borderTop: `1px solid ${theme.border}` }}>
+                      <td style={td}>
+                        <div>{displayEndpointName(row.name, row.id)}</div>
+                        <div style={{ color: theme.textDim, fontSize: "0.68rem", fontFamily: theme.mono }}>
+                          {resolveLabel(row)} · {row.address}{" "}
+                          <span style={{ color: statusColor(row.status) }}>● {row.status}</span>
+                        </div>
+                      </td>
+                      <td style={{ ...td, fontFamily: theme.mono }}>{row.dials}</td>
+                      <td style={{ ...td, color: row.dial_errors > 0 ? theme.red : theme.text, fontFamily: theme.mono }}>
+                        {row.dial_errors}
+                      </td>
+                      <td style={{ ...td, fontFamily: theme.mono }}>{row.failovers}</td>
+                      <td style={{ ...td, fontFamily: theme.mono, color: theme.green }}>{fmtBytes(row.bytes_up)}</td>
+                      <td style={{ ...td, fontFamily: theme.mono, color: theme.blue }}>{fmtBytes(row.bytes_down)}</td>
+                      <td style={{ ...td, color: theme.textDim, fontFamily: theme.mono }}>{timeAgo(row.last_dial_unix)}</td>
+                      <td
+                        style={{
+                          ...td,
+                          color: theme.red,
+                          maxWidth: 240,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          fontFamily: theme.mono,
+                          fontSize: "0.68rem",
+                        }}
+                        title={row.last_error}
+                      >
+                        {row.last_error || "—"}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Section>
     </div>
   );

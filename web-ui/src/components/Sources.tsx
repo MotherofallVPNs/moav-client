@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { theme } from "../theme";
 import { API_BASE } from "../apiBase";
+import { useIsMobile } from "../useIsMobile";
 
 interface Source {
   name: string;
@@ -51,6 +52,7 @@ const th: React.CSSProperties = {
 };
 
 export default function Sources({ refreshTick }: Props) {
+  const isMobile = useIsMobile();
   const [data, setData] = useState<SourcesResp>({ sources: [] });
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -267,66 +269,110 @@ export default function Sources({ refreshTick }: Props) {
         </div>
       )}
 
-      {/* Sources table */}
-      <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            {["Name", "Source", "Endpoints", "Healthy", ""].map((h) => (
-              <th key={h} style={th}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.sources.length === 0 ? (
-            <tr>
-              <td colSpan={5} style={{ ...td, color: theme.textDim }}>
-                No sources loaded. Drop a bundle .zip above.
-              </td>
-            </tr>
-          ) : (
-            data.sources.map((src) => (
-              <tr key={src.name} style={{ borderTop: `1px solid ${theme.border}` }}>
-                <td style={{ ...td, fontFamily: theme.mono, color: theme.green, fontWeight: 600 }}>
+      {/* Sources — cards on mobile, table on desktop */}
+      {data.sources.length === 0 ? (
+        <div style={{ color: theme.textDim, fontSize: "0.8rem", padding: "0.5rem 0" }}>
+          No sources loaded. Drop a bundle .zip above.
+        </div>
+      ) : isMobile ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {data.sources.map((src) => (
+            <div
+              key={src.name}
+              style={{
+                border: `1px solid ${theme.border}`,
+                borderRadius: 6,
+                background: theme.surface2,
+                padding: "0.7rem 0.75rem",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ fontFamily: theme.mono, color: theme.green, fontWeight: 600, fontSize: "0.85rem" }}>
                   {src.name}
-                </td>
-                <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim, fontSize: "0.72rem", wordBreak: "break-all" }}>
-                  {src.file || src.url || "—"}
-                  {src.wireguard_files && src.wireguard_files.length > 0 && (
-                    <span style={{ color: theme.blue, marginLeft: 6 }}>
-                      + {src.wireguard_files.length} wg
-                    </span>
-                  )}
-                </td>
-                <td style={{ ...td, fontFamily: theme.mono }}>{src.endpoints}</td>
-                <td style={{ ...td, fontFamily: theme.mono, color: src.healthy > 0 ? theme.green : theme.textDim }}>
-                  {src.healthy} / {src.endpoints}
-                </td>
-                <td style={{ ...td, textAlign: "right" }}>
-                  <button
-                    onClick={() => removeSource(src.name)}
-                    style={{
-                      padding: "0.2rem 0.5rem",
-                      background: "transparent",
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: 4,
-                      color: theme.red,
-                      cursor: "pointer",
-                      fontFamily: theme.mono,
-                      fontSize: "0.7rem",
-                    }}
-                  >
-                    × remove
-                  </button>
-                </td>
+                </span>
+                <button
+                  onClick={() => removeSource(src.name)}
+                  style={{
+                    padding: "0.2rem 0.5rem",
+                    background: "transparent",
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: 4,
+                    color: theme.red,
+                    cursor: "pointer",
+                    fontFamily: theme.mono,
+                    fontSize: "0.7rem",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  × remove
+                </button>
+              </div>
+              <div style={{ fontFamily: theme.mono, color: theme.textDim, fontSize: "0.7rem", wordBreak: "break-all", marginTop: 4 }}>
+                {src.file || src.url || "—"}
+                {src.wireguard_files && src.wireguard_files.length > 0 && (
+                  <span style={{ color: theme.blue, marginLeft: 6 }}>+ {src.wireguard_files.length} wg</span>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: "1.25rem", marginTop: 6, fontFamily: theme.mono, fontSize: "0.74rem" }}>
+                <span style={{ color: theme.textDim }}>
+                  endpoints <span style={{ color: theme.text }}>{src.endpoints}</span>
+                </span>
+                <span style={{ color: theme.textDim }}>
+                  healthy <span style={{ color: src.healthy > 0 ? theme.green : theme.textDim }}>{src.healthy} / {src.endpoints}</span>
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["Name", "Source", "Endpoints", "Healthy", ""].map((h) => (
+                  <th key={h} style={th}>
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-      </div>
+            </thead>
+            <tbody>
+              {data.sources.map((src) => (
+                <tr key={src.name} style={{ borderTop: `1px solid ${theme.border}` }}>
+                  <td style={{ ...td, fontFamily: theme.mono, color: theme.green, fontWeight: 600 }}>{src.name}</td>
+                  <td style={{ ...td, fontFamily: theme.mono, color: theme.textDim, fontSize: "0.72rem", wordBreak: "break-all" }}>
+                    {src.file || src.url || "—"}
+                    {src.wireguard_files && src.wireguard_files.length > 0 && (
+                      <span style={{ color: theme.blue, marginLeft: 6 }}>+ {src.wireguard_files.length} wg</span>
+                    )}
+                  </td>
+                  <td style={{ ...td, fontFamily: theme.mono }}>{src.endpoints}</td>
+                  <td style={{ ...td, fontFamily: theme.mono, color: src.healthy > 0 ? theme.green : theme.textDim }}>
+                    {src.healthy} / {src.endpoints}
+                  </td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    <button
+                      onClick={() => removeSource(src.name)}
+                      style={{
+                        padding: "0.2rem 0.5rem",
+                        background: "transparent",
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 4,
+                        color: theme.red,
+                        cursor: "pointer",
+                        fontFamily: theme.mono,
+                        fontSize: "0.7rem",
+                      }}
+                    >
+                      × remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {toast && (
         <div
