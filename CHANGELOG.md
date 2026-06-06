@@ -34,6 +34,11 @@ network-exposure controls, and the ability to add sources without a bundle.
   imported sidecars show their originating bundle instead of "sidecars". MoaV
   bundle imports are marked with a **`moav`** badge / `moav/<bundle>` source
   label to distinguish them from pasted custom sources.
+- **"Selective app" routing templates** — curated rule sets to keep specific
+  apps off the VPN or block their background traffic, by destination domain
+  (system updates → block; Zoom, iCloud, cloud sync, streaming, game downloads
+  → direct). NOTE: this is destination-based, not true per-app tunneling (a
+  SOCKS5/HTTP proxy can't see the originating process like TripMode/WireSock).
 - **Routing rules persist to `config.yaml`** — dashboard rule edits
   (add/enable/disable/reorder) now survive a restart.
 - **Comment-preserving config writes** — dashboard edits keep the comments,
