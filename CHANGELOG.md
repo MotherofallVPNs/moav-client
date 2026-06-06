@@ -5,21 +5,69 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-06-06
+
+A dashboard-focused release: a real mobile UI, a separate dashboard login, live
+network-exposure controls, and the ability to add sources without a bundle.
+
 ### Added
-- **Block-direct kill-switch toggle in the dashboard** — surfaced the
-  `block_direct` flag (previously config-only) as a toggle above the Endpoints
-  table. New `GET/PUT /api/block-direct` applies it live to the rule engine +
-  balancer (no restart) and persists to `config.yaml`. When on and any `direct`
-  rules are enabled, the toggle names them (that traffic still bypasses the
-  proxy).
+- **Dashboard login, separate from the proxy.** Optional admin auth
+  (`MOAV_DASHBOARD_USER`/`PASS`) protecting the dashboard + API via nginx basic
+  auth on a single origin (nginx reverse-proxies `/api` to proxy-core). The
+  WebSocket uses a short-lived **ticket** fetched over an authenticated request,
+  so iOS Safari no longer re-prompts on the Endpoints/Debug tabs. Stored
+  passwords can be revealed in the form only once the panel itself is
+  authenticated. Each auth section has an on/off toggle that clears its creds.
+- **Network exposure controls in the dashboard** — switch loopback / LAN /
+  public binding (writes `.env`), an **Apply now** button that restarts the
+  dashboard + proxy (no terminal), and an **ACCESS & URLS** panel that shows the
+  mode-relative address (127.0.0.1 / LAN IP / public host) using only local
+  signals — no external IP lookup.
+- **Block-direct kill-switch toggle** above the Endpoints table
+  (`GET/PUT /api/block-direct`) — live to the engine + balancer, persisted to
+  `config.yaml`; names any enabled `direct` rules that still bypass the proxy.
+- **Add a source by pasting** a subscription URL or V2Ray URIs
+  (`POST /api/sources`) — no bundle zip needed. Accepts any standard V2Ray
+  config, not just MoaV.
+- **Source component tags** (subscription / wireguard / the sidecar kinds a
+  bundle configured) on the Sources tab, and **sidecar→bundle attribution** so
+  imported sidecars show their originating bundle instead of "sidecars".
+- **Routing rules persist to `config.yaml`** — dashboard rule edits
+  (add/enable/disable/reorder) now survive a restart.
+- **Comment-preserving config writes** — dashboard edits keep the comments,
+  ordering and spacing in `config.yaml` (yaml.Node-based editing).
+- **SNI-spoof Apply-now button**; **healthchecks for sing-box + xray**;
+  **probe retry** before marking an endpoint unhealthy; **active tab persists**
+  across refresh.
 
 ### Changed
-- **`block_direct` now honors explicit `direct` rules.** The kill-switch drops
-  only the balancer's *involuntary* fallback (all endpoints down); a deliberate
-  `direct` rule (e.g. `lan-direct`, `geoip:ir → direct`) takes priority and is
-  always honored. Previously it overrode every `direct` to block.
-- **Default routing rules** trimmed to a single `geoip:ir → direct` (Iranian
-  destinations bypass the proxy); other templates ship disabled.
+- **Responsive dashboard.** Card layouts on phones for Endpoints, Sources,
+  Analytics (per-endpoint), and the per-connection flows; pill tabs in a grid;
+  reorganized header (title / status / actions); centered footer; Diagnostics
+  inputs no longer overflow.
+- **`block_direct` now honors explicit `direct` rules** — it drops only the
+  balancer's *involuntary* fallback (all endpoints down); a deliberate `direct`
+  rule takes priority.
+- **Default routing** trimmed to a single `geoip:ir → direct`; `torrent_block`
+  off; the redundant "Iran → proxy" template removed.
+- **Bare endpoint names** — the Source column owns the bundle, so names render
+  as just the label ("Hysteria2", "WireGuard", "MasterDNS").
+- **SOCKS5 auth**: a password alone enables auth, username defaults to `moav`;
+  proxy + dashboard auth re-read `.env` on restart so changes apply without a
+  full recreate. Logs lead with the endpoint's friendly name. Sources show the
+  remote URL + tags instead of the local file path.
+
+### Fixed
+- iOS Safari WebSocket re-auth prompt (ticket auth).
+- Clipboard copy did nothing over plain HTTP on a LAN IP (insecure-context
+  fallback added).
+- Probe errors now classify as ERROR/WARN with their reason, and the TLS
+  validation no longer inflates measured latency.
+- API binds the same interface as the UI on lan/public, so the dashboard can
+  reach it remotely; ACCESS & URLS refreshes after saving exposure.
+- Blank Sources page when no sources were configured.
+- `index.html` served no-cache so a fresh build loads (notably on mobile); the
+  header health count is populated on every tab, not just Endpoints.
 
 ## [1.0.0] — 2026-06-05
 

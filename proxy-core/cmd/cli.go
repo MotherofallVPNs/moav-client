@@ -15,7 +15,7 @@ import (
 )
 
 // Version is set at build time.
-const Version = "1.0.0"
+const Version = "1.2.0"
 
 // ParseAndRun parses os.Args and dispatches to the appropriate subcommand.
 // Returns the subcommand name so main can decide whether to run the server.
