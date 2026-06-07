@@ -17,6 +17,8 @@
 #    moav-client sidecar add <name>         enable + build + start a sidecar
 #    moav-client sidecar remove <name>      stop + disable a sidecar
 #    moav-client sidecar list               which sidecars are running
+#    moav-client install                    re-run the install wizard (add sidecars)
+#    moav-client expose <mode>              loopback | lan | public  (network reach)
 #    moav-client open                       open the dashboard in the default browser
 #    moav-client update                     git pull + rebuild
 #    moav-client version
@@ -211,10 +213,83 @@ cmd_update() {
 }
 
 cmd_version() {
-  local sha
+  local sha ver
   sha=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-  echo "moav-client @ $sha"
+  ver=$(cat "$ROOT/VERSION" 2>/dev/null || echo "?")
+  echo "moav-client v${ver} (@ $sha)"
   echo "install dir: $ROOT"
+}
+
+# Re-run the install wizard against this install dir (add/remove sidecars,
+# rebuild, re-up). install.sh handles the existing repo + pre-checks the
+# sidecars already enabled in config.yaml.
+cmd_install() {
+  if [[ ! -f "$ROOT/install.sh" ]]; then
+    echo "${RED}install.sh not found in $ROOT${CR}"; exit 1
+  fi
+  MOAV_DIR="$ROOT" bash "$ROOT/install.sh" --dir "$ROOT" "$@"
+}
+
+# --- .env helpers (mirror proxy-core handleExposure / install.sh) -----------
+set_env_kv() {
+  local key="$1" val="$2" file="$ROOT/.env"
+  touch "$file"
+  if grep -qE "^${key}=" "$file" 2>/dev/null; then
+    sed -i.bak -E "s|^${key}=.*|${key}=${val}|" "$file" && rm -f "${file}.bak"
+  else
+    printf '%s=%s\n' "$key" "$val" >>"$file"
+  fi
+}
+
+lan_ip() {
+  local ip=""
+  if command -v ip >/dev/null 2>&1; then
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+  fi
+  [[ -z "$ip" ]] && command -v hostname >/dev/null 2>&1 && ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+  [[ -z "$ip" ]] && command -v ipconfig >/dev/null 2>&1 && ip=$(ipconfig getifaddr en0 2>/dev/null)
+  echo "$ip"
+}
+
+# Change network reach. loopback = 127.0.0.1 (this machine only); lan/public =
+# 0.0.0.0 (every device that can route to this host). Writes the same .env keys
+# the dashboard's Network exposure setting uses, then recreates the containers.
+cmd_expose() {
+  local mode="${1:-}"; shift || true
+  local user="" pass=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --user)     user="$2"; shift ;;
+      --password) pass="$2"; shift ;;
+      *) echo "${RED}unknown flag: $1${CR}"; exit 1 ;;
+    esac
+    shift
+  done
+  local bind
+  case "$mode" in
+    loopback) bind="127.0.0.1" ;;
+    lan|public) bind="0.0.0.0" ;;
+    *) echo "${RED}usage: moav-client expose <loopback|lan|public> [--user U --password P]${CR}"; exit 1 ;;
+  esac
+  local k
+  for k in SOCKS5_BIND HTTP_BIND API_BIND UI_BIND; do set_env_kv "$k" "$bind"; done
+  set_env_kv "MOAV_EXPOSURE" "$mode"
+  if [[ -n "$pass" ]]; then
+    set_env_kv "MOAV_DASHBOARD_USER" "${user:-admin}"
+    set_env_kv "MOAV_DASHBOARD_PASS" "$pass"
+    echo "${GRN}✓ dashboard auth set for '${user:-admin}'${CR}"
+  fi
+  if [[ "$mode" != "loopback" && -z "$pass" ]]; then
+    echo "${YLW}! exposing to the network with no dashboard password — set one with --password, or in Settings → Network exposure${CR}"
+  fi
+  echo "${CYN}→ applying exposure=${mode} (bind ${bind}) — recreating proxy-core + web-ui${CR}"
+  compose up -d --force-recreate proxy-core web-ui
+  if [[ "$mode" == "loopback" ]]; then
+    echo "${GRN}✓ now on localhost only — http://localhost:3001${CR}"
+  else
+    local ip; ip="$(lan_ip)"
+    echo "${GRN}✓ now reachable at http://${ip:-<this-host-ip>}:3001  (SOCKS5 ${ip:-<this-host-ip>}:1080)${CR}"
+  fi
 }
 
 case "${1:-help}" in
@@ -226,6 +301,8 @@ case "${1:-help}" in
   probe)        cmd_probe ;;
   stats)        cmd_stats ;;
   sidecar)      shift; cmd_sidecar "$@" ;;
+  install|wizard) shift; cmd_install "$@" ;;
+  expose)       shift; cmd_expose "$@" ;;
   open)         cmd_open ;;
   update)       cmd_update ;;
   version)      cmd_version ;;

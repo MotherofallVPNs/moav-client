@@ -108,9 +108,9 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
     };
   }, []);
 
-  const flash = (msg: string, ok: boolean) => {
+  const flash = (msg: string, ok: boolean, ms = 2500) => {
     setToast({ msg, ok });
-    setTimeout(() => setToast(null), 2500);
+    setTimeout(() => setToast(null), ms);
   };
 
   const patch = async (id: string, body: { enabled?: boolean; priority?: number }) => {
@@ -124,7 +124,13 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const data = await r.json();
       setEndpoints((prev) => prev.map((ep) => (ep.ID === id ? { ...ep, ...data.endpoint } : ep)));
-      flash("Updated.", true);
+      if (data.sidecar_missing) {
+        // Enabled a sidecar whose image was never built (not selected at
+        // install). Tell the user the exact CLI command to provision it.
+        flash(`Image not built — run:  moav-client sidecar add ${data.sidecar_kind}`, false, 9000);
+      } else {
+        flash("Updated.", true);
+      }
     } catch (e) {
       flash(`Update failed: ${(e as Error).message}`, false);
     } finally {

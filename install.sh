@@ -34,6 +34,26 @@
 # =============================================================================
 set -euo pipefail
 
+# This script uses bash 4+ features (associative-style indexing, ${var,,},
+# mapfile). macOS ships bash 3.2, so a stock `curl … | bash` would die with a
+# cryptic "bad substitution". Re-exec under a newer bash if one is on PATH
+# (e.g. Homebrew's), otherwise fail with a clear, actionable message.
+if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+  # Re-exec under a newer bash, but only when invoked as a real file — under
+  # `curl … | bash` the script is on stdin ($0 is "bash") and can't be re-run.
+  if [[ -f "$0" ]]; then
+    for _b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+      if [[ -x "$_b" ]] && "$_b" -c '[[ "${BASH_VERSINFO[0]}" -ge 4 ]]' 2>/dev/null; then
+        exec "$_b" "$0" "$@"
+      fi
+    done
+  fi
+  echo "moav-client install requires bash 4 or newer (you have ${BASH_VERSION:-unknown})." >&2
+  echo "  macOS:  brew install bash  then re-run with that bash, e.g.:" >&2
+  echo "          \$(brew --prefix)/bin/bash -c \"\$(curl -fsSL <install-url>)\"" >&2
+  exit 1
+fi
+
 REPO_URL="${MOAV_REPO_URL:-https://github.com/MotherofallVPNs/moav-client.git}"
 REPO_BRANCH="${MOAV_REPO_BRANCH:-main}"
 DEFAULT_DIR="${HOME:-/root}/moav-client"
@@ -197,6 +217,30 @@ ensure_tool() {
   exit 1
 }
 
+# Set KEY=VALUE in an .env file — replace in place if present, else append.
+# Mirrors the key contract proxy-core's handleExposure writes, so the dashboard
+# and installer/CLI stay consistent.
+set_env_kv() {
+  local key="$1" val="$2" file="${3:-.env}"
+  touch "$file"
+  if grep -qE "^${key}=" "$file" 2>/dev/null; then
+    sed -i.bak -E "s|^${key}=.*|${key}=${val}|" "$file" && rm -f "${file}.bak"
+  else
+    printf '%s=%s\n' "$key" "$val" >>"$file"
+  fi
+}
+
+# Best-effort primary private IPv4 (what other LAN devices would dial).
+lan_ip() {
+  local ip=""
+  if command -v ip >/dev/null 2>&1; then
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+  fi
+  [[ -z "$ip" ]] && command -v hostname >/dev/null 2>&1 && ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+  [[ -z "$ip" ]] && command -v ipconfig >/dev/null 2>&1 && ip=$(ipconfig getifaddr en0 2>/dev/null)
+  echo "$ip"
+}
+
 # ---------- arg / env parsing ----------------------------------------------
 HEADLESS="${MOAV_HEADLESS:-}"
 INSTALL_DIR="${MOAV_DIR:-}"
@@ -229,9 +273,17 @@ while (( $# > 0 )); do
 done
 
 INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_DIR}"
-# Detect interactive vs piped — auto-go-headless when stdin isn't a TTY
-# AND the caller didn't explicitly set HEADLESS.
-if [[ -z "$HEADLESS" && ! -t 0 ]]; then
+
+# A controlling terminal exists if /dev/tty is openable — true even under
+# `curl … | bash`, where stdin is the pipe but the terminal is still attached.
+# This is what lets the wizard prompt when piped.
+tty_available() { { : >/dev/tty; } 2>/dev/null; }
+
+# Detect interactive vs truly non-interactive. Only fall back to headless when
+# the caller didn't ask for it AND stdin isn't a TTY AND there's no usable
+# /dev/tty to prompt on (genuine cloud-init / CI / cron). Piped-but-attached
+# (curl | bash from a real shell) stays interactive.
+if [[ -z "$HEADLESS" && ! -t 0 ]] && ! tty_available; then
   HEADLESS=auto
 fi
 
@@ -369,50 +421,79 @@ printf '    %-20s  %s\n' "web-ui"       "~76 MB    React dashboard (nginx-alpine
 printf '    %-20s  %s\n' "sing-box"     "~113 MB   Real protocol cryptography (VLESS/Reality/Trojan/SS/Hy2/WG)"
 echo ""
 
-echo "  ${C_BOLD}Optional sidecars${C_RESET}:"
-for kind in "${SIDECAR_KINDS[@]}"; do
-  IFS='|' read -r mb label oneliner <<<"$(sidecar_meta "$kind")"
-  printf '    %-20s  %s%-9s%s %s\n' "[$kind]" "$C_YELLOW" "~${mb} MB" "$C_RESET" "$label"
-  note "$oneliner"
-done
-echo ""
+# Sidecars already enabled in an existing config.yaml (re-run case) — printed
+# one per line so the wizard can pre-check them. Empty on a fresh install.
+current_enabled_sidecars() {
+  local cfg="$INSTALL_DIR/config.yaml"
+  [[ -f "$cfg" ]] || return 0
+  python3 - "$cfg" <<'PY' 2>/dev/null || true
+import re, sys, pathlib
+src = pathlib.Path(sys.argv[1]).read_text()
+for kind in ("masterdns","amneziawg","psiphon","trusttunnel","tor"):
+    m = re.search(r'^\s*'+kind+r':\s*\n(?:\s*#.*\n)*?\s*enabled:\s*(true|false)', src, re.MULTILINE)
+    if m and m.group(1) == "true":
+        print(kind)
+PY
+}
 
-choose_sidecars() {
-  local picked=()
+# Numbered catalog with a [x] mark for pre-selected sidecars. Populates the
+# index→kind map SIDECAR_INDEX used by parse_sidecar_choice.
+declare -a SIDECAR_INDEX=()
+print_sidecar_catalog() {
+  local preselected=("$@") i=1 mb label oneliner mark
+  echo "  ${C_BOLD}Optional sidecars${C_RESET} ${C_DIM}(select any — only chosen images are built)${C_RESET}:"
   for kind in "${SIDECAR_KINDS[@]}"; do
-    IFS='|' read -r mb label _ <<<"$(sidecar_meta "$kind")"
-    read -r -p "    enable $C_BOLD$label$C_RESET? ${C_DIM}(~${mb} MB)${C_RESET} [y/N] " ans </dev/tty || ans=""
-    case "${ans,,}" in
-      y|yes) picked+=("$kind") ;;
-    esac
+    IFS='|' read -r mb label oneliner <<<"$(sidecar_meta "$kind")"
+    mark=" "
+    printf '%s\n' "${preselected[@]:-}" | grep -qx "$kind" && mark="x"
+    SIDECAR_INDEX[$i]="$kind"
+    printf '    %s[%s]%s %2d) %s%-12s%s %s~%s MB%s\n' \
+      "$C_BOLD" "$mark" "$C_RESET" "$i" "$C_BOLD" "$label" "$C_RESET" "$C_YELLOW" "$mb" "$C_RESET"
+    note "$oneliner"
+    i=$((i + 1))
   done
-  echo "${picked[*]}"
+  echo ""
+}
+
+# Parse a selection line ("1 3", "all", or blank) against SIDECAR_INDEX.
+# Blank keeps the pre-selected set. Emits chosen keys one per line.
+parse_sidecar_choice() {
+  local ans="$1"; shift
+  local preselected=("$@") picked=() tok
+  if [[ -z "${ans// /}" ]]; then
+    (( ${#preselected[@]} )) && printf '%s\n' "${preselected[@]}"
+    return 0
+  fi
+  if [[ "${ans,,}" == "all" ]]; then
+    printf '%s\n' "${SIDECAR_KINDS[@]}"
+    return 0
+  fi
+  for tok in ${ans//,/ }; do
+    [[ "$tok" =~ ^[0-9]+$ && -n "${SIDECAR_INDEX[$tok]:-}" ]] && picked+=("${SIDECAR_INDEX[$tok]}")
+  done
+  (( ${#picked[@]} )) && printf '%s\n' "${picked[@]}"
 }
 
 SIDECARS=()
+mapfile -t PRESELECTED < <(current_enabled_sidecars)
+
 if [[ -n "$SIDECAR_CSV" ]]; then
+  print_sidecar_catalog "${PRESELECTED[@]:-}"
   IFS=',' read -r -a SIDECARS <<<"$SIDECAR_CSV"
   ok "sidecars from --sidecars / MOAV_SIDECARS: ${SIDECARS[*]:-none}"
-elif [[ "$HEADLESS" == "1" ]]; then
-  ok "headless: no extra sidecars (set MOAV_SIDECARS to enable)"
-elif [[ "$HEADLESS" == "auto" ]]; then
-  warn "non-interactive stdin and no MOAV_SIDECARS — defaulting to core stack only"
+elif [[ "$HEADLESS" == "1" || "$HEADLESS" == "auto" ]]; then
+  print_sidecar_catalog "${PRESELECTED[@]:-}"
+  # Headless keeps whatever's already enabled (re-run) or none (fresh install).
+  (( ${#PRESELECTED[@]} )) && SIDECARS=("${PRESELECTED[@]}")
+  if [[ "$HEADLESS" == "auto" ]]; then
+    warn "non-interactive (no TTY) and no MOAV_SIDECARS — keeping ${SIDECARS[*]:-core stack only}"
+  else
+    ok "headless: sidecars = ${SIDECARS[*]:-none} (set MOAV_SIDECARS to change)"
+  fi
 else
-  read -r -p "  pick interactively (Y) or list comma-separated keys (e.g. masterdns,psiphon)? [Y/n] " mode </dev/tty || mode=""
-  case "${mode,,}" in
-    n|no|"")
-      list=$(choose_sidecars)
-      IFS=' ' read -r -a SIDECARS <<<"$list"
-      ;;
-    *)
-      if [[ "${mode,,}" == "y" || "${mode,,}" == "yes" ]]; then
-        list=$(choose_sidecars)
-        IFS=' ' read -r -a SIDECARS <<<"$list"
-      else
-        IFS=',' read -r -a SIDECARS <<<"$mode"
-      fi
-      ;;
-  esac
+  print_sidecar_catalog "${PRESELECTED[@]:-}"
+  read -r -p "  enable which? numbers e.g. \"1 3\", \"all\", or blank to keep current: " choice </dev/tty || choice=""
+  mapfile -t SIDECARS < <(parse_sidecar_choice "$choice" "${PRESELECTED[@]:-}")
 fi
 
 # Validate sidecar keys.
@@ -535,11 +616,22 @@ for k in "${SIDECARS[@]:-}"; do
   profiles+=(--profile "$k")
 done
 
+# Confirm before the (potentially multi-minute) build & start. Auto-proceeds in
+# headless / --yes runs; otherwise asks once and offers a clean bail-out.
+echo "  about to build & start: ${C_BOLD}core stack${C_RESET} (proxy-core, web-ui, sing-box, xray)${SIDECARS:+ + sidecars: ${C_BOLD}${SIDECARS[*]}${C_RESET}}"
+note "estimated image footprint ~${TOTAL_MB} MB"
+if ! want_install "build & start now?"; then
+  echo ""
+  warn "skipping build/start at your request."
+  note "when ready, run:  ${C_BOLD}moav-client up${C_RESET}   (or: docker compose ${profiles[*]:-} up -d --build)"
+  exit 0
+fi
+
 if [[ -n "$SKIP_BUILD" ]]; then
   warn "MOAV_SKIP_BUILD set — skipping image build"
 else
-  ok "building core images (proxy-core + web-ui) — this can take 1–3 min on first run"
-  $DOCKER compose build proxy-core web-ui
+  ok "building core images (proxy-core + web-ui + xray) — this can take 1–3 min on first run"
+  $DOCKER compose build proxy-core web-ui xray
   if (( ${#profiles[@]} > 0 )); then
     ok "building sidecars: ${SIDECARS[*]}"
     $DOCKER compose "${profiles[@]}" build "${SIDECARS[@]}"
@@ -606,6 +698,46 @@ if [[ "$HEADLESS" != "1" && "$HEADLESS" != "auto" && -z "${MOAV_NO_OPEN:-}" ]]; 
     xdg-open "$url" >/dev/null 2>&1 &
   elif command -v powershell.exe >/dev/null 2>&1; then
     powershell.exe -NoProfile -Command "Start-Process '$url'" >/dev/null 2>&1 || true
+  fi
+fi
+
+# ---------- LAN exposure (last interactive question) -----------------------
+# By default every port binds to 127.0.0.1. Offer to open the dashboard + proxy
+# to the LAN now so the user doesn't have to hunt for the Settings tab. Skipped
+# in headless mode. Mirrors proxy-core's handleExposure .env key contract.
+if [[ "$HEADLESS" != "1" && "$HEADLESS" != "auto" ]]; then
+  echo ""
+  # Explicit opt-in even under --yes — exposing to the network is security
+  # sensitive, so it should never be auto-confirmed. Default is No.
+  read -r -p "  make the dashboard + proxy reachable from other devices on your LAN? [y/N] " lan_ans </dev/tty || lan_ans=""
+  if [[ "${lan_ans,,}" == y || "${lan_ans,,}" == yes ]]; then
+    for k in SOCKS5_BIND HTTP_BIND API_BIND UI_BIND; do set_env_kv "$k" "0.0.0.0" "$ENVF"; done
+    set_env_kv "MOAV_EXPOSURE" "lan" "$ENVF"
+    # A LAN-reachable dashboard with no password is a foot-gun — offer one.
+    read -r -p "  set a dashboard username/password? (recommended) [Y/n] " pw_ans </dev/tty || pw_ans=""
+    if [[ "${pw_ans,,}" != n && "${pw_ans,,}" != no ]]; then
+      read -r -p "    dashboard username [admin]: " du </dev/tty || du=""
+      read -r -s -p "    dashboard password: " dp </dev/tty || dp=""; echo ""
+      [[ -z "$du" ]] && du="admin"
+      if [[ -n "$dp" ]]; then
+        set_env_kv "MOAV_DASHBOARD_USER" "$du" "$ENVF"
+        set_env_kv "MOAV_DASHBOARD_PASS" "$dp" "$ENVF"
+        ok "dashboard auth set for user '$du'"
+      else
+        warn "empty password — leaving the dashboard open (no auth)"
+      fi
+    fi
+    ok "applying LAN exposure — recreating proxy-core + web-ui…"
+    $DOCKER compose "${profiles[@]}" up -d --force-recreate proxy-core web-ui >/dev/null 2>&1 || \
+      $DOCKER compose "${profiles[@]}" up -d --force-recreate proxy-core web-ui
+    LANIP="$(lan_ip)"
+    echo ""
+    ok "now reachable on your LAN:"
+    note "Dashboard:    http://${LANIP:-<this-host-ip>}:3001"
+    note "SOCKS5 proxy: ${LANIP:-<this-host-ip>}:1080"
+    note "change later with: ${MC} expose loopback   (or lan | public)"
+  else
+    note "staying on localhost only. Open it later with: ${MC} expose lan"
   fi
 fi
 

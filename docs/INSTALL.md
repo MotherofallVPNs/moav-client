@@ -62,16 +62,62 @@ git clone https://github.com/MotherofallVPNs/moav-client && cd moav-client
 | `MOAV_REPO_URL` / `MOAV_REPO_BRANCH` | `--repo` / `--branch` | override source |
 | `MOAV_NO_OPEN=1` | — | don't auto-open the dashboard |
 
-Run without a TTY (piped / no `/dev/tty`) and the installer auto-selects
-headless with the core stack only.
+The installer prompts interactively even under `curl … | bash` (it uses
+`/dev/tty`). It only auto-selects headless (core stack, no prompts) when there
+is genuinely no terminal — true cloud-init / CI / cron, or `--headless`.
+
+## Choosing sidecars
+
+The wizard shows a numbered catalog; enter the numbers you want
+(`1 3`, `all`, or blank for none). Only the images you pick are built. Re-run
+the wizard any time to add or remove sidecars — already-enabled ones are
+pre-checked:
+
+```bash
+moav-client install
+```
+
+You can also add/remove a single sidecar without the wizard:
+
+```bash
+moav-client sidecar add psiphon      # enable + build + start
+moav-client sidecar remove psiphon   # stop + disable
+moav-client sidecar list
+```
+
+If you enable a protocol in the dashboard whose sidecar image was never built,
+the dashboard tells you to run `moav-client sidecar add <name>` to provision it.
 
 ## Network exposure
 
 By default the SOCKS5 / HTTP / dashboard / API ports bind to `127.0.0.1`
-(loopback). To expose on the LAN or publicly, use the dashboard
-**Settings → Network exposure** (writes `.env`, re-up to apply) — `loopback`,
-`lan`, or `public`, with optional SOCKS5 username/password. Your firewall is
-what actually makes `public` reachable.
+(loopback). The installer asks once, at the end, whether to open it to your LAN
+(and offers to set a dashboard password). Change it any time from the CLI:
+
+```bash
+moav-client expose lan                        # reachable from other LAN devices
+moav-client expose lan --user me --password s3cret   # + dashboard auth
+moav-client expose loopback                   # back to localhost only
+```
+
+or from the dashboard **Settings → Network exposure** — both write the same
+`.env` keys (`MOAV_EXPOSURE`, `*_BIND`, `MOAV_DASHBOARD_*`) and recreate the
+containers. `lan` and `public` both bind `0.0.0.0`; your firewall / router is
+what actually makes `public` reachable. Always set a dashboard password before
+exposing.
+
+## Versions & pinning
+
+`VERSION` holds the client version (shown by `moav-client version` and the
+dashboard footer). Component versions are pinned in `.env` — copy the commented
+block from `.env.example` to override:
+
+- `XRAY_VERSION` — official XTLS release tag built by `sidecars/xray/Dockerfile`
+  (pre-releases like `v26.5.9` are fine).
+- `IMAGE_SINGBOX` / `IMAGE_TOR` / `IMAGE_CADDY` — full `repo:tag` of the pulled
+  images.
+
+After changing a version: `moav-client up` (or `docker compose up -d --build`).
 
 ## Updating
 
