@@ -6,9 +6,29 @@ The one-liner covers most cases:
 curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
 ```
 
-It checks prerequisites (git, curl, docker, docker compose v2, python3), clones
-the repo, lets you pick sidecars, seeds `config.yaml`, builds images, brings the
-stack up, and symlinks a global `moav-client` command into `/usr/local/bin`.
+It checks prerequisites (git, curl, docker, docker compose v2, python3) and
+**installs the missing ones automatically** — on Linux via the OS package
+manager and <https://get.docker.com>, on macOS via Homebrew (Docker Desktop).
+Then it clones the repo, lets you pick sidecars, seeds `config.yaml`, builds
+images, brings the stack up, and symlinks a global `moav-client` command into
+`/usr/local/bin`.
+
+In a headless / piped run (no TTY) the prerequisite installs happen without
+prompting. Interactively you're asked first (default yes). Force unattended
+installs anywhere with `--yes` / `MOAV_ASSUME_YES=1`.
+
+### Platform support
+
+| Platform | Docker auto-install |
+|---|---|
+| Debian/Ubuntu, RHEL/Fedora, Arch | `get.docker.com` (+ `usermod -aG docker`, `systemctl enable --now`) |
+| Alpine | `apk add docker` (+ `rc-update`, `service docker start`) |
+| macOS | `brew install --cask docker` (needs Homebrew); waits for Docker Desktop to boot |
+| Windows | manual — install Docker Desktop (WSL2), then run from WSL2 / Git-Bash |
+
+On a fresh Linux install the current shell isn't in the `docker` group yet, so
+the installer transparently falls back to `sudo docker` for this run. Log out
+and back in (or `newgrp docker`) to use `docker` without `sudo` afterwards.
 
 ## Headless / non-interactive
 
@@ -32,6 +52,8 @@ git clone https://github.com/MotherofallVPNs/moav-client && cd moav-client
 | Env | Flag | Meaning |
 |---|---|---|
 | `MOAV_HEADLESS=1` | `--headless` | no prompts; core stack + listed sidecars |
+| `MOAV_ASSUME_YES=1` | `--yes` / `-y` | auto-confirm prerequisite installs (no prompt) |
+| `MOAV_NO_DOCKER_INSTALL=1` | `--no-docker-install` | never auto-install Docker; fail if missing |
 | `MOAV_DIR` | `--dir` | install directory (default `~/moav-client`) |
 | `MOAV_SUBSCRIPTION` | `--subscription` | path to a `subscription.txt` to wire into `config.yaml` |
 | `MOAV_WG_CONF` | `--wg-conf` | WireGuard `.conf` to register |

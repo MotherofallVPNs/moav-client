@@ -24,6 +24,13 @@
 #
 #  Skip building (faster re-run if you just want to up):
 #    MOAV_SKIP_BUILD=1 bash install.sh
+#
+#  Missing prerequisites (docker, git, curl, python3) are installed
+#  automatically when possible — on Linux via the OS package manager and
+#  https://get.docker.com, on macOS via Homebrew. In headless / non-TTY runs
+#  this happens without prompting; interactively you're asked first (default
+#  yes). Force unattended installs anywhere with --yes / MOAV_ASSUME_YES=1.
+#  Disable auto-install of Docker with MOAV_NO_DOCKER_INSTALL=1.
 # =============================================================================
 set -euo pipefail
 
@@ -58,6 +65,138 @@ hdr()  {
   say "$C_BOLD" "═════════════════════════════════════════════════════════"
 }
 
+# ---------- OS detection & package helpers ---------------------------------
+# OS:  macos | debian | rhel | alpine | arch | linux | windows | unknown
+# PKG: apt | dnf | yum | apk | pacman | brew | "" (no known package manager)
+OS="" PKG=""
+detect_os() {
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) OS=macos ;;
+    Linux)
+      if   [[ -f /etc/debian_version ]]; then OS=debian
+      elif [[ -f /etc/redhat-release || -f /etc/fedora-release ]]; then OS=rhel
+      elif [[ -f /etc/alpine-release ]]; then OS=alpine
+      elif [[ -f /etc/arch-release ]]; then OS=arch
+      else OS=linux; fi ;;
+    MINGW*|MSYS*|CYGWIN*) OS=windows ;;
+    *) OS=unknown ;;
+  esac
+  case "$OS" in
+    macos)  command -v brew >/dev/null 2>&1 && PKG=brew ;;
+    debian) PKG=apt ;;
+    rhel)   command -v dnf >/dev/null 2>&1 && PKG=dnf || PKG=yum ;;
+    alpine) PKG=apk ;;
+    arch)   PKG=pacman ;;
+  esac
+}
+
+# Privilege escalation prefix for system package installs. Empty when we're
+# already root or when sudo is unavailable (brew must NOT run under sudo).
+SUDO=""
+if [[ "$(id -u 2>/dev/null || echo 0)" -ne 0 ]] && command -v sudo >/dev/null 2>&1; then
+  SUDO="sudo"
+fi
+
+# Auto-confirm an install prompt. Yes without asking in headless / assume-yes
+# mode (the whole point of an automated installer); otherwise prompt (default
+# yes) on the TTY.
+want_install() {
+  if [[ -n "$ASSUME_YES" || "$HEADLESS" == "1" || "$HEADLESS" == "auto" ]]; then
+    return 0
+  fi
+  local ans
+  read -r -p "    $1 [Y/n] " ans </dev/tty 2>/dev/null || ans=""
+  case "${ans,,}" in n|no) return 1 ;; *) return 0 ;; esac
+}
+
+_apt_refreshed=""
+pkg_install() {
+  case "$PKG" in
+    apt)
+      [[ -z "$_apt_refreshed" ]] && { $SUDO apt-get update -qq && _apt_refreshed=1 || true; }
+      DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq "$@" ;;
+    dnf)    $SUDO dnf install -y "$@" ;;
+    yum)    $SUDO yum install -y "$@" ;;
+    apk)    $SUDO apk add "$@" ;;
+    pacman) $SUDO pacman -Sy --noconfirm "$@" ;;
+    brew)   brew install "$@" ;;
+    *)      return 1 ;;
+  esac
+}
+
+# Best-effort cross-platform Docker install. Returns non-zero (with guidance)
+# when it can't proceed unattended (e.g. macOS without Homebrew, Windows).
+install_docker() {
+  case "$OS" in
+    debian|rhel|arch|linux)
+      ok "installing Docker via get.docker.com…"
+      curl -fsSL https://get.docker.com | $SUDO sh
+      [[ -n "$SUDO" ]] && $SUDO usermod -aG docker "$(id -un)" 2>/dev/null || true
+      $SUDO systemctl enable --now docker 2>/dev/null \
+        || $SUDO service docker start 2>/dev/null || true ;;
+    alpine)
+      pkg_install docker docker-cli-compose 2>/dev/null || pkg_install docker docker-compose
+      $SUDO rc-update add docker boot 2>/dev/null || true
+      $SUDO service docker start 2>/dev/null || true ;;
+    macos)
+      if [[ "$PKG" == brew ]]; then
+        ok "installing Docker Desktop via Homebrew…"
+        brew install --cask docker
+        note "launching Docker Desktop — grant it permissions if prompted"
+        open -a Docker 2>/dev/null || true
+      else
+        err "can't auto-install Docker without Homebrew"
+        note "install Homebrew (https://brew.sh) then re-run, or grab Docker Desktop:"
+        note "https://www.docker.com/products/docker-desktop"
+        return 1
+      fi ;;
+    windows)
+      err "auto-install isn't supported on Windows"
+      note "install Docker Desktop (with WSL2 backend): https://www.docker.com/products/docker-desktop"
+      note "then re-run this from WSL2 or Git-Bash with the daemon running"
+      return 1 ;;
+    *)
+      err "can't auto-install Docker on this OS"
+      note "see https://docs.docker.com/engine/install/"
+      return 1 ;;
+  esac
+}
+
+# Resolve a working docker invocation into $DOCKER. Handles two fresh-install
+# quirks: (1) on Linux the current shell isn't in the `docker` group yet, so
+# the socket needs sudo this session; (2) macOS Docker Desktop takes a while to
+# boot. Polls up to ~60s on macOS, returns 1 if the daemon never answers.
+DOCKER="docker"
+ensure_docker_running() {
+  local tries=0 max=1
+  [[ "$OS" == macos ]] && max=30
+  while :; do
+    if docker info >/dev/null 2>&1; then DOCKER="docker"; return 0; fi
+    if [[ -n "$SUDO" ]] && $SUDO docker info >/dev/null 2>&1; then DOCKER="$SUDO docker"; return 0; fi
+    tries=$((tries + 1))
+    (( tries >= max )) && break
+    [[ "$OS" == macos ]] && { note "waiting for Docker to start ($tries/$max)…"; sleep 2; }
+  done
+  return 1
+}
+
+# Ensure a CLI tool is present, installing it via the OS package manager when
+# missing. Aborts the installer if it's required and can't be installed.
+ensure_tool() {
+  local cmd="$1" pkg="${2:-$1}" hint="${3:-}"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    ok "$cmd ($(command -v "$cmd"))"
+    return 0
+  fi
+  warn "$cmd not found"
+  if [[ -n "$PKG" ]] && want_install "install $cmd now?"; then
+    pkg_install "$pkg" >/dev/null 2>&1 || pkg_install "$pkg" || true
+    if command -v "$cmd" >/dev/null 2>&1; then ok "$cmd installed ($(command -v "$cmd"))"; return 0; fi
+  fi
+  err "$cmd is required${hint:+ — $hint}"
+  exit 1
+}
+
 # ---------- arg / env parsing ----------------------------------------------
 HEADLESS="${MOAV_HEADLESS:-}"
 INSTALL_DIR="${MOAV_DIR:-}"
@@ -65,10 +204,14 @@ SUBSCRIPTION="${MOAV_SUBSCRIPTION:-}"
 WG_CONF="${MOAV_WG_CONF:-}"
 SIDECAR_CSV="${MOAV_SIDECARS:-}"
 SKIP_BUILD="${MOAV_SKIP_BUILD:-}"
+ASSUME_YES="${MOAV_ASSUME_YES:-}"
+NO_DOCKER_INSTALL="${MOAV_NO_DOCKER_INSTALL:-}"
 
 while (( $# > 0 )); do
   case "$1" in
     --headless)        HEADLESS=1 ;;
+    --yes|-y)          ASSUME_YES=1 ;;
+    --no-docker-install) NO_DOCKER_INSTALL=1 ;;
     --dir)             INSTALL_DIR="$2"; shift ;;
     --subscription)    SUBSCRIPTION="$2"; shift ;;
     --wg-conf)         WG_CONF="$2"; shift ;;
@@ -77,7 +220,7 @@ while (( $# > 0 )); do
     --branch)          REPO_BRANCH="$2"; shift ;;
     --repo)            REPO_URL="$2"; shift ;;
     --help|-h)
-      sed -n '2,/^# ===/p' "$0" | sed 's/^#//' | head -n 30
+      sed -n '2,/^# ===/p' "$0" | sed 's/^#//' | head -n 45
       exit 0
       ;;
     *)  err "unknown flag: $1"; exit 1 ;;
@@ -133,39 +276,65 @@ BANNER
 # ---------- step 1: prereqs -------------------------------------------------
 hdr "[1/5] checking prerequisites"
 
-need_cmd() {
-  if command -v "$1" >/dev/null 2>&1; then
-    ok "$1 ($(command -v "$1"))"
-  else
-    err "$1 not found"
-    return 1
-  fi
-}
+detect_os
+note "platform: ${OS}${PKG:+  •  package manager: $PKG}${SUDO:+  •  via sudo}"
+if [[ "$OS" == "unknown" || ( -z "$PKG" && "$OS" != "macos" ) ]]; then
+  warn "unrecognized platform — auto-install of missing tools may not work; install manually if a step fails"
+fi
 
-need_cmd git || { warn "install git first: https://git-scm.com/downloads"; exit 1; }
-need_cmd curl || { warn "install curl first"; exit 1; }
+# git / curl / python3 — auto-installed via the package manager when missing.
 # python3 drives the config.yaml sidecar-toggle step; without it the install
 # aborts mid-config under set -e.
-need_cmd python3 || { warn "install python3 first"; exit 1; }
-need_cmd docker || {
-  err "docker not found"
-  warn "install Docker Desktop or the docker engine: https://docs.docker.com/get-docker/"
-  exit 1
-}
+ensure_tool git    git     "https://git-scm.com/downloads"
+ensure_tool curl   curl    "install curl via your package manager"
+ensure_tool python3 python3 "install python3 via your package manager"
 
-if docker compose version >/dev/null 2>&1; then
-  ok "docker compose ($(docker compose version --short))"
+# Docker — auto-install when missing (unless MOAV_NO_DOCKER_INSTALL is set).
+if command -v docker >/dev/null 2>&1; then
+  ok "docker ($(command -v docker))"
 else
-  err "docker compose v2 plugin not found"
-  warn "install: https://docs.docker.com/compose/install/"
-  exit 1
+  warn "docker not found"
+  if [[ -n "$NO_DOCKER_INSTALL" ]]; then
+    err "docker is required (auto-install disabled via MOAV_NO_DOCKER_INSTALL)"
+    note "https://docs.docker.com/get-docker/"
+    exit 1
+  elif want_install "install Docker now?"; then
+    install_docker || { err "Docker install didn't complete"; exit 1; }
+  else
+    err "docker is required"
+    note "https://docs.docker.com/get-docker/"
+    exit 1
+  fi
 fi
 
-if ! docker info >/dev/null 2>&1; then
-  err "docker daemon isn't reachable — start Docker and re-run"
+# Resolve a working docker invocation ($DOCKER) — may be "sudo docker" right
+# after a fresh Linux install, and waits for Docker Desktop to boot on macOS.
+if ! ensure_docker_running; then
+  err "docker daemon isn't reachable"
+  case "$OS" in
+    macos)   note "start Docker Desktop (open -a Docker), wait for it to finish booting, then re-run" ;;
+    windows) note "start Docker Desktop and re-run from WSL2 / Git-Bash" ;;
+    *)       note "fresh install? log out/in for docker-group membership (or run: newgrp docker), then re-run" ;;
+  esac
   exit 1
 fi
-ok "docker daemon reachable"
+ok "docker daemon reachable${SUDO:+ (using: $DOCKER)}"
+
+if $DOCKER compose version >/dev/null 2>&1; then
+  ok "docker compose ($($DOCKER compose version --short 2>/dev/null))"
+else
+  warn "docker compose v2 plugin not found"
+  if [[ "$PKG" == "apt" ]] && want_install "install the docker compose plugin?"; then
+    pkg_install docker-compose-plugin || true
+  fi
+  if $DOCKER compose version >/dev/null 2>&1; then
+    ok "docker compose ($($DOCKER compose version --short 2>/dev/null))"
+  else
+    err "docker compose v2 plugin not found"
+    note "https://docs.docker.com/compose/install/"
+    exit 1
+  fi
+fi
 
 # Probe available disk so we can warn if it's tight.
 DF_AVAIL_MB=$(df -m "$(dirname "$INSTALL_DIR")" 2>/dev/null | awk 'NR==2 {print $4}' || echo "?")
@@ -370,19 +539,19 @@ if [[ -n "$SKIP_BUILD" ]]; then
   warn "MOAV_SKIP_BUILD set — skipping image build"
 else
   ok "building core images (proxy-core + web-ui) — this can take 1–3 min on first run"
-  docker compose build proxy-core web-ui
+  $DOCKER compose build proxy-core web-ui
   if (( ${#profiles[@]} > 0 )); then
     ok "building sidecars: ${SIDECARS[*]}"
-    docker compose "${profiles[@]}" build "${SIDECARS[@]}"
+    $DOCKER compose "${profiles[@]}" build "${SIDECARS[@]}"
   fi
 fi
 
 ok "starting stack…"
-docker compose "${profiles[@]}" up -d
+$DOCKER compose "${profiles[@]}" up -d
 sleep 4
 
 # Quick smoke status.
-status="$(docker compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Status}}' 2>/dev/null || true)"
+status="$($DOCKER compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Status}}' 2>/dev/null || true)"
 echo ""
 say "$C_DIM" "  $status"
 
