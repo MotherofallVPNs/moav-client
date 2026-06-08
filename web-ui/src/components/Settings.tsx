@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { theme } from "../theme";
 import { API_BASE } from "../apiBase";
 import { copyText } from "../clipboard";
+import { useIsMobile } from "../useIsMobile";
 import SNISpoof from "./SNISpoof";
 import ConfigEditor from "./ConfigEditor";
 
@@ -197,9 +198,29 @@ export default function Settings({ refreshTick }: Props) {
     }
   };
 
+  const isMobile = useIsMobile();
+  // Two equal columns on desktop, single column on mobile. Panels are carded
+  // so the page reads as grouped controls instead of one long scroll.
+  const col2: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+    gap: "1rem",
+    alignItems: "start",
+    marginBottom: "1rem",
+  };
+  const card: React.CSSProperties = {
+    border: `1px solid ${theme.border}`,
+    borderRadius: 8,
+    padding: "1rem 1.1rem",
+    marginBottom: 0,
+  };
+
   return (
     <div>
-      <section style={{ marginBottom: "2rem" }}>
+      {/* Row 1: strategy + probe (left)  ·  network exposure (right) */}
+      <div style={col2}>
+      <div style={card}>
+      <section style={{ marginBottom: "1.25rem" }}>
         <h3 style={section()}>load-balancing strategy</h3>
         <p style={blurb()}>Applied immediately, no restart required.</p>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -277,8 +298,9 @@ export default function Settings({ refreshTick }: Props) {
           Results stream into the <strong>Endpoints</strong> tab via WebSocket — switch tabs to watch them update.
         </div>
       </section>
+      </div>
 
-      <section style={{ marginBottom: "1.5rem" }}>
+      <section style={card}>
         <h3 style={section()}>network exposure</h3>
         <p style={blurb()}>
           Controls which interfaces the SOCKS5 / HTTP CONNECT / dashboard ports bind to on the
@@ -522,18 +544,22 @@ export default function Settings({ refreshTick }: Props) {
           </div>
         )}
       </section>
+      </div>
 
-      <section style={{ marginBottom: "1.5rem" }}>
+      {/* Row 2: access & urls (left)  ·  SNI spoofing (right) */}
+      <div style={col2}>
+      <section style={card}>
         <h3 style={section()}>access &amp; urls</h3>
         <ConnectionInfo refreshTick={(refreshTick ?? 0) + infoTick} onFlash={flash} />
       </section>
 
-      <section style={{ marginBottom: "1.5rem" }}>
+      <section style={card}>
         <h3 style={section()}>SNI spoofing</h3>
         <SNISpoof />
       </section>
+      </div>
 
-      <section style={{ marginBottom: "1.5rem" }}>
+      <section style={{ ...card, marginBottom: "1rem" }}>
         <h3 style={section()}>backup &amp; restore</h3>
         <p style={blurb()}>
           Download a <code>.zip</code> of <code>config.yaml</code> + <code>data/</code> +{" "}
@@ -564,7 +590,7 @@ export default function Settings({ refreshTick }: Props) {
         </div>
       </section>
 
-      <section style={{ marginBottom: "1.5rem" }}>
+      <section style={{ ...card, marginBottom: "1rem" }}>
         <details>
           <summary
             style={{
