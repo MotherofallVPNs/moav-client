@@ -19,16 +19,19 @@
 curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
 ```
 
-نصب‌کننده پیش‌نیازها را بررسی می‌کند، مخزن را clone می‌کند، اجازه می‌دهد sidecarها را انتخاب کنید، `config.yaml` را می‌سازد، ایمیج‌ها را build می‌کند، استک را بالا می‌آورد و دستور سراسری `moav-client` را نصب می‌کند. هم تعاملی و هم بدون تعامل کار می‌کند — برای نصب headless/با فلگ به [docs/INSTALL.md](docs/INSTALL.md) نگاه کنید.
+نصب‌کننده پیش‌نیازهای نصب‌نشده (docker، git، curl، python3) را **خودکار نصب می‌کند**، مخزن را clone می‌کند، اجازه می‌دهد sidecarها را از یک چک‌لیست انتخاب کنید (فقط ایمیج‌های انتخابی build می‌شوند)، `config.yaml` را می‌سازد، ایمیج‌ها را build می‌کند، استک را بالا می‌آورد، در صورت تمایل آن را روی شبکه‌ی محلی باز می‌کند و دستور سراسری `moav-client` را نصب می‌کند. هم تعاملی (حتی وقتی با `bash` پایپ شود) و هم کاملاً headless کار می‌کند — به [docs/INSTALL.md](docs/INSTALL.md) نگاه کنید.
 
 سپس استک را با `moav-client` مدیریت کنید:
 
 ```bash
-moav-client status                # docker compose ps
-moav-client logs proxy-core       # دنبال‌کردن لاگ‌ها
-moav-client probe                 # اجرای probe از طریق API
-moav-client sidecar add tor       # فعال‌سازی + build + اجرای sidecar تور
-moav-client update                # git pull + rebuild + restart
+moav-client status                # وضعیت سرویس‌ها + سلامت + آدرس‌ها
+moav-client info                  # فقط آدرس‌های داشبورد / پروکسی / API
+moav-client logs -f proxy-core    # دنبال‌کردن لاگ‌ها
+moav-client probe                 # اجرای probe تأخیر
+moav-client sidecar add tor       # فعال‌سازی + build + اجرای یک sidecar
+moav-client expose lan            # سطح دسترسی: loopback | lan | public
+moav-client update [-b <branch>]  # pull (و در صورت نیاز تعویض شاخه) + rebuild
+moav-client uninstall [--wipe]    # حذف استک (--wipe کانفیگ/داده را هم پاک می‌کند)
 ```
 
 آدرس‌های ارائه‌شده:
@@ -51,7 +54,7 @@ moav-client update                # git pull + rebuild + restart
 | proxy-core | ~۱۸ MB | هسته | همیشه |
 | web-ui | ~۷۵ MB | هسته | همیشه |
 | sing-box | ~۱۱۶ MB | هسته | همیشه |
-| xray | ~۱۰۴ MB | هسته | همیشه |
+| xray | ~۵۰ MB | هسته | همیشه (باینری رسمی XTLS، پین‌شده با `XRAY_VERSION`) |
 | MasterDNS | ~۱۳۸ MB | sidecar | `masterdns` |
 | AmneziaWG | ~۱۴۹ MB | sidecar | `amneziawg` |
 | Psiphon | ~۱۷۶ MB | sidecar | `psiphon` |
@@ -60,11 +63,11 @@ moav-client update                # git pull + rebuild + restart
 
 | مصرف | فقط هسته | استک کامل |
 |---|---|---|
-| دیسک (ایمیج‌های runtime) | ~۳۱۳ MB | ~۹۴۵ MB |
-| دانلود نصب اولیه | ~۱۹۰ MB | ~۸۱۰ MB |
+| دیسک (ایمیج‌های runtime) | ~۲۶۰ MB | ~۹۰۰ MB |
+| دانلود نصب اولیه | ~۱۶۰ MB | ~۷۸۰ MB |
 | RAM (بی‌کار) | ~۱۵۰ MB | ~۴۰۰ MB |
 
-یک build کامل حدود ۴ GB کش build هم می‌گذارد که با `docker builder prune` قابل پاک‌سازی است. به‌روزرسانی‌ها فقط لایه‌های تغییریافته را دانلود می‌کنند.
+مرحله‌ی `[5/5]` نصب‌کننده پیش از build یک جدول تخمینی دانلود/دیسک برای هر مؤلفه نشان می‌دهد. اعداد تقریبی‌اند (amd64). یک build کامل حدود ۴ GB کش build هم می‌گذارد که با `docker builder prune` قابل پاک‌سازی است؛ به‌روزرسانی‌ها فقط لایه‌های تغییریافته را دانلود می‌کنند.
 
 ---
 
@@ -96,13 +99,12 @@ moav-client update                # git pull + rebuild + restart
 | تب | کاری که می‌توانید انجام دهید |
 |---|---|
 | **Endpoints** | وضعیت و تأخیر زنده. روشن/خاموش‌کردن هرکدام (toggle برای sidecar کانتینر را هم متوقف/شروع می‌کند). ویرایش اولویت درجا. ردیف‌های غیرفعال نشان `DISABLED` می‌گیرند. |
-| **Sources** | وارد کردن باندل سرور دیگر با رهاکردن فایل `.zip` — زیر `data/<name>/` استخراج و یک منبع اضافه می‌شود. فهرست/حذف منابع و reload. |
+| **Configs** | وارد کردن باندل سرور دیگر با رهاکردن فایل `.zip` — زیر `data/<name>/` استخراج و یک منبع اضافه می‌شود. فهرست/حذف منابع و reload. |
 | **Analytics** | کارت‌های آپلود/دانلود هر پروتکل با نمودار ۲ دقیقه‌ای، نمودار سطحی هم‌پوشان، و جدول هر endpoint با شمارش dial/خطا/failover. |
 | **Plugins** | فهرست، مرتب‌سازی، ویرایش و حذف قوانین مسیریابی. افزودن از کاتالوگ آماده. تغییرات بدون restart اعمال می‌شوند. |
-| **Settings** | تغییر زنده‌ی استراتژی متعادل‌سازی، probe همه، **سطح دسترسی شبکه** (loopback / lan / public با احراز هویت اختیاری)، کلید SNI-spoof، و پشتیبان‌گیری/بازیابی. |
+| **Settings** | در پنل‌های جداگانه: استراتژی متعادل‌سازی + probe، **سطح دسترسی شبکه** (loopback / lan / public با احراز هویت اختیاری SOCKS5 و داشبورد)، آدرس‌ها و URLها، کلید SNI-spoof، پشتیبان‌گیری/بازیابی، و در پایین یک ویرایشگر **پیشرفته‌ی** `config.yaml` به‌صورت تاشو. |
 | **Debug** | لاگ زنده (بافرهای حلقوی per-level، ~۸۰۰ رویداد برای هر سطح). فیلتر، pause/autoscroll/copy/clear. به‌علاوه جدول flow هر اتصال. |
 | **Diagnostics** | بررسی اتصال از خود proxy-core: TCP، DNS یا traceroute — اختیاراً *از داخل* تونل یک endpoint مشخص. |
-| **Config** | بارگذاری زنده‌ی `config.yaml`. ویرایش و ذخیره. برای تغییرات ساختاری پیام restart نمایش داده می‌شود. |
 
 <!-- screenshot/gif: dashboard tabs walkthrough -->
 <!-- ![dashboard walkthrough](docs/assets/dashboard.gif) -->
@@ -120,7 +122,9 @@ moav-client update                # git pull + rebuild + restart
 - `singbox` / `xray` / `sni_spoof` — sidecarهای dialer (پیش‌فرض روشن)
 - `sidecars` — `masterdns` / `amneziawg` / `psiphon` / `trusttunnel` / `tor`
 
-اکثر کاربران هرگز `config.yaml` را دستی ویرایش نمی‌کنند — وارد کردن باندل (تب Sources) و toggle کردن در داشبورد آن را برایتان می‌نویسد.
+اکثر کاربران هرگز `config.yaml` را دستی ویرایش نمی‌کنند — وارد کردن باندل (تب Configs) و toggle کردن در داشبورد آن را برایتان می‌نویسد، یا از ویرایشگر **پیشرفته‌ی** تاشو در پایین تب Settings استفاده کنید.
+
+**نسخه‌ها** در `.env` پین می‌شوند: `XRAY_VERSION` (تگ نسخه‌ی رسمی XTLS)، `IMAGE_SINGBOX` / `IMAGE_TOR` / `IMAGE_CADDY` (رفرنس ایمیج‌های pull‌شده) و `MOAV_VERSION`. نسخه‌ی کلاینت در فایل `VERSION` است. به [`.env.example`](.env.example) نگاه کنید.
 
 ---
 
@@ -143,27 +147,32 @@ moav-client update                # git pull + rebuild + restart
 
 ## CLI
 
-```
-moav-client [command] [flags]
+دو ابزار خط‌فرمان هم‌نام‌اند. **رپر مدیریتی** (`moav-client`، یک اسکریپت شل نصب‌شده در `PATH`) استک داکر را روزمره مدیریت می‌کند:
 
-Commands:
-  serve       اجرای پروکسی + API (پیش‌فرض)
-  probe       probe یک‌باره‌ی تأخیر همه‌ی endpointها
-  list        فهرست endpointها بدون probe
-  fetch-sub   گرفتن و پارس یک URL اشتراک
-  healthcheck بررسی API محلی و خروج 0/1 (healthcheck کانتینر)
-  version     چاپ نسخه
-  help        راهنما
-
-Global flags:
-  --config    مسیر config.yaml (پیش‌فرض: config.yaml)
 ```
+moav-client <command>
+
+  up | down | restart        شروع / توقف / rebuild استک
+  status                     وضعیت سرویس‌ها + سلامت + آدرس‌ها
+  info                       فقط آدرس‌های داشبورد / پروکسی / API
+  logs [-f] [service]        دنبال‌کردن لاگ‌ها
+  probe | stats              probe endpointها / نمایش شمارنده‌ها
+  sidecar add|remove|list    مدیریت sidecarهای اختیاری
+  install                    اجرای دوباره‌ی ویزارد نصب
+  expose <loopback|lan|public>   تغییر سطح دسترسی شبکه
+  update [-b <branch>]       pull (و در صورت نیاز تعویض شاخه) + rebuild
+  uninstall [--wipe]         حذف استک (--wipe کانفیگ/داده را پاک می‌کند)
+  open | version
+```
+
+**باینری proxy-core** (داخل کانتینر، `FROM scratch`) خودِ پروکسی را اجرا می‌کند و زیرفرمان‌های خودش را دارد — `serve` (پیش‌فرض)، `probe`، `list`، `fetch-sub <url>`، `healthcheck`، `version` — همگی با `--config <path>`.
 
 ---
 
 ## مستندات
 
-- [docs/INSTALL.md](docs/INSTALL.md) — نصب headless / با فلگ، سطح دسترسی شبکه
+- [docs/INSTALL.md](docs/INSTALL.md) — نصب headless / با فلگ، سطح دسترسی شبکه، به‌روزرسانی و حذف
+- [docs/PLUGINS.md](docs/PLUGINS.md) — قوانین مسیریابی، کلید قطع، geoip و کاتالوگ کامل قالب‌ها
 - [docs/SIDECARS.md](docs/SIDECARS.md) — TrustTunnel، Psiphon، Tor، MasterDNS، AmneziaWG
 - [docs/SNI_SPOOFING.md](docs/SNI_SPOOFING.md) — sidecar اختیاری SNI-spoofing
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — پل sing-box، متعادل‌کننده/failover، prober، کنترل داکر

@@ -17,19 +17,24 @@ A client for **[MoaV — Mother of all VPNs](https://github.com/shayanb/MoaV)** 
 curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
 ```
 
-The installer checks prerequisites, clones the repo, lets you pick sidecars,
-seeds `config.yaml`, builds the images, brings the stack up, and installs a
-global `moav-client` command. Works interactively or headless — see
-[docs/INSTALL.md](docs/INSTALL.md) for headless/flag-driven installs.
+The installer **auto-installs missing prerequisites** (docker, git, curl,
+python3), clones the repo, lets you pick sidecars from a checklist (only the
+chosen images are built), seeds `config.yaml`, builds the images, brings the
+stack up, optionally opens it to your LAN, and installs a global `moav-client`
+command. Works interactively — even piped through `bash` — or fully headless;
+see [docs/INSTALL.md](docs/INSTALL.md).
 
 Then manage the stack with `moav-client`:
 
 ```bash
-moav-client status                # docker compose ps
-moav-client logs proxy-core       # tail logs
-moav-client probe                 # trigger probe via API
-moav-client sidecar add tor       # enable + build + start the tor sidecar
-moav-client update                # git pull + rebuild + restart
+moav-client status                # formatted service status + health + URLs
+moav-client info                  # just the dashboard / proxy / API URLs
+moav-client logs -f proxy-core    # tail logs
+moav-client probe                 # trigger a latency probe
+moav-client sidecar add tor       # enable + build + start a sidecar
+moav-client expose lan            # network reach: loopback | lan | public
+moav-client update [-b <branch>]  # pull (optionally switch branch) + rebuild
+moav-client uninstall [--wipe]    # remove the stack (--wipe deletes config/data)
 ```
 
 Endpoints exposed:
@@ -53,7 +58,7 @@ sidecars are opt-in via `--profile`.
 | proxy-core | ~18 MB | core | always |
 | web-ui | ~75 MB | core | always |
 | sing-box | ~116 MB | core | always |
-| xray | ~104 MB | core | always |
+| xray | ~50 MB | core | always (official XTLS binary, pinned `XRAY_VERSION`) |
 | MasterDNS | ~138 MB | sidecar | `masterdns` |
 | AmneziaWG | ~149 MB | sidecar | `amneziawg` |
 | Psiphon | ~176 MB | sidecar | `psiphon` |
@@ -62,12 +67,14 @@ sidecars are opt-in via `--profile`.
 
 | Footprint | Core only | Full stack |
 |---|---|---|
-| Disk (runtime images) | ~313 MB | ~945 MB |
-| First-install download | ~190 MB | ~810 MB |
+| Disk (runtime images) | ~260 MB | ~900 MB |
+| First-install download | ~160 MB | ~780 MB |
 | RAM (idle) | ~150 MB | ~400 MB |
 
-A full build also leaves ~4 GB of build cache, reclaimable with
-`docker builder prune`. Updates re-download only changed layers.
+The installer's `[5/5]` step prints a per-component download/disk estimate
+before building. Numbers are approximate (amd64) — a full build also leaves
+~4 GB of build cache, reclaimable with `docker builder prune`. Updates
+re-download only changed layers.
 
 ---
 
@@ -98,14 +105,13 @@ Every sidecar exposes its own SOCKS5 inbound on the `moav-net` Docker network; m
 
 | Tab | What you can do |
 |---|---|
-| **Endpoints** | Live status & latency. Toggle each on/off (sidecar toggles also stop/start the docker container). Edit priority inline. Disabled rows show a `DISABLED` pill instead of a stale status. |
-| **Sources** | Import another MoaV server's bundle by dropping its `.zip` — extracts under `data/<name>/` and appends a `subscription.sources` entry. List / remove configured sources; trigger a reload. |
+| **Endpoints** | Live status & latency. Toggle each on/off (sidecar toggles also stop/start the docker container; enabling one whose image was never built tells you to run `moav-client sidecar add <name>`). Edit priority inline. Disabled rows show a `DISABLED` pill instead of a stale status. |
+| **Configs** | Import another MoaV server's bundle by dropping its `.zip` — extracts under `data/<name>/` and appends a `subscription.sources` entry. List / remove configured sources; trigger a reload. |
 | **Analytics** | Per-protocol upload/download cards with rolling 2-min sparklines, an overlay-area throughput chart of all protocols, per-endpoint table with dial / error / failover counts and last-error reason. |
 | **Plugins** | List, reorder, edit, enable/disable, delete routing rules. Add from a curated template catalog — networking/privacy (LAN-direct, trackers, ad domains, telemetry, port-80 block) plus "selective app" sets (system updates, Zoom, iCloud, cloud sync, streaming, game downloads). All disabled by default; changes hot-apply and persist to `config.yaml`. See [docs/PLUGINS.md](docs/PLUGINS.md). |
-| **Settings** | Switch load-balancing strategy live (latency / priority / weighted random), "Probe all endpoints now", **Network exposure** (loopback / LAN / public with optional SOCKS5 auth, written to `.env`), SNI-spoof toggle, and config backup / restore. |
+| **Settings** | Grouped into panels: load-balancing strategy (latency / priority / weighted) + "Probe all endpoints now", **Network exposure** (loopback / LAN / public with optional SOCKS5 + dashboard auth, written to `.env`), Access & URLs, SNI-spoof toggle, config backup / restore, and a collapsible **advanced** raw `config.yaml` editor at the bottom (edit + atomic save). |
 | **Debug** | Streaming log tail (server-side per-level ring buffers, ~800 events each for info / warn / error so warnings aren't crowded out by info spam). Level chips with counts, substring filter, pause / autoscroll / copy / clear. Plus a per-connection flow table. |
 | **Diagnostics** | Run a connectivity check from proxy-core itself: TCP connect, DNS lookup, or TCP-TTL traceroute — optionally *through* a chosen endpoint's tunnel, to tell "my router can't reach this host" from "this endpoint's tunnel is down". |
-| **Config** | Live-loads `config.yaml` from disk. Edit + save (writes back atomically). "Restart proxy-core to apply" notice for structural changes. |
 
 A `↻ Refresh` button in the topbar reloads every tab in place; the health pill next to it shows `healthy/total`.
 
@@ -132,8 +138,14 @@ edit. Key sections:
 - `singbox` / `xray` / `sni_spoof` — dialer sidecars (enabled by default)
 - `sidecars` — `masterdns` / `amneziawg` / `psiphon` / `trusttunnel` / `tor`
 
-Most users never edit `config.yaml` by hand — importing a bundle (Sources tab)
-and toggling endpoints/sidecars in the dashboard writes it for you.
+Most users never edit `config.yaml` by hand — importing a bundle (Configs tab)
+and toggling endpoints/sidecars in the dashboard writes it for you, or use the
+collapsible **advanced** editor at the bottom of Settings.
+
+**Versions** are pinned in `.env`: `XRAY_VERSION` (official XTLS release tag),
+`IMAGE_SINGBOX` / `IMAGE_TOR` / `IMAGE_CADDY` (pulled image refs), and
+`MOAV_VERSION` (stamped into the binary). The client version lives in the
+top-level `VERSION` file. See [`.env.example`](.env.example).
 
 ---
 
@@ -174,23 +186,28 @@ countries.
 
 ## CLI
 
-`moav-client` ships as a single binary. Subcommands:
+Two CLIs share the name. The **management wrapper** (`moav-client`, a shell
+script installed into your `PATH`) drives the Docker stack day-to-day:
 
 ```
-moav-client [command] [flags]
+moav-client <command>
 
-Commands:
-  serve       Start the proxy + API (default if no command given)
-  probe       One-shot latency probe of all endpoints
-  list        List endpoints without probing
-  fetch-sub   Fetch and parse a subscription URL
-  healthcheck Probe the local API and exit 0/1 (container healthcheck; works on the scratch image)
-  version     Print version
-  help        Print usage
-
-Global flags:
-  --config    Path to config.yaml  (default: config.yaml)
+  up | down | restart        start / stop / rebuild the stack
+  status                     formatted services + endpoint health + URLs
+  info                       just the dashboard / proxy / API URLs
+  logs [-f] [service]        tail container logs
+  probe | stats              probe endpoints / show counters
+  sidecar add|remove|list    manage optional protocol sidecars
+  install                    re-run the install wizard
+  expose <loopback|lan|public>   change network reach
+  update [-b <branch>]       pull (optionally switch branch) + rebuild
+  uninstall [--wipe]         remove the stack (--wipe deletes config/data)
+  open | version
 ```
+
+The **proxy-core binary** (inside the container, `FROM scratch`) runs the proxy
+itself and has its own subcommands — `serve` (default), `probe`, `list`,
+`fetch-sub <url>`, `healthcheck`, `version` — all taking `--config <path>`.
 
 ---
 

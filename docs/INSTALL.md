@@ -122,5 +122,20 @@ After changing a version: `moav-client up` (or `docker compose up -d --build`).
 ## Updating
 
 ```bash
-moav-client update    # git pull + rebuild + restart
+moav-client update              # pull current branch + rebuild + restart
+moav-client update -b dev       # switch to (and track) another branch
 ```
+
+The installer makes a shallow, single-branch clone, so `update` fetches the
+target branch's tip explicitly — `-b <branch>` works even though
+`git branch -a` only shows `main`.
+
+## Uninstalling
+
+```bash
+moav-client uninstall           # stop + remove containers (config + data kept)
+moav-client uninstall --wipe    # also delete config.yaml, .env, data/, volumes & images
+```
+
+Both also remove the global `moav-client` command. The repo clone is left in
+place — `rm -rf ~/moav-client` to remove it too.

@@ -2,8 +2,9 @@
 
 Optional protocol engines, each a container on the `moav-net` Docker network
 exposing a SOCKS5 inbound that moav-client treats as one balancer endpoint.
-Enable per-install with `--sidecars a,b,c` (or the dashboard); each is gated by
-a docker-compose `--profile`.
+Pick them in the installer's checklist, add one later with
+`moav-client sidecar add <name>`, or toggle in the dashboard. Each is gated by a
+docker-compose `--profile`, so only chosen images are built.
 
 | Sidecar | Port | Needs |
 |---|---|---|
@@ -13,7 +14,7 @@ a docker-compose `--profile`.
 | TrustTunnel | 5600 | bundle's `trusttunnel.toml` |
 | Tor | 9150 | nothing |
 
-Bundle import (Sources tab) auto-wires the config paths for MasterDNS,
+Bundle import (Configs tab) auto-wires the config paths for MasterDNS,
 AmneziaWG and TrustTunnel; you just flip the sidecar on.
 
 ## TrustTunnel

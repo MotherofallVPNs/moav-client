@@ -10,7 +10,7 @@ through a chosen endpoint). Start there.
   If sing-box isn't generating, ensure `singbox.enabled: true` (it is by
   default) — without it nothing can be dialed.
 - A just-imported bundle needs a restart to load: `moav-client restart` (the
-  Sources tab does this for you).
+  Configs tab does this for you).
 
 ### Dashboard / proxy unreachable from another machine
 - Ports bind to `127.0.0.1` by default. Use **Settings → Network exposure** →
@@ -45,9 +45,25 @@ through a chosen endpoint). Start there.
 - Expected only briefly during bootstrap. The healthcheck is a SOCKS port
   check; the dashboard probe validates real egress.
 
-### Reset everything
+### Can't switch branches / `git` shows only one commit
+- The installer makes a **shallow, single-branch clone** (`--depth=1 --branch
+  main`), so `git branch -a` shows only `main` and `git checkout dev` just
+  copies it. Use the wrapper, which fetches the branch's tip explicitly:
+  ```bash
+  moav-client update -b dev      # or any branch
+  ```
+- To recover by hand:
+  ```bash
+  cd ~/moav-client
+  git fetch --depth=1 origin dev
+  git checkout -B dev FETCH_HEAD
+  moav-client restart
+  ```
+
+### Reset / remove everything
 ```bash
-moav-client down
-docker compose --profile all-sidecars down -v   # also drops volumes
-moav-client up
+moav-client uninstall          # stop + remove containers (config + data kept)
+moav-client uninstall --wipe   # also delete config.yaml, .env, data/, volumes & images
 ```
+To stop without removing: `moav-client down` (add `--profile all-sidecars -v`
+on a raw `docker compose down` to also drop sidecar volumes).
