@@ -3,6 +3,7 @@ import { theme } from "../theme";
 import { API_BASE } from "../apiBase";
 import { copyText } from "../clipboard";
 import SNISpoof from "./SNISpoof";
+import ConfigEditor from "./ConfigEditor";
 
 type Strategy = "latency" | "priority" | "weighted";
 type Exposure = "loopback" | "lan" | "public";
@@ -563,6 +564,29 @@ export default function Settings({ refreshTick }: Props) {
         </div>
       </section>
 
+      <section style={{ marginBottom: "1.5rem" }}>
+        <details>
+          <summary
+            style={{
+              cursor: "pointer",
+              fontFamily: theme.mono,
+              fontSize: "0.78rem",
+              color: theme.text,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              listStyle: "revert",
+            }}
+          >
+            advanced — edit config.yaml
+          </summary>
+          <p style={{ ...blurb(), marginTop: "0.6rem" }}>
+            Raw <code>config.yaml</code> editor. Most settings have a control above — only edit here if
+            you know the schema. Structural changes need an <strong>Apply / restart</strong> to take effect.
+          </p>
+          <ConfigEditor refreshTick={refreshTick} />
+        </details>
+      </section>
+
       {toast && (
         <div
           style={{
@@ -758,13 +782,17 @@ const MODE_META: Record<string, { label: string; desc: string; color: string }> 
 // proxy is :1080 (a proxy, not a web page).
 function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlash: (m: string, ok: boolean) => void }) {
   const [info, setInfo] = useState<ExposureInfo | null>(null);
+  // The proxy's own egress IP — for a VPS / public host this is the address
+  // other machines reach it at, so it's a useful fallback when the dashboard
+  // is being viewed locally (e.g. over an SSH tunnel) and can't see it.
+  const [egressIp, setEgressIp] = useState("");
   useEffect(() => {
     fetch(`${API_BASE}/api/exposure`).then((r) => r.json()).then(setInfo).catch(() => {});
+    fetch(`${API_BASE}/api/version`).then((r) => r.json()).then((d) => setEgressIp(d?.direct_ip || "")).catch(() => {});
   }, [refreshTick]);
 
   const browserHost = (typeof window !== "undefined" && window.location.hostname) || "localhost";
   const isLoopbackHost = browserHost === "localhost" || browserHost.startsWith("127.");
-  const isPrivateHost = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(browserHost);
   const mode = info?.exposure ?? "loopback";
   const meta = MODE_META[mode] ?? MODE_META.loopback;
   const hasAuth = !!(info?.auth_set ?? (info?.auth_username || info?.auth_password));
@@ -778,28 +806,29 @@ function ConnectionInfo({ refreshTick, onFlash }: { refreshTick?: number; onFlas
   let placeholder = false;
   if (mode === "loopback") {
     displayHost = "127.0.0.1";
-  } else if (mode === "lan") {
-    // Trust the backend hint only for common home/native LAN ranges; in the
-    // default docker deployment its interface scan returns the bridge IP
-    // (172.x), which the user's other devices can't reach.
-    const usableLanIp = info?.lan_ip && /^(192\.168\.|10\.)/.test(info.lan_ip) ? info.lan_ip : "";
-    if (isPrivateHost) {
-      displayHost = browserHost; // you're already viewing over the LAN
-    } else if (usableLanIp) {
-      displayHost = usableLanIp;
-    } else {
-      displayHost = "<this-machine-LAN-IP>";
-      placeholder = true;
-      hostNote = "You're viewing locally, so the LAN IP isn't visible here — open this page from another device, or check your machine's network settings.";
-    }
+  } else if (!isLoopbackHost) {
+    // You reached this dashboard over a real (non-loopback) address — the proxy
+    // is reachable at that exact host too. Covers LAN IPs, public IPs (VPS),
+    // and domains without any guessing.
+    displayHost = browserHost;
   } else {
-    // public
-    if (!isLoopbackHost && !isPrivateHost) {
-      displayHost = browserHost; // reached via a public IP / domain already
-    } else {
-      displayHost = "<your-public-IP-or-domain>";
+    // Viewing locally (same machine or an SSH tunnel), so the browser can't see
+    // the external address. Use backend hints: a real LAN IP for `lan`, else
+    // the detected egress IP (right for a VPS / public host).
+    const usableLanIp = info?.lan_ip && /^(192\.168\.|10\.)/.test(info.lan_ip) ? info.lan_ip : "";
+    if (mode === "lan" && usableLanIp) {
+      displayHost = usableLanIp;
+    } else if (egressIp) {
+      displayHost = egressIp;
       placeholder = true;
-      hostNote = "Public reach needs a port-forward on your router; replace this with your public IP or domain.";
+      hostNote = `Showing this host's detected public IP (${egressIp}) — correct for a VPS / internet-facing host. On a home LAN, other devices instead need this machine's 192.168.x address. Reachable only if the firewall allows the port.`;
+    } else {
+      displayHost = mode === "lan" ? "<this-machine-LAN-IP>" : "<your-public-IP-or-domain>";
+      placeholder = true;
+      hostNote =
+        mode === "lan"
+          ? "You're viewing locally, so the LAN IP isn't visible here — open this page from another device, or check your machine's network settings."
+          : "Public reach needs a port-forward on your router; replace this with your public IP or domain.";
     }
   }
 

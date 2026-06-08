@@ -125,7 +125,9 @@ want_install() {
     return 0
   fi
   local ans
-  read -r -p "    $1 [Y/n] " ans </dev/tty 2>/dev/null || ans=""
+  # -e (readline) so arrow keys do line-editing instead of injecting ^[[A.
+  # Bold cyan »-prefixed prompt so it's unmistakably a question awaiting input.
+  read -e -r -p "$(printf '\n  %s» %s%s %s[Y/n]%s ' "$C_BOLD$C_CYAN" "$1" "$C_RESET" "$C_DIM" "$C_RESET")" ans </dev/tty 2>/dev/null || ans=""
   case "${ans,,}" in n|no) return 1 ;; *) return 0 ;; esac
 }
 
@@ -241,6 +243,19 @@ lan_ip() {
   echo "$ip"
 }
 
+# True if the IPv4 is in a private / non-routable range (RFC1918, CGNAT,
+# link-local, loopback). A *false* result on a host's primary IP means it's a
+# public address — i.e. a VPS/cloud box, where "LAN" exposure is really public.
+is_private_ipv4() {
+  local ip="$1"
+  case "$ip" in
+    10.*|192.168.*|127.*|169.254.*) return 0 ;;
+    172.1[6-9].*|172.2[0-9].*|172.3[01].*) return 0 ;;
+    100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) return 0 ;; # CGNAT 100.64/10
+    *) return 1 ;;
+  esac
+}
+
 # ---------- arg / env parsing ----------------------------------------------
 HEADLESS="${MOAV_HEADLESS:-}"
 INSTALL_DIR="${MOAV_DIR:-}"
@@ -299,7 +314,7 @@ sidecar_meta() {
       echo "180|AmneziaWG|Userspace amneziawg-go + microsocks on awg0 default route. Needs NET_ADMIN + /dev/net/tun."
       ;;
     psiphon)
-      echo "195|Psiphon|Psiphon-Labs ConsoleClient built from source. Needs a Psiphon-issued config to actually tunnel."
+      echo "195|Psiphon|Psiphon-Labs ConsoleClient (built from source). Connects out-of-the-box via embedded config; drop a custom config to override."
       ;;
     trusttunnel)
       echo "85|TrustTunnel|HTTP/2 + HTTP/3 tunnel. Placeholder — mount the upstream client binary to activate."
@@ -492,7 +507,8 @@ elif [[ "$HEADLESS" == "1" || "$HEADLESS" == "auto" ]]; then
   fi
 else
   print_sidecar_catalog "${PRESELECTED[@]:-}"
-  read -r -p "  enable which? numbers e.g. \"1 3\", \"all\", or blank to keep current: " choice </dev/tty || choice=""
+  # -e so arrow keys edit the line instead of pasting escape codes (^[[A).
+  read -e -r -p "$(printf '  %s» enable which?%s type numbers e.g. %s1 3%s, %sall%s, or blank to keep current: ' "$C_BOLD$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET")" choice </dev/tty || choice=""
   mapfile -t SIDECARS < <(parse_sidecar_choice "$choice" "${PRESELECTED[@]:-}")
 fi
 
@@ -536,7 +552,7 @@ if [[ -z "$SUBSCRIPTION" ]]; then
   elif [[ "$HEADLESS" == "1" || "$HEADLESS" == "auto" ]]; then
     warn "no subscription file specified — config.yaml will be left with the example bundle path"
   else
-    read -r -p "  path to your MoaV subscription.txt (blank to skip): " SUBSCRIPTION </dev/tty || SUBSCRIPTION=""
+    read -e -r -p "  path to your MoaV subscription.txt (blank to skip): " SUBSCRIPTION </dev/tty || SUBSCRIPTION=""
   fi
 fi
 
@@ -709,14 +725,14 @@ if [[ "$HEADLESS" != "1" && "$HEADLESS" != "auto" ]]; then
   echo ""
   # Explicit opt-in even under --yes — exposing to the network is security
   # sensitive, so it should never be auto-confirmed. Default is No.
-  read -r -p "  make the dashboard + proxy reachable from other devices on your LAN? [y/N] " lan_ans </dev/tty || lan_ans=""
+  read -e -r -p "$(printf '  %s» make the dashboard + proxy reachable from other devices on your LAN?%s [y/N] ' "$C_BOLD$C_CYAN" "$C_RESET")" lan_ans </dev/tty || lan_ans=""
   if [[ "${lan_ans,,}" == y || "${lan_ans,,}" == yes ]]; then
     for k in SOCKS5_BIND HTTP_BIND API_BIND UI_BIND; do set_env_kv "$k" "0.0.0.0" "$ENVF"; done
     set_env_kv "MOAV_EXPOSURE" "lan" "$ENVF"
     # A LAN-reachable dashboard with no password is a foot-gun — offer one.
-    read -r -p "  set a dashboard username/password? (recommended) [Y/n] " pw_ans </dev/tty || pw_ans=""
+    read -e -r -p "$(printf '  %s» set a dashboard username/password? (recommended)%s [Y/n] ' "$C_BOLD$C_CYAN" "$C_RESET")" pw_ans </dev/tty || pw_ans=""
     if [[ "${pw_ans,,}" != n && "${pw_ans,,}" != no ]]; then
-      read -r -p "    dashboard username [admin]: " du </dev/tty || du=""
+      read -e -r -p "    dashboard username [admin]: " du </dev/tty || du=""
       read -r -s -p "    dashboard password: " dp </dev/tty || dp=""; echo ""
       [[ -z "$du" ]] && du="admin"
       if [[ -n "$dp" ]]; then
@@ -732,7 +748,18 @@ if [[ "$HEADLESS" != "1" && "$HEADLESS" != "auto" ]]; then
       $DOCKER compose "${profiles[@]}" up -d --force-recreate proxy-core web-ui
     LANIP="$(lan_ip)"
     echo ""
-    ok "now reachable on your LAN:"
+    if [[ -n "$LANIP" ]] && ! is_private_ipv4 "$LANIP"; then
+      # The host's primary IP is public — this is a VPS/cloud box, so "LAN"
+      # exposure is really internet-facing. Make that loud.
+      err "⚠ ${LANIP} is a PUBLIC IP — this host looks internet-facing (VPS/cloud)."
+      warn "the dashboard + proxy are now reachable from the INTERNET, not just a local network."
+      if [[ -z "${dp:-}" ]]; then
+        warn "you did NOT set a dashboard password — anyone on the internet can open the control panel."
+        note "lock it down now:  ${MC} expose lan --password <pw>   (or Settings → Network exposure)"
+      fi
+      echo ""
+    fi
+    ok "now reachable at:"
     note "Dashboard:    http://${LANIP:-<this-host-ip>}:3001"
     note "SOCKS5 proxy: ${LANIP:-<this-host-ip>}:1080"
     note "change later with: ${MC} expose loopback   (or lan | public)"
@@ -741,11 +768,11 @@ if [[ "$HEADLESS" != "1" && "$HEADLESS" != "auto" ]]; then
   fi
 fi
 
-if printf '%s\n' "${SIDECARS[@]:-}" | grep -qx "psiphon"; then
+if printf '%s\n' "${SIDECARS[@]:-}" | grep -qx "masterdns"; then
   echo ""
-  warn "Psiphon won't actually tunnel until you provide Psiphon-issued credentials."
-  note "Paste a verbatim Psiphon config under sidecars.psiphon.config.config_json in config.yaml,"
-  note "or fill in the individual keys (propagation_channel_id, sponsor_id, server-list URL, signing pubkey)."
+  warn "MasterDNS is started but idle until you give it your MoaV DNS-tunnel config."
+  note "Fill sidecars.masterdns.config (domain / method / key) in config.yaml from your bundle, then:"
+  note "  ${MC} sidecar add masterdns   (rebuilds + restarts it)"
 fi
 
 if printf '%s\n' "${SIDECARS[@]:-}" | grep -qx "trusttunnel"; then
