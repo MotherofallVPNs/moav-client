@@ -151,7 +151,7 @@ cmd_up() {
     [[ -n "$line" ]] && args+=("$line")
   done < <(profile_args)
   echo "${CYN}→ starting (${args[*]:-no sidecars})${CR}"
-  compose "${args[@]:-}" up -d "$@"
+  compose ${args[@]+"${args[@]}"} up -d "$@"
   cmd_status
   # Auto-open the dashboard unless suppressed.
   if [[ -z "${MOAV_NO_OPEN:-}" ]]; then
@@ -166,7 +166,7 @@ cmd_down() {
     [[ -n "$line" ]] && args+=("$line")
   done < <(profile_args)
   echo "${CYN}→ stopping${CR}"
-  compose "${args[@]:-}" down "$@"
+  compose ${args[@]+"${args[@]}"} down "$@"
 }
 
 cmd_restart() {
@@ -184,8 +184,8 @@ cmd_status() {
 
   echo "${BLD}Services${CR}"
   # Clean Service + Status table instead of the default long container names.
-  compose "${args[@]:-}" ps --format 'table {{.Service}}\t{{.Status}}' 2>/dev/null \
-    || compose "${args[@]:-}" ps
+  compose ${args[@]+"${args[@]}"} ps --format 'table {{.Service}}\t{{.Status}}' 2>/dev/null \
+    || compose ${args[@]+"${args[@]}"} ps
 
   # Endpoint health summary from the API (best-effort — proxy-core may be down).
   local eps
@@ -207,7 +207,7 @@ cmd_logs() {
   while IFS= read -r line; do
     [[ -n "$line" ]] && args+=("$line")
   done < <(profile_args)
-  compose "${args[@]:-}" logs --tail=80 "$@"
+  compose ${args[@]+"${args[@]}"} logs --tail=80 "$@"
 }
 
 cmd_probe() {
@@ -349,7 +349,7 @@ cmd_update() {
   local args=()
   while IFS= read -r line; do [[ -n "$line" ]] && args+=("$line"); done < <(profile_args)
   echo "${CYN}→ rebuilding + restarting${CR}"
-  compose "${args[@]:-}" up -d --build
+  compose ${args[@]+"${args[@]}"} up -d --build
   echo ""
   cmd_status
 }

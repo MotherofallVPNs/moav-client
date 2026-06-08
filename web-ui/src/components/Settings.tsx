@@ -704,29 +704,66 @@ const statusLine = (set: boolean): React.CSSProperties => ({
   color: set ? theme.green : theme.red,
 });
 
-// Small on/off pill for enabling/disabling an auth section. Off → the section's
-// credentials are cleared on save.
+// Sliding on/off switch for enabling/disabling an auth section. Styled as a
+// real toggle (track + knob + label) so it clearly reads as actionable.
+// Off → the section's credentials are cleared on save.
 function AuthEnableToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={on}
       onClick={() => onChange(!on)}
+      title={on ? "Enabled — click to turn off" : "Disabled — click to turn on"}
       style={{
-        padding: "0.2rem 0.6rem",
-        borderRadius: 12,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "0.22rem 0.55rem 0.22rem 0.3rem",
+        borderRadius: 999,
         border: `1px solid ${on ? theme.green : theme.border}`,
-        background: on ? theme.greenDim : "transparent",
-        color: on ? theme.green : theme.textDim,
-        fontFamily: theme.mono,
-        fontSize: "0.66rem",
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.04em",
+        background: on ? theme.greenDim : theme.surface2,
         cursor: "pointer",
         whiteSpace: "nowrap",
       }}
     >
-      {on ? "● on" : "○ off"}
+      <span
+        aria-hidden
+        style={{
+          position: "relative",
+          width: 30,
+          height: 16,
+          borderRadius: 999,
+          background: on ? theme.green : theme.textDim,
+          transition: "background 0.15s",
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 2,
+            left: on ? 16 : 2,
+            width: 12,
+            height: 12,
+            borderRadius: "50%",
+            background: "#fff",
+            transition: "left 0.15s",
+          }}
+        />
+      </span>
+      <span
+        style={{
+          fontFamily: theme.mono,
+          fontSize: "0.66rem",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          color: on ? theme.green : theme.textDim,
+        }}
+      >
+        {on ? "on" : "off"}
+      </span>
     </button>
   );
 }
