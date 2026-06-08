@@ -94,6 +94,7 @@ usage() {
 
   ${BLD}Maintenance${CR}
     update [-b <branch>]       git pull (optionally switch branch) + rebuild
+    uninstall [--wipe]         remove the stack (--wipe also deletes config/data)
     open                       open the dashboard in a browser
     version                    print version, commit & links
 USAGE
@@ -311,28 +312,38 @@ cmd_update() {
     echo "${RED}$ROOT isn't a git checkout — can't update${CR}"; exit 1
   fi
 
-  local cur; cur=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-  local sha; sha=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "?")
-  echo "${DIM}current: ${cur} @ ${sha}${CR}"
-  git -C "$ROOT" fetch --all --prune --quiet 2>/dev/null || echo "${YLW}! fetch failed — using local refs${CR}"
+  local cur sha
+  cur=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  sha=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "?")
+  local branch="${target_branch:-$cur}"
+  echo "${DIM}current: ${cur} @ ${sha}  →  target: ${branch}${CR}"
 
-  if [[ -n "$target_branch" && "$target_branch" != "$cur" ]]; then
-    if ! git -C "$ROOT" show-ref --verify --quiet "refs/heads/$target_branch" 2>/dev/null \
-       && ! git -C "$ROOT" show-ref --verify --quiet "refs/remotes/origin/$target_branch" 2>/dev/null; then
-      echo "${RED}branch '$target_branch' not found.${CR} available:"
-      git -C "$ROOT" branch -a | sed 's/^/  /' | head -15
-      exit 1
-    fi
-    echo "${CYN}→ switching to branch ${target_branch}${CR}"
-    git -C "$ROOT" checkout "$target_branch" || { echo "${RED}checkout failed${CR}"; exit 1; }
-    cur="$target_branch"
+  # Refuse to clobber local edits to tracked files (config.yaml / .env / data/
+  # are gitignored, so this only catches real source edits).
+  if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+    echo "${RED}local changes to tracked files — stash or discard before updating:${CR}"
+    git -C "$ROOT" status --short --untracked-files=no | sed 's/^/  /' | head
+    echo "  ${DIM}git -C $ROOT stash   (then re-run)   ·   git -C $ROOT checkout -- .   (discard)${CR}"
+    exit 1
   fi
 
-  echo "${CYN}→ pulling ${cur}${CR}"
-  git -C "$ROOT" pull --ff-only origin "$cur" 2>/dev/null || git -C "$ROOT" pull || {
-    echo "${RED}pull failed — resolve local changes (git -C $ROOT status) and retry${CR}"; exit 1
-  }
-  echo "${GRN}✓ now at $(git -C "$ROOT" rev-parse --short HEAD) (branch: ${cur})${CR}"
+  # Fetch just the target branch's tip. Works on the installer's shallow,
+  # single-branch clone (where `fetch --all` / origin/<other> don't exist) by
+  # fetching the branch explicitly and resetting the local branch to it.
+  echo "${CYN}→ fetching origin/${branch}${CR}"
+  if ! git -C "$ROOT" fetch --depth=1 origin "$branch" 2>/dev/null; then
+    echo "${RED}couldn't fetch branch '${branch}' from origin.${CR} available branches:"
+    git -C "$ROOT" ls-remote --heads origin 2>/dev/null | sed 's#.*refs/heads/#    #' || echo "    (couldn't reach origin)"
+    exit 1
+  fi
+  git -C "$ROOT" checkout -B "$branch" FETCH_HEAD >/dev/null 2>&1 || {
+    echo "${RED}couldn't switch to ${branch}${CR}"; exit 1; }
+  local after; after=$(git -C "$ROOT" rev-parse --short HEAD)
+  if [[ "$sha" == "$after" && "$branch" == "$cur" ]]; then
+    echo "${GRN}✓ already up to date (${branch} @ ${after})${CR}"
+  else
+    echo "${GRN}✓ ${sha} → ${after} (branch: ${branch})${CR}"
+  fi
 
   # Rebuild + recreate everything (proxy-core/web-ui/xray + enabled sidecars).
   local args=()
@@ -347,6 +358,66 @@ cmd_version() {
   print_banner
   echo ""
   echo "  ${DIM}install dir: ${ROOT}${CR}"
+}
+
+# Remove the stack. Default keeps config + data; --wipe deletes everything
+# (containers, volumes, locally-built images, config.yaml, .env, data/) and the
+# global command. Mirrors `moav uninstall`.
+cmd_uninstall() {
+  local wipe=false
+  while (( $# > 0 )); do
+    case "$1" in
+      --wipe) wipe=true ;;
+      *) echo "${RED}unknown option: $1${CR}  usage: moav-client uninstall [--wipe]"; exit 1 ;;
+    esac
+    shift
+  done
+
+  echo ""
+  if $wipe; then
+    echo "${RED}${BLD}This COMPLETELY removes moav-client:${CR}"
+    echo "  • all containers, named volumes, and locally-built images"
+    echo "  • ${BLD}config.yaml, .env, and data/${CR} (subscriptions, state, sidecar configs)"
+    echo "  • the global 'moav-client' command"
+    echo "  ${YLW}This cannot be undone.${CR}"
+  else
+    echo "${BLD}This removes:${CR}"
+    echo "  • all moav-client containers ${DIM}(config + data preserved)${CR}"
+    echo "  • the global 'moav-client' command"
+    echo "  ${DIM}add --wipe to also delete config.yaml, .env, data/, volumes & built images${CR}"
+  fi
+  echo ""
+  local ans; read -r -p "  continue? [y/N] " ans </dev/tty 2>/dev/null || ans=""
+  case "$ans" in [Yy]*) ;; *) echo "cancelled"; return 0 ;; esac
+
+  if command -v docker >/dev/null 2>&1 && [[ -f "$ROOT/docker-compose.yml" ]]; then
+    echo "${CYN}→ stopping & removing containers${CR}"
+    if $wipe; then
+      compose --profile all-sidecars down -v --remove-orphans --rmi local 2>/dev/null \
+        || compose down -v --remove-orphans 2>/dev/null || true
+    else
+      compose --profile all-sidecars down --remove-orphans 2>/dev/null \
+        || compose down --remove-orphans 2>/dev/null || true
+    fi
+  fi
+
+  local gl="/usr/local/bin/moav-client"
+  if [[ -L "$gl" || -e "$gl" ]]; then
+    rm -f "$gl" 2>/dev/null || sudo rm -f "$gl" 2>/dev/null || true
+    echo "removed $gl"
+  fi
+
+  if $wipe; then
+    echo "${CYN}→ wiping config + data${CR}"
+    local p
+    for p in "$ROOT/.env" "$ROOT/config.yaml" "$ROOT/data"; do
+      [[ -e "$p" ]] || continue
+      rm -rf "$p" 2>/dev/null || sudo rm -rf "$p" 2>/dev/null || true
+    done
+    echo "  removed .env, config.yaml, data/"
+    echo "  ${DIM}the repo clone at ${ROOT} is left in place — 'rm -rf ${ROOT}' to remove it too.${CR}"
+  fi
+  echo "${GRN}✓ moav-client uninstalled${CR}"
 }
 
 # Re-run the install wizard against this install dir (add/remove sidecars,
@@ -434,7 +505,8 @@ case "${1:-help}" in
   install|wizard) shift; cmd_install "$@" ;;
   expose)       shift; cmd_expose "$@" ;;
   open)         cmd_open ;;
-  update)       cmd_update ;;
+  update)       shift; cmd_update "$@" ;;
+  uninstall)    shift; cmd_uninstall "$@" ;;
   version)      cmd_version ;;
   help|--help|-h|"") usage ;;
   *)            echo "${RED}unknown command: $1${CR}"; usage; exit 1 ;;

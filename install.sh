@@ -232,6 +232,18 @@ set_env_kv() {
   fi
 }
 
+# Generate a random alphanumeric password (default 16 chars).
+gen_password() {
+  local n="${1:-16}"
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c "$n"
+  elif [[ -r /dev/urandom ]]; then
+    LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$n"
+  else
+    printf '%s' "${RANDOM}${RANDOM}${RANDOM}${RANDOM}" | head -c "$n"
+  fi
+}
+
 # Best-effort primary private IPv4 (what other LAN devices would dial).
 lan_ip() {
   local ip=""
@@ -302,26 +314,23 @@ if [[ -z "$HEADLESS" && ! -t 0 ]] && ! tty_available; then
   HEADLESS=auto
 fi
 
-# ---------- sidecar catalog -------------------------------------------------
-# Each entry: kind | image MB | label | one-liner
+# ---------- component catalog ----------------------------------------------
+# Core is always installed; sidecars are opt-in. Sizes are rough estimates
+# (download = compressed layers fetched/built; disk = final image on disk).
+#   comp_meta <kind> -> "<download MB>|<disk MB>|<Label>|<one-liner>"
+CORE_KINDS=(proxy-core web-ui sing-box xray)
 SIDECAR_KINDS=(masterdns amneziawg psiphon trusttunnel tor)
-sidecar_meta() {
+comp_meta() {
   case "$1" in
-    masterdns)
-      echo "160|MasterDNS|DNS-tunnel client for MoaV-issued DNS tunnels (m.<bundle>.<tld>)."
-      ;;
-    amneziawg)
-      echo "180|AmneziaWG|Userspace amneziawg-go + microsocks on awg0 default route. Needs NET_ADMIN + /dev/net/tun."
-      ;;
-    psiphon)
-      echo "195|Psiphon|Psiphon-Labs ConsoleClient (built from source). Connects out-of-the-box via embedded config; drop a custom config to override."
-      ;;
-    trusttunnel)
-      echo "85|TrustTunnel|HTTP/2 + HTTP/3 tunnel. Placeholder — mount the upstream client binary to activate."
-      ;;
-    tor)
-      echo "15|Tor|peterdavehello/tor-socks-proxy — Tor SOCKS5 on :9150. No credentials required."
-      ;;
+    proxy-core)  echo "8|16|proxy-core|Go binary — SOCKS5 / HTTP CONNECT + balancer + API" ;;
+    web-ui)      echo "30|76|web-ui|React dashboard (nginx-alpine + built assets)" ;;
+    sing-box)    echo "45|113|sing-box|VLESS / Reality / Trojan / SS / Hysteria2 / WireGuard crypto" ;;
+    xray)        echo "15|35|xray|xhttp / splithttp transports (official XTLS binary)" ;;
+    masterdns)   echo "60|160|MasterDNS|DNS-tunnel client for MoaV DNS tunnels (m.<bundle>.<tld>)" ;;
+    amneziawg)   echo "70|180|AmneziaWG|amneziawg-go + microsocks (needs NET_ADMIN + /dev/net/tun)" ;;
+    psiphon)     echo "75|195|Psiphon|Psiphon ConsoleClient — connects via embedded config" ;;
+    trusttunnel) echo "35|85|TrustTunnel|HTTP/2 + HTTP/3 tunnel (placeholder — mount client binary)" ;;
+    tor)         echo "8|15|Tor|Tor SOCKS5 on :9150 (peterdavehello/tor-socks-proxy)" ;;
   esac
 }
 
@@ -411,10 +420,18 @@ note "free disk at install path: ${DF_AVAIL_MB} MB"
 hdr "[2/5] fetching moav-client"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
-  ok "existing repo at $INSTALL_DIR — pulling latest"
-  git -C "$INSTALL_DIR" fetch --quiet origin "$REPO_BRANCH" || true
-  git -C "$INSTALL_DIR" checkout --quiet "$REPO_BRANCH" 2>/dev/null || true
-  git -C "$INSTALL_DIR" pull --quiet --ff-only origin "$REPO_BRANCH" || warn "couldn't fast-forward; leaving working tree as-is"
+  ok "existing repo at $INSTALL_DIR — updating to origin/$REPO_BRANCH"
+  # Fetch just the target branch's tip and point the local branch at it. Works
+  # on the shallow, single-branch clone this installer creates (where
+  # `checkout <other-branch>` / origin/<other> don't exist). config.yaml / .env
+  # / data/ are gitignored, so this won't clobber the user's settings.
+  if git -C "$INSTALL_DIR" fetch --depth=1 --quiet origin "$REPO_BRANCH" 2>/dev/null; then
+    git -C "$INSTALL_DIR" checkout -B "$REPO_BRANCH" FETCH_HEAD --quiet 2>/dev/null \
+      || git -C "$INSTALL_DIR" pull --quiet --ff-only origin "$REPO_BRANCH" \
+      || warn "couldn't update; leaving working tree as-is"
+  else
+    warn "couldn't fetch origin/$REPO_BRANCH; leaving working tree as-is"
+  fi
 elif [[ -e "$INSTALL_DIR" ]]; then
   err "$INSTALL_DIR exists but isn't a git repo — refusing to clobber"
   exit 1
@@ -428,13 +445,6 @@ ok "at $(pwd) ($(git rev-parse --short HEAD))"
 
 # ---------- step 3: choose protocols ---------------------------------------
 hdr "[3/5] choose protocols & sidecars"
-
-CORE_MB=$((16 + 76 + 113))   # proxy-core + web-ui + sing-box
-echo "  ${C_BOLD}Core stack${C_RESET} (always installed) ─ ${C_GREEN}~${CORE_MB} MB${C_RESET}"
-printf '    %-20s  %s\n' "proxy-core"   "~16 MB    Go binary — SOCKS5/HTTP CONNECT + balancer + API"
-printf '    %-20s  %s\n' "web-ui"       "~76 MB    React dashboard (nginx-alpine + dist)"
-printf '    %-20s  %s\n' "sing-box"     "~113 MB   Real protocol cryptography (VLESS/Reality/Trojan/SS/Hy2/WG)"
-echo ""
 
 # Sidecars already enabled in an existing config.yaml (re-run case) — printed
 # one per line so the wizard can pre-check them. Empty on a fresh install.
@@ -451,20 +461,29 @@ for kind in ("masterdns","amneziawg","psiphon","trusttunnel","tor"):
 PY
 }
 
-# Numbered catalog with a [x] mark for pre-selected sidecars. Populates the
-# index→kind map SIDECAR_INDEX used by parse_sidecar_choice.
+# Unified catalog: core shown checked ([x], green, always on) and optional
+# sidecars shown as numbered checkboxes ([x] if pre-selected). Aligned columns
+# so both sections read consistently. Populates SIDECAR_INDEX (number→kind).
 declare -a SIDECAR_INDEX=()
-print_sidecar_catalog() {
-  local preselected=("$@") i=1 mb label oneliner mark
-  echo "  ${C_BOLD}Optional sidecars${C_RESET} ${C_DIM}(select any — only chosen images are built)${C_RESET}:"
+print_catalog() {
+  local preselected=("$@") i=1 dl disk label desc mark mcolor
+  echo "  ${C_BOLD}Core stack${C_RESET} ${C_DIM}— always installed${C_RESET}"
+  for kind in "${CORE_KINDS[@]}"; do
+    IFS='|' read -r dl disk label desc <<<"$(comp_meta "$kind")"
+    printf '    %s[x]%s     %s%-12s%s %s~%4s MB%s   %s%s%s\n' \
+      "$C_GREEN" "$C_RESET" "$C_BOLD" "$label" "$C_RESET" "$C_DIM" "$disk" "$C_RESET" "$C_DIM" "$desc" "$C_RESET"
+  done
+  echo ""
+  echo "  ${C_BOLD}Optional sidecars${C_RESET} ${C_DIM}— select any; only chosen images are built${C_RESET}"
+  SIDECAR_INDEX=()
   for kind in "${SIDECAR_KINDS[@]}"; do
-    IFS='|' read -r mb label oneliner <<<"$(sidecar_meta "$kind")"
-    mark=" "
-    printf '%s\n' "${preselected[@]:-}" | grep -qx "$kind" && mark="x"
+    IFS='|' read -r dl disk label desc <<<"$(comp_meta "$kind")"
+    mark=" "; mcolor="$C_DIM"
+    if printf '%s\n' "${preselected[@]:-}" | grep -qx "$kind"; then mark="x"; mcolor="$C_GREEN"; fi
     SIDECAR_INDEX[$i]="$kind"
-    printf '    %s[%s]%s %2d) %s%-12s%s %s~%s MB%s\n' \
-      "$C_BOLD" "$mark" "$C_RESET" "$i" "$C_BOLD" "$label" "$C_RESET" "$C_YELLOW" "$mb" "$C_RESET"
-    note "$oneliner"
+    printf '    %s[%s]%s %s%d)%s %s%-12s%s %s~%4s MB%s   %s%s%s\n' \
+      "$mcolor" "$mark" "$C_RESET" "$C_BOLD" "$i" "$C_RESET" "$C_BOLD" "$label" "$C_RESET" \
+      "$C_DIM" "$disk" "$C_RESET" "$C_DIM" "$desc" "$C_RESET"
     i=$((i + 1))
   done
   echo ""
@@ -493,11 +512,11 @@ SIDECARS=()
 mapfile -t PRESELECTED < <(current_enabled_sidecars)
 
 if [[ -n "$SIDECAR_CSV" ]]; then
-  print_sidecar_catalog "${PRESELECTED[@]:-}"
+  print_catalog "${PRESELECTED[@]:-}"
   IFS=',' read -r -a SIDECARS <<<"$SIDECAR_CSV"
   ok "sidecars from --sidecars / MOAV_SIDECARS: ${SIDECARS[*]:-none}"
 elif [[ "$HEADLESS" == "1" || "$HEADLESS" == "auto" ]]; then
-  print_sidecar_catalog "${PRESELECTED[@]:-}"
+  print_catalog "${PRESELECTED[@]:-}"
   # Headless keeps whatever's already enabled (re-run) or none (fresh install).
   (( ${#PRESELECTED[@]} )) && SIDECARS=("${PRESELECTED[@]}")
   if [[ "$HEADLESS" == "auto" ]]; then
@@ -506,7 +525,7 @@ elif [[ "$HEADLESS" == "1" || "$HEADLESS" == "auto" ]]; then
     ok "headless: sidecars = ${SIDECARS[*]:-none} (set MOAV_SIDECARS to change)"
   fi
 else
-  print_sidecar_catalog "${PRESELECTED[@]:-}"
+  print_catalog "${PRESELECTED[@]:-}"
   # -e so arrow keys edit the line instead of pasting escape codes (^[[A).
   read -e -r -p "$(printf '  %s» enable which?%s type numbers e.g. %s1 3%s, %sall%s, or blank to keep current: ' "$C_BOLD$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET")" choice </dev/tty || choice=""
   mapfile -t SIDECARS < <(parse_sidecar_choice "$choice" "${PRESELECTED[@]:-}")
@@ -525,19 +544,21 @@ for k in "${SIDECARS[@]:-}"; do
   fi
 done
 
-# Tally total estimated disk.
-TOTAL_MB=$CORE_MB
-for k in "${SIDECARS[@]:-}"; do
-  [[ -z "$k" ]] && continue
-  IFS='|' read -r mb _ _ <<<"$(sidecar_meta "$k")"
-  TOTAL_MB=$((TOTAL_MB + mb))
-done
+# Tally estimated download + on-disk size for core + selected sidecars
+# (used by the step-5 summary table).
+DL_TOTAL=0; DISK_TOTAL=0
+size_add() {
+  local dl disk
+  IFS='|' read -r dl disk _ _ <<<"$(comp_meta "$1")"
+  DL_TOTAL=$((DL_TOTAL + dl)); DISK_TOTAL=$((DISK_TOTAL + disk))
+}
+for k in "${CORE_KINDS[@]}"; do size_add "$k"; done
+for k in "${SIDECARS[@]:-}"; do [[ -z "$k" ]] && continue; size_add "$k"; done
 echo ""
-ok "estimated docker image footprint: ${TOTAL_MB} MB"
 ok "selected sidecars: ${SIDECARS[*]:-none}"
 
-if [[ "$DF_AVAIL_MB" != "?" && "$DF_AVAIL_MB" -lt $((TOTAL_MB + 500)) ]]; then
-  warn "free disk ($DF_AVAIL_MB MB) is tight for ~${TOTAL_MB} MB images + build cache."
+if [[ "$DF_AVAIL_MB" != "?" && "$DF_AVAIL_MB" -lt $((DISK_TOTAL + 800)) ]]; then
+  warn "free disk ($DF_AVAIL_MB MB) is tight for ~${DISK_TOTAL} MB of images + build cache."
 fi
 
 # ---------- step 4: subscription + config ----------------------------------
@@ -632,10 +653,24 @@ for k in "${SIDECARS[@]:-}"; do
   profiles+=(--profile "$k")
 done
 
-# Confirm before the (potentially multi-minute) build & start. Auto-proceeds in
-# headless / --yes runs; otherwise asks once and offers a clean bail-out.
-echo "  about to build & start: ${C_BOLD}core stack${C_RESET} (proxy-core, web-ui, sing-box, xray)${SIDECARS:+ + sidecars: ${C_BOLD}${SIDECARS[*]}${C_RESET}}"
-note "estimated image footprint ~${TOTAL_MB} MB"
+# Confirm before the (potentially multi-minute) build & start. Show what will be
+# built and a per-component download/disk estimate so there are no surprises.
+build_list=("${CORE_KINDS[@]}")
+for k in "${SIDECARS[@]:-}"; do [[ -n "$k" ]] && build_list+=("$k"); done
+
+row() { printf '    %s%-13s%s %s%6s%s   %s%6s%s\n' "$1" "$2" "$C_RESET" "$C_DIM" "$3" "$C_RESET" "$C_DIM" "$4" "$C_RESET"; }
+echo "  ${C_BOLD}About to build & start${C_RESET} ${C_DIM}(estimates — first build is slower than re-runs)${C_RESET}"
+echo ""
+printf '    %s%-13s %6s   %6s%s\n' "$C_BOLD" "component" "down" "disk" "$C_RESET"
+say "$C_DIM" "    ─────────────────────────────────"
+for k in "${build_list[@]}"; do
+  IFS='|' read -r dl disk label _ <<<"$(comp_meta "$k")"
+  in_core=0; for c in "${CORE_KINDS[@]}"; do [[ "$c" == "$k" ]] && in_core=1; done
+  row "$([[ $in_core == 1 ]] && printf '%s' "$C_GREEN" || printf '%s' "$C_BOLD")" "$label" "~${dl}M" "~${disk}M"
+done
+say "$C_DIM" "    ─────────────────────────────────"
+printf '    %s%-13s %6s   %6s%s\n' "$C_BOLD" "total" "~${DL_TOTAL}M" "~${DISK_TOTAL}M" "$C_RESET"
+[[ "$DF_AVAIL_MB" != "?" ]] && note "free disk at install path: ${DF_AVAIL_MB} MB"
 if ! want_install "build & start now?"; then
   echo ""
   warn "skipping build/start at your request."
@@ -733,14 +768,20 @@ if [[ "$HEADLESS" != "1" && "$HEADLESS" != "auto" ]]; then
     read -e -r -p "$(printf '  %s» set a dashboard username/password? (recommended)%s [Y/n] ' "$C_BOLD$C_CYAN" "$C_RESET")" pw_ans </dev/tty || pw_ans=""
     if [[ "${pw_ans,,}" != n && "${pw_ans,,}" != no ]]; then
       read -e -r -p "    dashboard username [admin]: " du </dev/tty || du=""
-      read -r -s -p "    dashboard password: " dp </dev/tty || dp=""; echo ""
+      read -r -s -p "    dashboard password (leave empty to auto-generate): " dp </dev/tty || dp=""; echo ""
       [[ -z "$du" ]] && du="admin"
-      if [[ -n "$dp" ]]; then
-        set_env_kv "MOAV_DASHBOARD_USER" "$du" "$ENVF"
-        set_env_kv "MOAV_DASHBOARD_PASS" "$dp" "$ENVF"
-        ok "dashboard auth set for user '$du'"
+      pw_generated=""
+      if [[ -z "$dp" ]]; then dp="$(gen_password 16)"; pw_generated=1; fi
+      set_env_kv "MOAV_DASHBOARD_USER" "$du" "$ENVF"
+      set_env_kv "MOAV_DASHBOARD_PASS" "$dp" "$ENVF"
+      if [[ -n "$pw_generated" ]]; then
+        echo ""
+        ok "generated a dashboard password — ${C_BOLD}save it somewhere safe now:${C_RESET}"
+        echo "        ${C_BOLD}user:${C_RESET} ${du}"
+        echo "        ${C_BOLD}pass:${C_RESET} ${C_GREEN}${dp}${C_RESET}"
+        note "also stored in ${ENVF} (MOAV_DASHBOARD_PASS); change later via Settings → Network exposure."
       else
-        warn "empty password — leaving the dashboard open (no auth)"
+        ok "dashboard auth set for user '$du'"
       fi
     fi
     ok "applying LAN exposure — recreating proxy-core + web-ui…"
