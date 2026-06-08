@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import EndpointTable from "./components/EndpointTable";
 import BlockDirectToggle from "./components/BlockDirectToggle";
-import ConfigEditor from "./components/ConfigEditor";
 import Analytics from "./components/Analytics";
 import Settings from "./components/Settings";
 import Debug from "./components/Debug";
@@ -13,17 +12,16 @@ import { theme } from "./theme";
 import { API_BASE } from "./apiBase";
 import { useIsMobile } from "./useIsMobile";
 
-type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "diag" | "config";
+type Tab = "endpoints" | "sources" | "analytics" | "plugins" | "settings" | "debug" | "diag";
 
 const TAB_LABELS: Record<Tab, string> = {
   endpoints: "Endpoints",
-  sources: "Sources",
+  sources: "Configs",
   analytics: "Analytics",
   plugins: "Plugins",
   settings: "Settings",
   debug: "Debug",
   diag: "Diagnostics",
-  config: "Config",
 };
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
@@ -311,7 +309,6 @@ export default function App() {
         {tab === "settings" && <Settings refreshTick={refreshTick} />}
         {tab === "debug" && <Debug refreshTick={refreshTick} />}
         {tab === "diag" && <Diagnostics refreshTick={refreshTick} />}
-        {tab === "config" && <ConfigEditor refreshTick={refreshTick} />}
       </div>
 
       <Footer />

@@ -1,27 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  moav-client — post-install management wrapper
+#  moav-client — manage your MoaV local client (the proxy-core + web-ui +
+#  sing-box / xray stack). Run `moav-client help` for commands.
 #
-#  Drop-in convenience over `docker compose` for the moav-client stack.
-#  Run from the install directory, or symlink to /usr/local/bin/moav-client.
+#  Run from the install directory, or symlink into PATH:
+#    ln -sf "$PWD/moav-client" /usr/local/bin/moav-client
 #
-#  Usage:
-#    moav-client up [--profile <name>...]   start / restart everything
-#    moav-client down                       stop everything
-#    moav-client restart                    rebuild & up proxy-core + web-ui
-#    moav-client status                     show running containers
-#    moav-client ps                         alias for status
-#    moav-client logs [-f] [service]        tail logs
-#    moav-client probe                      trigger an immediate probe via API
-#    moav-client stats                      show /api/stats as JSON
-#    moav-client sidecar add <name>         enable + build + start a sidecar
-#    moav-client sidecar remove <name>      stop + disable a sidecar
-#    moav-client sidecar list               which sidecars are running
-#    moav-client open                       open the dashboard in the default browser
-#    moav-client update                     git pull + rebuild
-#    moav-client version
+#  Repo:  https://github.com/MotherofallVPNs/moav-client
+#  Site:  https://moav.sh
 # =============================================================================
 set -euo pipefail
+
+GITHUB_URL="https://github.com/MotherofallVPNs/moav-client"
+SITE_URL="https://moav.sh"
 
 SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SOURCE" ]]; do
@@ -48,11 +39,90 @@ DASHBOARD="http://localhost:3001"
 
 SIDECAR_KINDS=(masterdns amneziawg psiphon trusttunnel tor)
 
+# Read a value from .env (last wins; strips quotes). Empty if absent.
+env_val() {
+  local key="$1" file="$ROOT/.env" v=""
+  [[ -f "$file" ]] && v=$(grep -E "^${key}=" "$file" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+  echo "$v"
+}
+
+# ASCII logo + version + links. Used by `help` and `version`.
+print_banner() {
+  local ver sha
+  ver=$(cat "$ROOT/VERSION" 2>/dev/null || echo "?")
+  sha=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "?")
+  printf '%s' "$CYN$BLD"
+  cat <<'ART'
+  ███╗   ███╗ ██████╗  █████╗ ██╗   ██╗
+  ████╗ ████║██╔═══██╗██╔══██╗██║   ██║
+  ██╔████╔██║██║   ██║███████║██║   ██║
+  ██║╚██╔╝██║██║   ██║██╔══██║╚██╗ ██╔╝
+  ██║ ╚═╝ ██║╚██████╔╝██║  ██║ ╚████╔╝
+  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝  ╚═══╝
+ART
+  printf '%s' "$CR"
+  printf '  %sMother of all VPNs — local client%s\n\n' "$DIM" "$CR"
+  printf '  %sversion%s %sv%s%s %s(%s)%s\n' "$DIM" "$CR" "$GRN" "$ver" "$CR" "$DIM" "$sha" "$CR"
+  printf '  %srepo%s    %s%s%s\n' "$DIM" "$CR" "$BLU" "$GITHUB_URL" "$CR"
+  printf '  %ssite%s    %s%s%s\n' "$DIM" "$CR" "$BLU" "$SITE_URL" "$CR"
+}
+
 usage() {
-  sed -n '2,/^# ===/p' "$SOURCE" | sed 's/^#//' | head -n 30
+  print_banner
+  cat <<USAGE
+
+  ${BLD}Usage:${CR} moav-client <command> [options]
+
+  ${BLD}Stack${CR}
+    up [--profile <n>...]      start / (re)start the stack
+    down                       stop the stack
+    restart                    rebuild + restart proxy-core + web-ui
+    status                     formatted status of every service + access URLs
+    info                       just the dashboard / proxy / API URLs
+    logs [-f] [service]        tail container logs
+
+  ${BLD}Endpoints${CR}
+    probe                      trigger an immediate latency probe
+    stats                      per-endpoint counters (JSON)
+
+  ${BLD}Sidecars & config${CR}
+    sidecar list               which optional sidecars are running
+    sidecar add <name>         enable + build + start a sidecar
+    sidecar remove <name>      stop + disable a sidecar
+    install                    re-run the install wizard (add/remove sidecars)
+    expose <mode>              network reach: loopback | lan | public
+
+  ${BLD}Maintenance${CR}
+    update [-b <branch>]       git pull (optionally switch branch) + rebuild
+    uninstall [--wipe]         remove the stack (--wipe also deletes config/data)
+    open                       open the dashboard in a browser
+    version                    print version, commit & links
+USAGE
 }
 
 compose() { docker compose "$@"; }
+
+# Print the access URLs for each service, derived from the saved exposure mode
+# in .env. Loopback → localhost; lan/public → this host's primary IP.
+cmd_info() {
+  local mode host dashUser socksUser
+  mode=$(env_val MOAV_EXPOSURE); mode="${mode:-loopback}"
+  if [[ "$mode" == "loopback" ]]; then
+    host="localhost"
+  else
+    host="$(lan_ip)"; host="${host:-<this-host-ip>}"
+  fi
+  dashUser=$(env_val MOAV_DASHBOARD_USER)
+  socksUser=$(env_val SOCKS5_USERNAME)
+  echo "${BLD}Access${CR} ${DIM}(exposure: ${mode})${CR}"
+  printf '  %-13s %s%s%s%s\n' "Dashboard"   "$BLU" "http://${host}:3001"      "$CR" "${dashUser:+  ${DIM}login: ${dashUser}${CR}}"
+  printf '  %-13s %s%s%s%s\n' "SOCKS5"       "$BLU" "socks5h://${host}:1080"   "$CR" "${socksUser:+  ${DIM}auth: ${socksUser}${CR}}"
+  printf '  %-13s %s%s%s\n'   "HTTP proxy"   "$BLU" "http://${host}:8081"      "$CR"
+  printf '  %-13s %s%s%s\n'   "REST/WS API"  "$BLU" "http://${host}:8088"      "$CR"
+  if [[ "$mode" != "loopback" && -z "$dashUser" ]]; then
+    echo "  ${YLW}! no dashboard login set while exposed — set one:  moav-client expose ${mode} --password <pw>${CR}"
+  fi
+}
 
 # Build "--profile X --profile Y" args for currently-enabled sidecars
 # (those whose config.yaml block says enabled: true).
@@ -111,7 +181,25 @@ cmd_status() {
   while IFS= read -r line; do
     [[ -n "$line" ]] && args+=("$line")
   done < <(profile_args)
-  compose "${args[@]:-}" ps
+
+  echo "${BLD}Services${CR}"
+  # Clean Service + Status table instead of the default long container names.
+  compose "${args[@]:-}" ps --format 'table {{.Service}}\t{{.Status}}' 2>/dev/null \
+    || compose "${args[@]:-}" ps
+
+  # Endpoint health summary from the API (best-effort — proxy-core may be down).
+  local eps
+  if eps=$(curl -fsS --max-time 2 "$API/api/endpoints" 2>/dev/null); then
+    local total ok strat
+    total=$(printf '%s' "$eps" | grep -o '"ID"' | wc -l | tr -d ' ')
+    ok=$(printf '%s' "$eps" | grep -o '"Status":"ok"' | wc -l | tr -d ' ')
+    strat=$(curl -fsS --max-time 2 "$API/api/stats" 2>/dev/null | sed -n 's/.*"strategy":"\([^"]*\)".*/\1/p')
+    echo ""
+    echo "${BLD}Endpoints${CR}  ${GRN}${ok}${CR}/${total} healthy${strat:+   ${DIM}strategy: ${strat}${CR}}"
+  fi
+
+  echo ""
+  cmd_info
 }
 
 cmd_logs() {
@@ -205,16 +293,203 @@ cmd_open() {
   fi
 }
 
+# Update the install: optionally switch branch (-b/--branch, like `moav`), pull,
+# then rebuild + recreate the whole stack (including xray + enabled sidecars).
 cmd_update() {
-  git pull --ff-only origin "$(git rev-parse --abbrev-ref HEAD)"
-  cmd_restart
+  local target_branch=""
+  while (( $# > 0 )); do
+    case "$1" in
+      -b|--branch) target_branch="${2:?-b needs a branch name}"; shift 2 ;;
+      -h|--help)
+        echo "usage: moav-client update [-b <branch>]"
+        echo "  -b, --branch   switch to and pull this branch (e.g. main, dev)"
+        return 0 ;;
+      *) echo "${RED}unknown option: $1${CR}  (try: moav-client update -b <branch>)"; return 1 ;;
+    esac
+  done
+
+  if [[ ! -d "$ROOT/.git" ]]; then
+    echo "${RED}$ROOT isn't a git checkout — can't update${CR}"; exit 1
+  fi
+
+  local cur sha
+  cur=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  sha=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "?")
+  local branch="${target_branch:-$cur}"
+  echo "${DIM}current: ${cur} @ ${sha}  →  target: ${branch}${CR}"
+
+  # Refuse to clobber local edits to tracked files (config.yaml / .env / data/
+  # are gitignored, so this only catches real source edits).
+  if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+    echo "${RED}local changes to tracked files — stash or discard before updating:${CR}"
+    git -C "$ROOT" status --short --untracked-files=no | sed 's/^/  /' | head
+    echo "  ${DIM}git -C $ROOT stash   (then re-run)   ·   git -C $ROOT checkout -- .   (discard)${CR}"
+    exit 1
+  fi
+
+  # Fetch just the target branch's tip. Works on the installer's shallow,
+  # single-branch clone (where `fetch --all` / origin/<other> don't exist) by
+  # fetching the branch explicitly and resetting the local branch to it.
+  echo "${CYN}→ fetching origin/${branch}${CR}"
+  if ! git -C "$ROOT" fetch --depth=1 origin "$branch" 2>/dev/null; then
+    echo "${RED}couldn't fetch branch '${branch}' from origin.${CR} available branches:"
+    git -C "$ROOT" ls-remote --heads origin 2>/dev/null | sed 's#.*refs/heads/#    #' || echo "    (couldn't reach origin)"
+    exit 1
+  fi
+  git -C "$ROOT" checkout -B "$branch" FETCH_HEAD >/dev/null 2>&1 || {
+    echo "${RED}couldn't switch to ${branch}${CR}"; exit 1; }
+  local after; after=$(git -C "$ROOT" rev-parse --short HEAD)
+  if [[ "$sha" == "$after" && "$branch" == "$cur" ]]; then
+    echo "${GRN}✓ already up to date (${branch} @ ${after})${CR}"
+  else
+    echo "${GRN}✓ ${sha} → ${after} (branch: ${branch})${CR}"
+  fi
+
+  # Rebuild + recreate everything (proxy-core/web-ui/xray + enabled sidecars).
+  local args=()
+  while IFS= read -r line; do [[ -n "$line" ]] && args+=("$line"); done < <(profile_args)
+  echo "${CYN}→ rebuilding + restarting${CR}"
+  compose "${args[@]:-}" up -d --build
+  echo ""
+  cmd_status
 }
 
 cmd_version() {
-  local sha
-  sha=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-  echo "moav-client @ $sha"
-  echo "install dir: $ROOT"
+  print_banner
+  echo ""
+  echo "  ${DIM}install dir: ${ROOT}${CR}"
+}
+
+# Remove the stack. Default keeps config + data; --wipe deletes everything
+# (containers, volumes, locally-built images, config.yaml, .env, data/) and the
+# global command. Mirrors `moav uninstall`.
+cmd_uninstall() {
+  local wipe=false
+  while (( $# > 0 )); do
+    case "$1" in
+      --wipe) wipe=true ;;
+      *) echo "${RED}unknown option: $1${CR}  usage: moav-client uninstall [--wipe]"; exit 1 ;;
+    esac
+    shift
+  done
+
+  echo ""
+  if $wipe; then
+    echo "${RED}${BLD}This COMPLETELY removes moav-client:${CR}"
+    echo "  • all containers, named volumes, and locally-built images"
+    echo "  • ${BLD}config.yaml, .env, and data/${CR} (subscriptions, state, sidecar configs)"
+    echo "  • the global 'moav-client' command"
+    echo "  ${YLW}This cannot be undone.${CR}"
+  else
+    echo "${BLD}This removes:${CR}"
+    echo "  • all moav-client containers ${DIM}(config + data preserved)${CR}"
+    echo "  • the global 'moav-client' command"
+    echo "  ${DIM}add --wipe to also delete config.yaml, .env, data/, volumes & built images${CR}"
+  fi
+  echo ""
+  local ans; read -r -p "  continue? [y/N] " ans </dev/tty 2>/dev/null || ans=""
+  case "$ans" in [Yy]*) ;; *) echo "cancelled"; return 0 ;; esac
+
+  if command -v docker >/dev/null 2>&1 && [[ -f "$ROOT/docker-compose.yml" ]]; then
+    echo "${CYN}→ stopping & removing containers${CR}"
+    if $wipe; then
+      compose --profile all-sidecars down -v --remove-orphans --rmi local 2>/dev/null \
+        || compose down -v --remove-orphans 2>/dev/null || true
+    else
+      compose --profile all-sidecars down --remove-orphans 2>/dev/null \
+        || compose down --remove-orphans 2>/dev/null || true
+    fi
+  fi
+
+  local gl="/usr/local/bin/moav-client"
+  if [[ -L "$gl" || -e "$gl" ]]; then
+    rm -f "$gl" 2>/dev/null || sudo rm -f "$gl" 2>/dev/null || true
+    echo "removed $gl"
+  fi
+
+  if $wipe; then
+    echo "${CYN}→ wiping config + data${CR}"
+    local p
+    for p in "$ROOT/.env" "$ROOT/config.yaml" "$ROOT/data"; do
+      [[ -e "$p" ]] || continue
+      rm -rf "$p" 2>/dev/null || sudo rm -rf "$p" 2>/dev/null || true
+    done
+    echo "  removed .env, config.yaml, data/"
+    echo "  ${DIM}the repo clone at ${ROOT} is left in place — 'rm -rf ${ROOT}' to remove it too.${CR}"
+  fi
+  echo "${GRN}✓ moav-client uninstalled${CR}"
+}
+
+# Re-run the install wizard against this install dir (add/remove sidecars,
+# rebuild, re-up). install.sh handles the existing repo + pre-checks the
+# sidecars already enabled in config.yaml.
+cmd_install() {
+  if [[ ! -f "$ROOT/install.sh" ]]; then
+    echo "${RED}install.sh not found in $ROOT${CR}"; exit 1
+  fi
+  MOAV_DIR="$ROOT" bash "$ROOT/install.sh" --dir "$ROOT" "$@"
+}
+
+# --- .env helpers (mirror proxy-core handleExposure / install.sh) -----------
+set_env_kv() {
+  local key="$1" val="$2" file="$ROOT/.env"
+  touch "$file"
+  if grep -qE "^${key}=" "$file" 2>/dev/null; then
+    sed -i.bak -E "s|^${key}=.*|${key}=${val}|" "$file" && rm -f "${file}.bak"
+  else
+    printf '%s=%s\n' "$key" "$val" >>"$file"
+  fi
+}
+
+lan_ip() {
+  local ip=""
+  if command -v ip >/dev/null 2>&1; then
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+  fi
+  [[ -z "$ip" ]] && command -v hostname >/dev/null 2>&1 && ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+  [[ -z "$ip" ]] && command -v ipconfig >/dev/null 2>&1 && ip=$(ipconfig getifaddr en0 2>/dev/null)
+  echo "$ip"
+}
+
+# Change network reach. loopback = 127.0.0.1 (this machine only); lan/public =
+# 0.0.0.0 (every device that can route to this host). Writes the same .env keys
+# the dashboard's Network exposure setting uses, then recreates the containers.
+cmd_expose() {
+  local mode="${1:-}"; shift || true
+  local user="" pass=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --user)     user="$2"; shift ;;
+      --password) pass="$2"; shift ;;
+      *) echo "${RED}unknown flag: $1${CR}"; exit 1 ;;
+    esac
+    shift
+  done
+  local bind
+  case "$mode" in
+    loopback) bind="127.0.0.1" ;;
+    lan|public) bind="0.0.0.0" ;;
+    *) echo "${RED}usage: moav-client expose <loopback|lan|public> [--user U --password P]${CR}"; exit 1 ;;
+  esac
+  local k
+  for k in SOCKS5_BIND HTTP_BIND API_BIND UI_BIND; do set_env_kv "$k" "$bind"; done
+  set_env_kv "MOAV_EXPOSURE" "$mode"
+  if [[ -n "$pass" ]]; then
+    set_env_kv "MOAV_DASHBOARD_USER" "${user:-admin}"
+    set_env_kv "MOAV_DASHBOARD_PASS" "$pass"
+    echo "${GRN}✓ dashboard auth set for '${user:-admin}'${CR}"
+  fi
+  if [[ "$mode" != "loopback" && -z "$pass" ]]; then
+    echo "${YLW}! exposing to the network with no dashboard password — set one with --password, or in Settings → Network exposure${CR}"
+  fi
+  echo "${CYN}→ applying exposure=${mode} (bind ${bind}) — recreating proxy-core + web-ui${CR}"
+  compose up -d --force-recreate proxy-core web-ui
+  if [[ "$mode" == "loopback" ]]; then
+    echo "${GRN}✓ now on localhost only — http://localhost:3001${CR}"
+  else
+    local ip; ip="$(lan_ip)"
+    echo "${GRN}✓ now reachable at http://${ip:-<this-host-ip>}:3001  (SOCKS5 ${ip:-<this-host-ip>}:1080)${CR}"
+  fi
 }
 
 case "${1:-help}" in
@@ -222,12 +497,16 @@ case "${1:-help}" in
   down|stop)    shift; cmd_down "$@" ;;
   restart)      cmd_restart ;;
   status|ps)    cmd_status ;;
+  info|urls)    cmd_info ;;
   logs|log)     shift; cmd_logs "$@" ;;
   probe)        cmd_probe ;;
   stats)        cmd_stats ;;
   sidecar)      shift; cmd_sidecar "$@" ;;
+  install|wizard) shift; cmd_install "$@" ;;
+  expose)       shift; cmd_expose "$@" ;;
   open)         cmd_open ;;
-  update)       cmd_update ;;
+  update)       shift; cmd_update "$@" ;;
+  uninstall)    shift; cmd_uninstall "$@" ;;
   version)      cmd_version ;;
   help|--help|-h|"") usage ;;
   *)            echo "${RED}unknown command: $1${CR}"; usage; exit 1 ;;

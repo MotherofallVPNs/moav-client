@@ -15,7 +15,9 @@ each one only has to do what it's good at:
 - **sing-box** speaks VLESS / Reality / Trojan / SS-2022 / Hy2 / WireGuard.
   Generator: `proxy-core/singbox/generator.go`. Inbound port range: `10800+`.
 - **xray** speaks Xray-only transports — currently `xhttp`, `splithttp`, `raw`.
-  Generator: `proxy-core/xray/generator.go`. Inbound port range: `11800+`.
+  Generator: `proxy-core/xray/generator.go`. Inbound port range: `11800+`. The
+  image is the official XTLS release binary (`sidecars/xray/Dockerfile`, pinned
+  via `XRAY_VERSION`), not a third-party image.
 
 The two generators are mutually exclusive: `xray.HandlesEndpoint(ep)` only
 matches endpoints sing-box would have rejected, so each parsed endpoint is
@@ -124,49 +126,43 @@ only the core stack.
 
 ---
 
-## WebSocket broadcast (channel-based fan-out)
+## WebSocket broadcast
 
 File: `proxy-core/api/api.go`
 
-The API server maintains a hub: `clients map[chan []byte]struct{}` protected by `hubMu sync.RWMutex`.
+The API keeps a hub of subscriber channels (`clients map[chan []byte]struct{}`
+under `hubMu`). On connect to `/api/ws`, the handler registers a buffered
+channel and immediately sends the current endpoint list, then forwards each
+broadcast frame to the socket; on disconnect the channel is removed.
 
-**Registration**: When a client connects to `/api/ws`, `handleWebSocket` creates a buffered channel (`make(chan []byte, 8)`), inserts it into `clients` under a write lock, then immediately sends the current endpoint list so the client does not need to wait for the next probe cycle. It then loops on `for msg := range ch`, forwarding each message to the WebSocket connection. On disconnect (ws send error or function return), the channel is deleted from the map under a write lock.
-
-**Broadcast path**: `broadcast(eps []subscription.Endpoint)` marshals the endpoint list to JSON, acquires a read lock on `hubMu`, then ranges over all channels. It uses a non-blocking `select { case ch <- data: default: }` so a slow or disconnected client drops the message rather than blocking the broadcast goroutine.
-
-**Trigger points**: `broadcast` is called from the goroutine spawned by `POST /api/probe` after `prober.ProbeAll` completes, and from the background probe loop in `main.go` indirectly through `balancer.SetEndpoints` → note that the background loop in `main.go` does NOT call `broadcast`; it only calls `balancer.SetEndpoints`. Clients subscribed to `/api/ws` only receive broadcast updates from the API-triggered probe, not from the background prober. This is a known gap — the background loop should call `apiServer.Broadcast(eps)` as well.
-
----
-
-## Balancer failover
-
-File: `proxy-core/balancer/balancer.go`
-
-`Pick()` filters the endpoint pool to `live := []Endpoint{ep | ep.Enabled && ep.Status == "ok"}`. If `live` is empty, `ErrNoEndpoints` is returned.
-
-`DialContext` wraps `Pick()` + `dialThrough()`. On any dial error:
-1. `markError(ep.ID)` sets `endpoints[i].Status = "error"` (write lock). This immediately removes the endpoint from future `Pick()` calls.
-2. `net.Dial(network, addr)` is called directly as a fallback — there is no retry-through-next-endpoint loop. If the direct dial also fails, the error is returned to the caller.
-
-The endpoint status remains "error" until the next probe cycle resets it to "ok" or "timeout". There is no exponential backoff or circuit-breaker. A background probe every 30 s will restore "error" endpoints if they become reachable again.
+`broadcast(eps)` marshals the pool to JSON and fans out with a non-blocking
+`select { case ch <- data: default: }`, so a slow client drops a frame rather
+than stalling the broadcast. It fires after an API-triggered probe
+(`POST /api/probe`). The periodic background probe updates the balancer pool
+(`SetEndpoints`); connected clients see those changes on the next probe
+broadcast or a dashboard refresh.
 
 ---
 
-## Sidecar port assignments
+## Sidecar endpoints
 
-Defined in `proxy-core/sidecars/manager.go`:
+File: `proxy-core/sidecars/manager.go`
 
-| Sidecar | Local address | Priority |
+`EnabledEndpoints()` turns each enabled sidecar into a synthetic balancer
+endpoint with `Config["socks5_addr"] = "<service>:<port>"` (the docker-compose
+service name on `moav-net`) and `Config["sidecar_kind"] = <name>`, so
+`balancer.dialThrough` and `prober.ProbeOne` reach it like any other endpoint.
+
+| Sidecar | Address (moav-net) | Default priority |
 |---|---|---|
-| masterdns | 127.0.0.1:5300 | 1 (highest) |
-| dnstt | 127.0.0.1:5301 | 5 |
-| slipstream | 127.0.0.1:5302 | 5 |
-| psiphon | 127.0.0.1:5400 | 5 |
-| tor | 127.0.0.1:9050 | 5 |
+| masterdns | `masterdns:5300` | 1 (highest) |
+| psiphon | `psiphon:5400` | 5 |
+| amneziawg | `amneziawg:5500` | 5 |
+| trusttunnel | `trusttunnel:5600` | 5 |
+| tor | `tor:9150` | 5 |
 
-These ports are hardcoded in `manager.go`. Sidecars must listen on exactly these SOCKS5 ports inside the Docker network. The `Priority` field is used by both the `priority` strategy (ascending sort → masterdns is tried first) and the `weighted` strategy (weight = Priority, so masterdns gets more traffic).
-
-When `protocol == "sidecar"`, both `prober.ProbeOne` and `balancer.dialThrough` read `ep.Config["socks5_addr"]`; if absent they fall back to `"127.0.0.1:1080"`. The `SidecarManager` does not set `Config["socks5_addr"]` — so the fallback is used unless a caller explicitly sets it. Bug: `manager.go` should set `Config: map[string]string{"socks5_addr": addr}`.
+`Priority` feeds the `priority` strategy (ascending — masterdns first) and the
+`weighted` strategy (weight = priority).
 
 ---
 
@@ -192,48 +188,52 @@ type State struct {
 
 ---
 
-## Docker network topology
+## Docker network & ports
 
 File: `docker-compose.yml`
 
-All services join the `moav-net` bridge network (driver: bridge, internal Docker network). Services communicate by service name as DNS (e.g. `proxy-core:8088`).
+All services join the `moav-net` bridge and address each other by service name
+(e.g. `proxy-core:8088`, `singbox:10800`, `xray:11800`, `masterdns:5300`).
 
-Host-exposed ports:
-| Service | Host port | Container port | Protocol |
+Host-exposed ports — the bind address is `.env`-driven (`127.0.0.1` by default,
+`0.0.0.0` for LAN/public via the Network exposure setting):
+
+| Service | Host | Container | Purpose |
 |---|---|---|---|
 | proxy-core | 1080 | 1080 | SOCKS5 |
-| proxy-core | 8080 | 8080 | HTTP CONNECT |
-| proxy-core | 8088 | 8088 | REST/WebSocket API |
-| web-ui | 3000 | 3000 | HTTP (served by nginx in prod image) |
+| proxy-core | 8081 | 8080 | HTTP CONNECT |
+| proxy-core | 8088 | 8088 | REST / WebSocket API |
+| web-ui | 3001 | 3000 | dashboard (nginx) |
 
-The web-ui receives `VITE_API_URL=http://proxy-core:8088` at build time, so the built JS bakes in the Docker-internal hostname. For local dev (`npm run dev`), `VITE_API_URL` defaults to `http://localhost:8088` (see `EndpointTable.tsx` and `ProbeButton.tsx`).
-
-Sidecar services (dns-tunnels, psiphon, tor) are on the same `moav-net` network but do **not** expose ports to the host. `proxy-core` reaches them at `127.0.0.1:<port>` — this only works when `proxy-core` and the sidecar are on the same host (or the sidecar is in the same Docker namespace). In Docker Compose, `127.0.0.1` inside `proxy-core` refers to the container's loopback, not the sidecar container. The sidecar addresses in `sidecars/manager.go` would need to be Docker service names (e.g. `dns-tunnels:5300`) for inter-container routing. This is a known integration gap.
+The dashboard talks to the API same-origin — nginx reverse-proxies `/api` to
+`proxy-core`, so the browser only needs `:3001`. For local dev
+(`npm run dev`), the API target defaults to `http://localhost:8088` (override
+with `VITE_API_URL`).
 
 ---
 
 ## Docker Compose profiles
 
-Profiles let operators enable optional sidecar services without running them by default:
+`proxy-core`, `web-ui`, `singbox`, and `xray` have no profile and always start;
+optional services are gated so a bare `docker compose up` runs only the core
+stack.
+
+| Profile | Service | Image / build |
+|---|---|---|
+| `masterdns` | masterdns | `./sidecars/dns-tunnels` |
+| `amneziawg` | amneziawg | `./sidecars/amneziawg` |
+| `psiphon` | psiphon | `./sidecars/psiphon` |
+| `trusttunnel` | trusttunnel | `./sidecars/trusttunnel` |
+| `tor` | tor | `peterdavehello/tor-socks-proxy` |
+| `sni-spoof` | sni-spoof | `./sidecars/sni-spoof` |
+| `https` | caddy | `caddy:2` (HTTPS termination) |
+| `all-sidecars` | all of the above | — |
 
 ```bash
-# Run with Tor enabled
-docker compose --profile tor up
-
-# Run with dns-tunnels + psiphon
-docker compose --profile dns-tunnels --profile psiphon up
-
-# Run only core services (no sidecars)
-docker compose up
+docker compose --profile tor up -d        # core + Tor
+moav-client sidecar add tor               # the wrapper does this for you
 ```
 
-Profile → service mapping:
-| Profile | Service | Docker image |
-|---|---|---|
-| `dns-tunnels` | dns-tunnels | `./sidecars/dns-tunnels/Dockerfile` |
-| `psiphon` | psiphon | `./sidecars/psiphon/Dockerfile` |
-| `tor` | tor | `torproject/arti:latest` |
-
-`proxy-core` and `web-ui` have no profile and always start.
-
-To persist sidecar data across restarts, add named volumes to the relevant service in `docker-compose.yml`. None are currently configured.
+Named volumes (`psiphon-data`, `caddy-data`, `caddy-config`) persist across
+restarts; `./data` is bind-mounted for config, state, and generated sidecar
+configs.

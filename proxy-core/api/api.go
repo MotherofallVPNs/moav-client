@@ -178,8 +178,23 @@ func (s *Server) handleEndpointPatch(w http.ResponseWriter, r *http.Request) {
 	log.Printf("api: patched endpoint %s enabled=%v priority=%d", updated.ID, updated.Enabled, updated.Priority)
 
 	// Side effect: for sidecar endpoints, also stop/start the container.
+	// When enabling, first check (synchronously) whether the container even
+	// exists — if the user never selected this sidecar at install time its
+	// image was never built, so start/stop is a no-op and routing through it
+	// will fail. Surface that so the dashboard can point them at the CLI.
+	sidecarMissing := false
+	sidecarKind := ""
 	if updated.Protocol == "sidecar" && body.Enabled != nil {
 		kind := updated.Config["sidecar_kind"]
+		if *body.Enabled && dockerctl.Available() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			id, err := dockerctl.New().FindContainerByService(ctx, dockerctl.SidecarDockerService(kind))
+			cancel()
+			if err == nil && id == "" {
+				sidecarMissing = true
+				sidecarKind = kind
+			}
+		}
 		go s.controlSidecarContainer(kind, *body.Enabled)
 	}
 
@@ -187,7 +202,13 @@ func (s *Server) handleEndpointPatch(w http.ResponseWriter, r *http.Request) {
 	s.persistEndpointState()
 	// Push updated pool to anyone listening.
 	s.broadcast(s.balancer.Endpoints())
-	writeJSON(w, map[string]interface{}{"ok": true, "endpoint": updated})
+	resp := map[string]interface{}{"ok": true, "endpoint": updated}
+	if sidecarMissing {
+		resp["sidecar_missing"] = true
+		resp["sidecar_kind"] = sidecarKind
+		resp["note"] = "Image not built — run: moav-client sidecar add " + sidecarKind
+	}
+	writeJSON(w, resp)
 }
 
 // controlSidecarContainer is best-effort: failures are logged but don't fail
