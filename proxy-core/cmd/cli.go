@@ -17,7 +17,7 @@ import (
 // Version is set at build time via -ldflags "-X .../cmd.Version=…" (see
 // proxy-core/Dockerfile, fed by the VERSION file). The literal here is the
 // fallback for a plain `go build`.
-var Version = "1.2.0"
+var Version = "1.3.0"
 
 // ParseAndRun parses os.Args and dispatches to the appropriate subcommand.
 // Returns the subcommand name so main can decide whether to run the server.

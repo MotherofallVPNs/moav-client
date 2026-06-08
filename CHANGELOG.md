@@ -5,6 +5,51 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-06-08
+
+An installer + CLI usability pass, an official Xray image, and version pinning.
+
+### Added
+- **Cross-platform prerequisite auto-install** in `install.sh` — installs missing
+  docker / git / curl / python3 (Linux via the OS package manager +
+  <https://get.docker.com>, macOS via Homebrew). Headless/CI installs without
+  prompting; interactive asks first (default yes). New `--yes`/`MOAV_ASSUME_YES`
+  and `--no-docker-install`/`MOAV_NO_DOCKER_INSTALL`.
+- **Numbered multi-select sidecar wizard** — pick `1 3`, `all`, or none; only the
+  chosen images are built. Re-running pre-checks already-enabled sidecars.
+- **End-of-install LAN exposure prompt** (with optional dashboard password) and a
+  loud warning when the host IP is public (VPS/cloud), so "LAN" isn't mistaken for
+  private.
+- **Official Xray image** — `sidecars/xray/Dockerfile` builds the official XTLS
+  release binary (pinned `XRAY_VERSION`, source-compile fallback), replacing the
+  third-party `teddysun/xray`.
+- **Version pinning** — a `VERSION` file as the single source of truth (stamped into
+  the proxy-core binary and the dashboard footer); pulled images pinned via `.env`
+  (`IMAGE_SINGBOX`, `IMAGE_TOR`, `IMAGE_CADDY`) and `XRAY_VERSION`, documented in
+  `.env.example`.
+- **Redesigned `moav-client` CLI** — `help`/`version` show the MoaV logo, version, and
+  repo/site links; `status` is a formatted service table with endpoint health and
+  access URLs; new `info` (URLs only), `install` (re-run the wizard), `expose`
+  (loopback/lan/public), and `update -b <branch>` (test branches on a running box).
+- Dashboard surfaces an actionable message when a protocol is enabled whose sidecar
+  image was never built (`moav-client sidecar add <kind>`).
+
+### Changed
+- Installer is **interactive even under `curl … | bash`** (prompts via `/dev/tty`);
+  only truly terminal-less runs go headless. A build & start confirmation was added,
+  and a bash 4+ guard (re-exec under a newer bash, else a clear error).
+- **Access & URLs** in the dashboard now uses the host you actually reached the page
+  on (fixes the `<this-machine-LAN-IP>` placeholder on VPS/remote views), with an
+  egress-IP fallback.
+- Renamed the **Sources** tab to **Configs**; folded the standalone **Config** (YAML)
+  editor into the bottom of **Settings** as a collapsible "advanced" section.
+
+### Fixed
+- Wizard/confirm prompts use readline (`read -e`), so arrow keys edit the line instead
+  of injecting `^[[A`.
+- Removed the outdated Psiphon "needs credentials" warning (it connects out-of-the-box
+  via embedded config); added a MasterDNS "idle until configured" note instead.
+
 ## [1.2.0] — 2026-06-06
 
 A dashboard-focused release: a real mobile UI, a separate dashboard login, live
