@@ -104,6 +104,14 @@ USAGE
 
 compose() { docker compose "$@"; }
 
+# Yes/no prompt, default yes. Returns 0 (yes) unless the user explicitly types
+# n/no. Falls back to yes when there's no TTY (non-interactive runs proceed).
+confirm_yes() {
+  local ans
+  read -r -p "$1 [Y/n] " ans </dev/tty 2>/dev/null || return 0
+  case "${ans,,}" in n|no) return 1 ;; *) return 0 ;; esac
+}
+
 # Print the access URLs for each service, derived from the saved exposure mode
 # in .env. Loopback → localhost; lan/public → this host's primary IP.
 cmd_info() {
@@ -347,6 +355,13 @@ cmd_update() {
     echo "${GRN}✓ ${sha} → ${after} (branch: ${branch})${CR}"
   fi
 
+  # Ask before the (multi-minute) rebuild. Default yes; pulled code only takes
+  # effect once the images are rebuilt and the containers recreated.
+  if ! confirm_yes "rebuild & restart now?"; then
+    echo "${YLW}! pulled, but not rebuilt — the new code won't run until you rebuild & restart.${CR}"
+    echo "  ${DIM}when ready:  moavc up   (or: docker compose up -d --build)${CR}"
+    return 0
+  fi
   # Rebuild + recreate everything (proxy-core/web-ui/xray + enabled sidecars).
   local args=()
   while IFS= read -r line; do [[ -n "$line" ]] && args+=("$line"); done < <(profile_args)

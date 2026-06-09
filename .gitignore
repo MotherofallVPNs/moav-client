@@ -6,3 +6,5 @@ web-ui/dist/
 data/
 .env
 .claude/
+.DS_Store
+RELEASE_v*.md

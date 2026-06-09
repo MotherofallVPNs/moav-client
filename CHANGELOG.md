@@ -29,6 +29,9 @@ All notable changes to moav-client are documented here. Format loosely follows
   + label) so they clearly read as actionable.
 - Installer's build summary: `download` column header (was `down`) and the
   confirm prompt now says "press Enter to continue".
+- `moavc update` now asks before the rebuild (`rebuild & restart now? [Y/n]`,
+  default yes); answering no leaves the code pulled with a note that it applies
+  after a rebuild.
 
 ## [1.3.0] — 2026-06-08
 
