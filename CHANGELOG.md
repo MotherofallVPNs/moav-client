@@ -5,6 +5,14 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- `moavc stats` / `probe` / `status` no longer fail with `401` once a dashboard
+  password is set (e.g. after exposing on the LAN) — the wrapper now sends the
+  `MOAV_DASHBOARD_USER`/`PASS` basic-auth from `.env` to the API.
+- `moavc update` no longer aborts on a deleted `data/.gitkeep` (a tracked
+  dir-placeholder that runtime/wipe can remove) — it's restored before the
+  local-changes check.
+
 ## [1.3.1] — 2026-06-09
 
 ### Added

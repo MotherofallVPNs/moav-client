@@ -76,6 +76,10 @@ export default function Settings({ refreshTick }: Props) {
   // Bumped after a successful save so the ACCESS & URLS panel re-fetches the
   // new exposure mode instead of showing the stale one.
   const [infoTick, setInfoTick] = useState(0);
+  // True once /api/exposure has resolved. The exposure section is hidden until
+  // then so it doesn't paint the loopback default and reflow when the real
+  // (e.g. lan) mode arrives and the auth panels appear.
+  const [expoLoaded, setExpoLoaded] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/exposure`)
@@ -97,7 +101,8 @@ export default function Settings({ refreshTick }: Props) {
           if (d.dashboard_pass) setDashPass(d.dashboard_pass);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setExpoLoaded(true));
     fetch(`${API_BASE}/api/stats`)
       .then((r) => r.json())
       .then((data) => {
@@ -306,6 +311,13 @@ export default function Settings({ refreshTick }: Props) {
           Controls which interfaces the SOCKS5 / HTTP CONNECT / dashboard ports bind to on the
           <strong> host</strong>. Saved to <code>.env</code>; a compose recreate of <code>proxy-core</code> applies it.
         </p>
+        {!expoLoaded && (
+          <div style={{ color: theme.textDim, fontSize: "0.8rem", padding: "0.75rem 0", fontFamily: theme.mono }}>
+            loading current exposure…
+          </div>
+        )}
+        {expoLoaded && (
+        <>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
           {EXPOSURE_OPTIONS.map((opt) => {
             const active = exposure === opt.value;
@@ -542,6 +554,8 @@ export default function Settings({ refreshTick }: Props) {
               </button>
             </div>
           </div>
+        )}
+        </>
         )}
       </section>
       </div>

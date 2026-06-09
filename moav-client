@@ -114,6 +114,16 @@ confirm_yes() {
   case "${ans,,}" in n|no) return 1 ;; *) return 0 ;; esac
 }
 
+# curl against the local API, adding dashboard basic-auth from .env when set.
+# proxy-core protects the API once MOAV_DASHBOARD_PASS is configured (e.g. after
+# exposing on the LAN), so plain curl would get a 401.
+api_curl() {
+  local u p auth=()
+  u=$(env_val MOAV_DASHBOARD_USER); p=$(env_val MOAV_DASHBOARD_PASS)
+  [[ -n "$p" ]] && auth=(-u "${u:-admin}:$p")
+  curl ${auth[@]+"${auth[@]}"} "$@"
+}
+
 # Print the access URLs for each service, derived from the saved exposure mode
 # in .env. Loopback → localhost; lan/public → this host's primary IP.
 cmd_info() {
@@ -201,11 +211,11 @@ cmd_status() {
 
   # Endpoint health summary from the API (best-effort — proxy-core may be down).
   local eps
-  if eps=$(curl -fsS --max-time 2 "$API/api/endpoints" 2>/dev/null); then
+  if eps=$(api_curl -fsS --max-time 2 "$API/api/endpoints" 2>/dev/null); then
     local total ok strat
     total=$(printf '%s' "$eps" | grep -o '"ID"' | wc -l | tr -d ' ')
     ok=$(printf '%s' "$eps" | grep -o '"Status":"ok"' | wc -l | tr -d ' ')
-    strat=$(curl -fsS --max-time 2 "$API/api/stats" 2>/dev/null | sed -n 's/.*"strategy":"\([^"]*\)".*/\1/p')
+    strat=$(api_curl -fsS --max-time 2 "$API/api/stats" 2>/dev/null | sed -n 's/.*"strategy":"\([^"]*\)".*/\1/p')
     echo ""
     echo "${BLD}Endpoints${CR}  ${GRN}${ok}${CR}/${total} healthy${strat:+   ${DIM}strategy: ${strat}${CR}}"
   fi
@@ -223,14 +233,14 @@ cmd_logs() {
 }
 
 cmd_probe() {
-  curl -fsS -X POST "$API/api/probe" >/dev/null && echo "${GRN}✓ probing all endpoints${CR}"
+  api_curl -fsS -X POST "$API/api/probe" >/dev/null && echo "${GRN}✓ probing all endpoints${CR}"
 }
 
 cmd_stats() {
   if command -v jq >/dev/null 2>&1; then
-    curl -fsS "$API/api/stats" | jq .
+    api_curl -fsS "$API/api/stats" | jq .
   else
-    curl -fsS "$API/api/stats" | python3 -m json.tool
+    api_curl -fsS "$API/api/stats" | python3 -m json.tool
   fi
 }
 
@@ -329,6 +339,11 @@ cmd_update() {
   sha=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "?")
   local branch="${target_branch:-$cur}"
   echo "${DIM}current: ${cur} @ ${sha}  →  target: ${branch}${CR}"
+
+  # data/.gitkeep is a tracked placeholder inside an otherwise-gitignored data/;
+  # runtime churn (or a wipe) can delete it, which would otherwise trip the
+  # dirty check below. Restore it silently — it's never a real local edit.
+  git -C "$ROOT" checkout -- data/.gitkeep 2>/dev/null || true
 
   # Refuse to clobber local edits to tracked files (config.yaml / .env / data/
   # are gitignored, so this only catches real source edits).
