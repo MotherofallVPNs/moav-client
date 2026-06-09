@@ -26,6 +26,9 @@ All notable changes to moav-client are documented here. Format loosely follows
 - Dropped the stale "TrustTunnel is a placeholder / no public binary" notice —
   the sidecar builds the official upstream client; it just needs the bundle's
   `client.toml`.
+- `moavc uninstall` / the update-rebuild prompt now actually show their
+  question — a stray `2>/dev/null` was hiding `read -p`'s prompt (it writes to
+  stderr), so they looked like they did nothing before "cancelled".
 
 ### Changed
 - Network-exposure **on/off toggles** restyled as a sliding switch (track + knob

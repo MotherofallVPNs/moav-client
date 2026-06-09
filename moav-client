@@ -108,7 +108,9 @@ compose() { docker compose "$@"; }
 # n/no. Falls back to yes when there's no TTY (non-interactive runs proceed).
 confirm_yes() {
   local ans
-  read -r -p "$1 [Y/n] " ans </dev/tty 2>/dev/null || return 0
+  # No 2>/dev/null — `read -p` writes the prompt to stderr, so redirecting it
+  # would hide the question. </dev/tty alone is enough.
+  read -r -p "$1 [Y/n] " ans </dev/tty || return 0
   case "${ans,,}" in n|no) return 1 ;; *) return 0 ;; esac
 }
 
@@ -404,7 +406,8 @@ cmd_uninstall() {
     echo "  ${DIM}add --wipe to also delete config.yaml, .env, data/, volumes & built images${CR}"
   fi
   echo ""
-  local ans; read -r -p "  continue? [y/N] " ans </dev/tty 2>/dev/null || ans=""
+  # No 2>/dev/null — it would hide the prompt (read -p writes it to stderr).
+  local ans; read -r -p "  continue? [y/N] " ans </dev/tty || ans=""
   case "$ans" in [Yy]*) ;; *) echo "cancelled"; return 0 ;; esac
 
   if command -v docker >/dev/null 2>&1 && [[ -f "$ROOT/docker-compose.yml" ]]; then
