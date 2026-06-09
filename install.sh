@@ -322,15 +322,15 @@ CORE_KINDS=(proxy-core web-ui sing-box xray)
 SIDECAR_KINDS=(masterdns amneziawg psiphon trusttunnel tor)
 comp_meta() {
   case "$1" in
-    proxy-core)  echo "8|16|proxy-core|Go binary — SOCKS5 / HTTP CONNECT + balancer + API" ;;
+    proxy-core)  echo "8|18|proxy-core|Go binary — SOCKS5 / HTTP CONNECT + balancer + API" ;;
     web-ui)      echo "30|76|web-ui|React dashboard (nginx-alpine + built assets)" ;;
-    sing-box)    echo "45|113|sing-box|VLESS / Reality / Trojan / SS / Hysteria2 / WireGuard crypto" ;;
-    xray)        echo "15|35|xray|xhttp / splithttp transports (official XTLS binary)" ;;
-    masterdns)   echo "60|160|MasterDNS|DNS-tunnel client for MoaV DNS tunnels (m.<bundle>.<tld>)" ;;
-    amneziawg)   echo "70|180|AmneziaWG|amneziawg-go + microsocks (needs NET_ADMIN + /dev/net/tun)" ;;
-    psiphon)     echo "75|195|Psiphon|Psiphon ConsoleClient — connects via embedded config" ;;
-    trusttunnel) echo "35|85|TrustTunnel|HTTP/2 + HTTP/3 tunnel (placeholder — mount client binary)" ;;
-    tor)         echo "8|15|Tor|Tor SOCKS5 on :9150 (peterdavehello/tor-socks-proxy)" ;;
+    sing-box)    echo "50|116|sing-box|VLESS / Reality / Trojan / SS / Hysteria2 / WireGuard crypto" ;;
+    xray)        echo "25|66|xray|xhttp / splithttp transports (official XTLS binary)" ;;
+    masterdns)   echo "55|138|MasterDNS|DNS-tunnel client for MoaV DNS tunnels (m.<bundle>.<tld>)" ;;
+    amneziawg)   echo "60|149|AmneziaWG|amneziawg-go + microsocks (needs NET_ADMIN + /dev/net/tun)" ;;
+    psiphon)     echo "70|176|Psiphon|Psiphon ConsoleClient — connects via embedded config" ;;
+    trusttunnel) echo "60|147|TrustTunnel|HTTP/2 + HTTP/3 tunnel (official client; needs client.toml from your bundle)" ;;
+    tor)         echo "30|86|Tor|Tor SOCKS5 on :9150 (peterdavehello/tor-socks-proxy)" ;;
   esac
 }
 
@@ -658,23 +658,23 @@ done
 build_list=("${CORE_KINDS[@]}")
 for k in "${SIDECARS[@]:-}"; do [[ -n "$k" ]] && build_list+=("$k"); done
 
-row() { printf '    %s%-13s%s %s%6s%s   %s%6s%s\n' "$1" "$2" "$C_RESET" "$C_DIM" "$3" "$C_RESET" "$C_DIM" "$4" "$C_RESET"; }
+row() { printf '    %s%-13s%s %s%9s%s   %s%9s%s\n' "$1" "$2" "$C_RESET" "$C_DIM" "$3" "$C_RESET" "$C_DIM" "$4" "$C_RESET"; }
 echo "  ${C_BOLD}About to build & start${C_RESET} ${C_DIM}(estimates — first build is slower than re-runs)${C_RESET}"
 echo ""
-printf '    %s%-13s %6s   %6s%s\n' "$C_BOLD" "component" "down" "disk" "$C_RESET"
-say "$C_DIM" "    ─────────────────────────────────"
+printf '    %s%-13s %9s   %9s%s\n' "$C_BOLD" "component" "download" "disk" "$C_RESET"
+say "$C_DIM" "    ───────────────────────────────────────"
 for k in "${build_list[@]}"; do
   IFS='|' read -r dl disk label _ <<<"$(comp_meta "$k")"
   in_core=0; for c in "${CORE_KINDS[@]}"; do [[ "$c" == "$k" ]] && in_core=1; done
   row "$([[ $in_core == 1 ]] && printf '%s' "$C_GREEN" || printf '%s' "$C_BOLD")" "$label" "~${dl}M" "~${disk}M"
 done
-say "$C_DIM" "    ─────────────────────────────────"
-printf '    %s%-13s %6s   %6s%s\n' "$C_BOLD" "total" "~${DL_TOTAL}M" "~${DISK_TOTAL}M" "$C_RESET"
+say "$C_DIM" "    ───────────────────────────────────────"
+printf '    %s%-13s %9s   %9s%s\n' "$C_BOLD" "total" "~${DL_TOTAL}M" "~${DISK_TOTAL}M" "$C_RESET"
 [[ "$DF_AVAIL_MB" != "?" ]] && note "free disk at install path: ${DF_AVAIL_MB} MB"
-if ! want_install "build & start now?"; then
+if ! want_install "build & start now? — press Enter to continue"; then
   echo ""
   warn "skipping build/start at your request."
-  note "when ready, run:  ${C_BOLD}moav-client up${C_RESET}   (or: docker compose ${profiles[*]:-} up -d --build)"
+  note "when ready, run:  ${C_BOLD}moavc up${C_RESET}   (or: docker compose ${profiles[*]:-} up -d --build)"
   exit 0
 fi
 
@@ -825,8 +825,9 @@ fi
 
 if printf '%s\n' "${SIDECARS[@]:-}" | grep -qx "trusttunnel"; then
   echo ""
-  warn "TrustTunnel sidecar is a placeholder — there's no public Linux client binary yet."
-  note "Mount the upstream binary at /usr/local/bin/trusttunnel-client + your client.toml to activate."
+  warn "TrustTunnel is started but idle until you give it your TrustTunnel config."
+  note "Importing a MoaV bundle wires sidecars.trusttunnel.config.source_path (client.toml) for you;"
+  note "otherwise point it at your client.toml, then:  ${MC} sidecar add trusttunnel"
 fi
 
 echo ""

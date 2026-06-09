@@ -50,31 +50,30 @@ Point your browser or system proxy at `socks5h://localhost:1080`. Every connecti
 
 ### Resources
 
-Per-container disk + first-install download (amd64). Core services always run;
-sidecars are opt-in via `--profile`.
+Measured on-disk image size (amd64). Core always runs; sidecars are opt-in via
+`--profile`. Each container is memory- and CPU-capped in `docker-compose.yml`.
 
-| Service | Disk | Download | Profile |
-|---|---|---|---|
-| proxy-core | ~18 MB | core | always |
-| web-ui | ~75 MB | core | always |
-| sing-box | ~116 MB | core | always |
-| xray | ~50 MB | core | always (official XTLS binary, pinned `XRAY_VERSION`) |
-| MasterDNS | ~138 MB | sidecar | `masterdns` |
-| AmneziaWG | ~149 MB | sidecar | `amneziawg` |
-| Psiphon | ~176 MB | sidecar | `psiphon` |
-| TrustTunnel | ~90 MB | sidecar | `trusttunnel` |
-| Tor | ~85 MB | sidecar | `tor` |
+| Service | Disk | Idle RAM | Caps | Profile |
+|---|---|---|---|---|
+| proxy-core | ~18 MB | ~8 MB | 256m / 1.0 | always |
+| web-ui | ~76 MB | ~3 MB | 128m / 0.5 | always |
+| sing-box | ~116 MB | ~14 MB | 256m / 1.0 | always |
+| xray | ~66 MB | ~10 MB | 256m / 0.5 | always (official XTLS binary, pinned `XRAY_VERSION`) |
+| MasterDNS | ~138 MB | — | 128m / 0.5 | `masterdns` |
+| AmneziaWG | ~149 MB | ~4 MB | 256m / 0.5 | `amneziawg` |
+| Psiphon | ~176 MB | ~6 MB | 256m / 0.5 | `psiphon` |
+| TrustTunnel | ~147 MB | ~14 MB | 256m / 0.5 | `trusttunnel` |
+| Tor | ~86 MB | ~68 MB | 256m / 0.5 | `tor` |
 
 | Footprint | Core only | Full stack |
 |---|---|---|
-| Disk (runtime images) | ~260 MB | ~900 MB |
-| First-install download | ~160 MB | ~780 MB |
-| RAM (idle) | ~150 MB | ~400 MB |
+| Disk (runtime images) | ~276 MB | ~970 MB |
+| First-install download | ~115 MB | ~390 MB |
+| RAM (idle) | ~35 MB | ~130 MB |
 
 The installer's `[5/5]` step prints a per-component download/disk estimate
-before building. Numbers are approximate (amd64) — a full build also leaves
-~4 GB of build cache, reclaimable with `docker builder prune`. Updates
-re-download only changed layers.
+before building. A full build also leaves ~8 GB of build cache, reclaimable
+with `docker builder prune`. Updates re-download only changed layers.
 
 ---
 

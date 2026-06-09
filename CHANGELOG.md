@@ -10,16 +10,31 @@ All notable changes to moav-client are documented here. Format loosely follows
 ### Added
 - **`moavc`** — short official alias for `moav-client`, symlinked into `PATH` by
   the installer alongside the full name. `moav-client` keeps working.
+- **Per-container resource limits** (`mem_limit` / `cpus`) on every service in
+  `docker-compose.yml` — matching the MoaV server. Core idles at ~35 MB RAM,
+  the full stack ~130 MB; caps range 128m–256m so a runaway can't eat the host.
 
 ### Fixed
-- `moav-client status` (and `up` / `down` / `logs` / `update`) no longer pass an
-  empty argument to `docker compose` when no sidecars are enabled — the
+- `moavc status` (and `up` / `down` / `logs` / `update`) no longer pass an empty
+  argument to `docker compose` when no sidecars are enabled — the
   `"${args[@]:-}"` expansion injected an empty string, so `docker compose "" ps`
   ran and errored. Switched to the `${args[@]+"${args[@]}"}` idiom.
+- **Image builds no longer fail on a `403` from the Go module proxy.** All
+  Go-building images (proxy-core, sni-spoof, psiphon, amneziawg — xray already
+  did) now use the resilient `GOPROXY=…|goproxy.cn|direct` + `GOSUMDB=off`, so a
+  rate-limited Google CDN falls through instead of aborting the build.
+- Dropped the stale "TrustTunnel is a placeholder / no public binary" notice —
+  the sidecar builds the official upstream client; it just needs the bundle's
+  `client.toml`.
 
 ### Changed
 - Network-exposure **on/off toggles** restyled as a sliding switch (track + knob
   + label) so they clearly read as actionable.
+- Installer's build summary: `download` column header (was `down`) and the
+  confirm prompt now says "press Enter to continue".
+- `moavc update` now asks before the rebuild (`rebuild & restart now? [Y/n]`,
+  default yes); answering no leaves the code pulled with a note that it applies
+  after a rebuild.
 
 ## [1.3.0] — 2026-06-08
 
