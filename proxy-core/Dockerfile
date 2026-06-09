@@ -1,4 +1,12 @@
 FROM golang:1.25-alpine AS builder
+# Go-module fetch resilience: pipe (|) falls through to the next proxy on ANY
+# error (incl. the 403 Google's module CDN returns under rate-limiting from some
+# IPs/regions); goproxy.cn isn't subject to those limits. GOSUMDB=off drops the
+# sum.golang.org dependency — integrity is still checked against the committed
+# go.sum. Override via build args if you run your own mirror.
+ARG GOPROXY="https://proxy.golang.org|https://goproxy.cn|direct"
+ARG GOSUMDB=off
+ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

@@ -15,6 +15,10 @@
 FROM golang:1.25-bookworm AS gobuild
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+# Go-module fetch resilience — fall through proxies on a 403 (CDN rate-limit).
+ARG GOPROXY="https://proxy.golang.org|https://goproxy.cn|direct"
+ARG GOSUMDB=off
+ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
 WORKDIR /src
 RUN git clone --depth=1 https://github.com/amnezia-vpn/amneziawg-go.git \
     && cd amneziawg-go \
