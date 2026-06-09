@@ -6,10 +6,10 @@ through a chosen endpoint). Start there.
 
 ### All endpoints show `error`
 - The moav server may be down, or the bundle's credentials/keys are stale.
-- Check `moav-client logs proxy-core` for `singbox: wrote N-endpoint config`.
+- Check `moavc logs proxy-core` for `singbox: wrote N-endpoint config`.
   If sing-box isn't generating, ensure `singbox.enabled: true` (it is by
   default) — without it nothing can be dialed.
-- A just-imported bundle needs a restart to load: `moav-client restart` (the
+- A just-imported bundle needs a restart to load: `moavc restart` (the
   Configs tab does this for you).
 
 ### Dashboard / proxy unreachable from another machine
@@ -50,20 +50,20 @@ through a chosen endpoint). Start there.
   main`), so `git branch -a` shows only `main` and `git checkout dev` just
   copies it. Use the wrapper, which fetches the branch's tip explicitly:
   ```bash
-  moav-client update -b dev      # or any branch
+  moavc update -b dev      # or any branch
   ```
 - To recover by hand:
   ```bash
   cd ~/moav-client
   git fetch --depth=1 origin dev
   git checkout -B dev FETCH_HEAD
-  moav-client restart
+  moavc restart
   ```
 
 ### Reset / remove everything
 ```bash
-moav-client uninstall          # stop + remove containers (config + data kept)
-moav-client uninstall --wipe   # also delete config.yaml, .env, data/, volumes & images
+moavc uninstall          # stop + remove containers (config + data kept)
+moavc uninstall --wipe   # also delete config.yaml, .env, data/, volumes & images
 ```
-To stop without removing: `moav-client down` (add `--profile all-sidecars -v`
+To stop without removing: `moavc down` (add `--profile all-sidecars -v`
 on a raw `docker compose down` to also drop sidecar volumes).

@@ -231,7 +231,7 @@ stack.
 
 ```bash
 docker compose --profile tor up -d        # core + Tor
-moav-client sidecar add tor               # the wrapper does this for you
+moavc sidecar add tor               # the wrapper does this for you
 ```
 
 Named volumes (`psiphon-data`, `caddy-data`, `caddy-config`) persist across
