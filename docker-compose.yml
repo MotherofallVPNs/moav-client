@@ -9,7 +9,7 @@ services:
       args:
         # Stamped into the binary (cmd.Version) and shown in the dashboard
         # footer / `moav-client version`. Defaults to the in-code value.
-        MOAV_VERSION: "${MOAV_VERSION:-1.3.0}"
+        MOAV_VERSION: "${MOAV_VERSION:-1.3.1}"
     env_file:
       # Picks up SOCKS5_USERNAME / SOCKS5_PASSWORD / MOAV_DASHBOARD_USER /
       # MOAV_DASHBOARD_PASS for the listener and API basic-auth.

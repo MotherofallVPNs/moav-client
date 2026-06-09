@@ -3,7 +3,7 @@
 Optional protocol engines, each a container on the `moav-net` Docker network
 exposing a SOCKS5 inbound that moav-client treats as one balancer endpoint.
 Pick them in the installer's checklist, add one later with
-`moav-client sidecar add <name>`, or toggle in the dashboard. Each is gated by a
+`moavc sidecar add <name>`, or toggle in the dashboard. Each is gated by a
 docker-compose `--profile`, so only chosen images are built.
 
 | Sidecar | Port | Needs |

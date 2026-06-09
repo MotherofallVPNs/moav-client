@@ -97,6 +97,8 @@ usage() {
     uninstall [--wipe]         remove the stack (--wipe also deletes config/data)
     open                       open the dashboard in a browser
     version                    print version, commit & links
+
+  ${DIM}Tip: this command is also installed as ${CR}${BLD}moavc${CR}${DIM} (the official short alias).${CR}
 USAGE
 }
 
@@ -401,11 +403,13 @@ cmd_uninstall() {
     fi
   fi
 
-  local gl="/usr/local/bin/moav-client"
-  if [[ -L "$gl" || -e "$gl" ]]; then
-    rm -f "$gl" 2>/dev/null || sudo rm -f "$gl" 2>/dev/null || true
-    echo "removed $gl"
-  fi
+  local gl
+  for gl in /usr/local/bin/moavc /usr/local/bin/moav-client; do
+    if [[ -L "$gl" || -e "$gl" ]]; then
+      rm -f "$gl" 2>/dev/null || sudo rm -f "$gl" 2>/dev/null || true
+      echo "removed $gl"
+    fi
+  done
 
   if $wipe; then
     echo "${CYN}→ wiping config + data${CR}"

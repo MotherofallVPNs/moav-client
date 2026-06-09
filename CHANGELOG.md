@@ -5,6 +5,22 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-06-09
+
+### Added
+- **`moavc`** — short official alias for `moav-client`, symlinked into `PATH` by
+  the installer alongside the full name. `moav-client` keeps working.
+
+### Fixed
+- `moav-client status` (and `up` / `down` / `logs` / `update`) no longer pass an
+  empty argument to `docker compose` when no sidecars are enabled — the
+  `"${args[@]:-}"` expansion injected an empty string, so `docker compose "" ps`
+  ran and errored. Switched to the `${args[@]+"${args[@]}"}` idiom.
+
+### Changed
+- Network-exposure **on/off toggles** restyled as a sliding switch (track + knob
+  + label) so they clearly read as actionable.
+
 ## [1.3.0] — 2026-06-08
 
 An installer + CLI usability pass, an official Xray image, and version pinning.

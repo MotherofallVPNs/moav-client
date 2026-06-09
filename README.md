@@ -20,21 +20,21 @@ curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/in
 The installer **auto-installs missing prerequisites** (docker, git, curl,
 python3), clones the repo, lets you pick sidecars from a checklist (only the
 chosen images are built), seeds `config.yaml`, builds the images, brings the
-stack up, optionally opens it to your LAN, and installs a global `moav-client`
+stack up, optionally opens it to your LAN, and installs a global `moavc`
 command. Works interactively — even piped through `bash` — or fully headless;
 see [docs/INSTALL.md](docs/INSTALL.md).
 
-Then manage the stack with `moav-client`:
+Then manage the stack with **`moavc`** (the full name `moav-client` also works):
 
 ```bash
-moav-client status                # formatted service status + health + URLs
-moav-client info                  # just the dashboard / proxy / API URLs
-moav-client logs -f proxy-core    # tail logs
-moav-client probe                 # trigger a latency probe
-moav-client sidecar add tor       # enable + build + start a sidecar
-moav-client expose lan            # network reach: loopback | lan | public
-moav-client update [-b <branch>]  # pull (optionally switch branch) + rebuild
-moav-client uninstall [--wipe]    # remove the stack (--wipe deletes config/data)
+moavc status                # formatted service status + health + URLs
+moavc info                  # just the dashboard / proxy / API URLs
+moavc logs -f proxy-core    # tail logs
+moavc probe                 # trigger a latency probe
+moavc sidecar add tor       # enable + build + start a sidecar
+moavc expose lan            # network reach: loopback | lan | public
+moavc update [-b <branch>]  # pull (optionally switch branch) + rebuild
+moavc uninstall [--wipe]    # remove the stack (--wipe deletes config/data)
 ```
 
 Endpoints exposed:
@@ -105,7 +105,7 @@ Every sidecar exposes its own SOCKS5 inbound on the `moav-net` Docker network; m
 
 | Tab | What you can do |
 |---|---|
-| **Endpoints** | Live status & latency. Toggle each on/off (sidecar toggles also stop/start the docker container; enabling one whose image was never built tells you to run `moav-client sidecar add <name>`). Edit priority inline. Disabled rows show a `DISABLED` pill instead of a stale status. |
+| **Endpoints** | Live status & latency. Toggle each on/off (sidecar toggles also stop/start the docker container; enabling one whose image was never built tells you to run `moavc sidecar add <name>`). Edit priority inline. Disabled rows show a `DISABLED` pill instead of a stale status. |
 | **Configs** | Import another MoaV server's bundle by dropping its `.zip` — extracts under `data/<name>/` and appends a `subscription.sources` entry. List / remove configured sources; trigger a reload. |
 | **Analytics** | Per-protocol upload/download cards with rolling 2-min sparklines, an overlay-area throughput chart of all protocols, per-endpoint table with dial / error / failover counts and last-error reason. |
 | **Plugins** | List, reorder, edit, enable/disable, delete routing rules. Add from a curated template catalog — networking/privacy (LAN-direct, trackers, ad domains, telemetry, port-80 block) plus "selective app" sets (system updates, Zoom, iCloud, cloud sync, streaming, game downloads). All disabled by default; changes hot-apply and persist to `config.yaml`. See [docs/PLUGINS.md](docs/PLUGINS.md). |
@@ -186,11 +186,11 @@ countries.
 
 ## CLI
 
-Two CLIs share the name. The **management wrapper** (`moav-client`, a shell
-script installed into your `PATH`) drives the Docker stack day-to-day:
+Two CLIs share the name. The **management wrapper** — installed into your `PATH`
+as **`moavc`** (and `moav-client`) — drives the Docker stack day-to-day:
 
 ```
-moav-client <command>
+moavc <command>
 
   up | down | restart        start / stop / rebuild the stack
   status                     formatted services + endpoint health + URLs

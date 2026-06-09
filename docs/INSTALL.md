@@ -10,8 +10,9 @@ It checks prerequisites (git, curl, docker, docker compose v2, python3) and
 **installs the missing ones automatically** — on Linux via the OS package
 manager and <https://get.docker.com>, on macOS via Homebrew (Docker Desktop).
 Then it clones the repo, lets you pick sidecars, seeds `config.yaml`, builds
-images, brings the stack up, and symlinks a global `moav-client` command into
-`/usr/local/bin`.
+images, brings the stack up, and symlinks a global **`moavc`** command into
+`/usr/local/bin` (the full name `moav-client` is installed too — use whichever
+you prefer).
 
 In a headless / piped run (no TTY) the prerequisite installs happen without
 prompting. Interactively you're asked first (default yes). Force unattended
@@ -74,19 +75,19 @@ the wizard any time to add or remove sidecars — already-enabled ones are
 pre-checked:
 
 ```bash
-moav-client install
+moavc install
 ```
 
 You can also add/remove a single sidecar without the wizard:
 
 ```bash
-moav-client sidecar add psiphon      # enable + build + start
-moav-client sidecar remove psiphon   # stop + disable
-moav-client sidecar list
+moavc sidecar add psiphon      # enable + build + start
+moavc sidecar remove psiphon   # stop + disable
+moavc sidecar list
 ```
 
 If you enable a protocol in the dashboard whose sidecar image was never built,
-the dashboard tells you to run `moav-client sidecar add <name>` to provision it.
+the dashboard tells you to run `moavc sidecar add <name>` to provision it.
 
 ## Network exposure
 
@@ -95,9 +96,9 @@ By default the SOCKS5 / HTTP / dashboard / API ports bind to `127.0.0.1`
 (and offers to set a dashboard password). Change it any time from the CLI:
 
 ```bash
-moav-client expose lan                        # reachable from other LAN devices
-moav-client expose lan --user me --password s3cret   # + dashboard auth
-moav-client expose loopback                   # back to localhost only
+moavc expose lan                        # reachable from other LAN devices
+moavc expose lan --user me --password s3cret   # + dashboard auth
+moavc expose loopback                   # back to localhost only
 ```
 
 or from the dashboard **Settings → Network exposure** — both write the same
@@ -108,7 +109,7 @@ exposing.
 
 ## Versions & pinning
 
-`VERSION` holds the client version (shown by `moav-client version` and the
+`VERSION` holds the client version (shown by `moavc version` and the
 dashboard footer). Component versions are pinned in `.env` — copy the commented
 block from `.env.example` to override:
 
@@ -117,13 +118,13 @@ block from `.env.example` to override:
 - `IMAGE_SINGBOX` / `IMAGE_TOR` / `IMAGE_CADDY` — full `repo:tag` of the pulled
   images.
 
-After changing a version: `moav-client up` (or `docker compose up -d --build`).
+After changing a version: `moavc up` (or `docker compose up -d --build`).
 
 ## Updating
 
 ```bash
-moav-client update              # pull current branch + rebuild + restart
-moav-client update -b dev       # switch to (and track) another branch
+moavc update              # pull current branch + rebuild + restart
+moavc update -b dev       # switch to (and track) another branch
 ```
 
 The installer makes a shallow, single-branch clone, so `update` fetches the
@@ -133,9 +134,9 @@ target branch's tip explicitly — `-b <branch>` works even though
 ## Uninstalling
 
 ```bash
-moav-client uninstall           # stop + remove containers (config + data kept)
-moav-client uninstall --wipe    # also delete config.yaml, .env, data/, volumes & images
+moavc uninstall           # stop + remove containers (config + data kept)
+moavc uninstall --wipe    # also delete config.yaml, .env, data/, volumes & images
 ```
 
-Both also remove the global `moav-client` command. The repo clone is left in
-place — `rm -rf ~/moav-client` to remove it too.
+Both also remove the global `moavc` / `moav-client` commands. The repo clone is
+left in place — `rm -rf ~/moav-client` to remove it too.

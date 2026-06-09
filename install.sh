@@ -698,27 +698,34 @@ status="$($DOCKER compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Stat
 echo ""
 say "$C_DIM" "  $status"
 
-# ---------- install the `moav-client` command globally ----------------------
+# ---------- install the `moavc` / `moav-client` commands globally -----------
 # Symlink the management wrapper into PATH so it's usable from anywhere (the
-# wrapper resolves the symlink back to this install dir). Best-effort: skip
-# quietly if we can't write and have no sudo.
-GLOBAL_BIN="/usr/local/bin/moav-client"
+# wrapper resolves the symlink back to this install dir). `moavc` is the short
+# official alias; `moav-client` is kept too. Best-effort: skip quietly if we
+# can't write and have no sudo.
 WRAPPER="$INSTALL_DIR/moav-client"
 HAVE_GLOBAL=
-if [[ -x "$WRAPPER" ]]; then
-  if [[ -w "$(dirname "$GLOBAL_BIN")" ]]; then
-    ln -sf "$WRAPPER" "$GLOBAL_BIN" && HAVE_GLOBAL=1
+# Helper: ln -sf with a sudo fallback. Sets HAVE_GLOBAL on first success.
+link_global() {
+  local dest="$1"
+  if [[ -w "$(dirname "$dest")" ]]; then
+    ln -sf "$WRAPPER" "$dest" 2>/dev/null && return 0
   elif command -v sudo >/dev/null 2>&1; then
-    sudo ln -sf "$WRAPPER" "$GLOBAL_BIN" 2>/dev/null && HAVE_GLOBAL=1
+    sudo ln -sf "$WRAPPER" "$dest" 2>/dev/null && return 0
   fi
+  return 1
+}
+if [[ -x "$WRAPPER" ]]; then
+  link_global "/usr/local/bin/moavc"       && HAVE_GLOBAL=1
+  link_global "/usr/local/bin/moav-client" || true
   if [[ -n "$HAVE_GLOBAL" ]]; then
-    ok "installed 'moav-client' command → $GLOBAL_BIN"
+    ok "installed 'moavc' command (alias of moav-client) → /usr/local/bin/moavc"
   else
-    warn "couldn't symlink to $GLOBAL_BIN (no write access / no sudo) — use ./moav-client from $INSTALL_DIR"
+    warn "couldn't symlink into /usr/local/bin (no write access / no sudo) — use ./moav-client from $INSTALL_DIR"
   fi
 fi
-# CLI prefix used in the closing tips: bare command if global, else ./relative.
-MC="moav-client"
+# CLI prefix used in the closing tips: short alias if global, else ./relative.
+MC="moavc"
 [[ -z "$HAVE_GLOBAL" ]] && MC="./moav-client"
 
 # ---------- done -----------------------------------------------------------
