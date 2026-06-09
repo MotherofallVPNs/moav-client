@@ -10,6 +10,9 @@ All notable changes to moav-client are documented here. Format loosely follows
 ### Added
 - **`moavc`** — short official alias for `moav-client`, symlinked into `PATH` by
   the installer alongside the full name. `moav-client` keeps working.
+- **Per-container resource limits** (`mem_limit` / `cpus`) on every service in
+  `docker-compose.yml` — matching the MoaV server. Core idles at ~35 MB RAM,
+  the full stack ~130 MB; caps range 128m–256m so a runaway can't eat the host.
 
 ### Fixed
 - `moavc status` (and `up` / `down` / `logs` / `update`) no longer pass an empty

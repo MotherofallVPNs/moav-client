@@ -37,6 +37,8 @@ services:
       # enough for query, RW for start/stop. Comment out for a hardened setup.
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /app
+    mem_limit: 256m
+    cpus: 1.0
     networks:
       - moav-net
     restart: unless-stopped
@@ -62,6 +64,8 @@ services:
         while [ ! -s /etc/sing-box/singbox.json ]; do sleep 1; done
         echo "[singbox] config detected, starting"
         exec /usr/local/bin/sing-box run -c /etc/sing-box/singbox.json
+    mem_limit: 256m
+    cpus: 1.0
     volumes:
       - ./data:/etc/sing-box
     networks:
@@ -84,6 +88,8 @@ services:
   sni-spoof:
     build: ./sidecars/sni-spoof
     profiles: [sni-spoof, all-sidecars]
+    mem_limit: 128m
+    cpus: 0.5
     cap_add: [NET_ADMIN, NET_RAW]
     volumes:
       - ./data:/etc/sni-spoof
@@ -110,6 +116,8 @@ services:
         while [ ! -s /etc/xray/xray.json ]; do sleep 1; done
         echo "[xray] config detected, starting"
         exec /usr/local/bin/xray run -c /etc/xray/xray.json
+    mem_limit: 256m
+    cpus: 0.5
     healthcheck:
       # xray only gets a config when the bundle has xhttp/splithttp endpoints;
       # otherwise it idles. Healthy if no config yet OR the config parses.
@@ -134,6 +142,8 @@ services:
       - "${UI_BIND:-127.0.0.1}:3001:3000"
     depends_on:
       - proxy-core
+    mem_limit: 128m
+    cpus: 0.5
     networks:
       - moav-net
     restart: unless-stopped
@@ -157,6 +167,8 @@ services:
   caddy:
     image: ${IMAGE_CADDY:-caddy:2}
     profiles: [https, all-sidecars]
+    mem_limit: 128m
+    cpus: 0.5
     ports:
       # Default to high ports so we don't fight any other web server on 80/443.
       # Flip CADDY_HTTP_PORT / CADDY_HTTPS_PORT to "80" / "443" once you're
@@ -183,6 +195,8 @@ services:
   masterdns:
     build: ./sidecars/dns-tunnels
     profiles: [masterdns, all-sidecars]
+    mem_limit: 128m
+    cpus: 0.5
     volumes:
       - ./data/sidecar-configs/masterdns:/etc/masterdns
     networks: [moav-net]
@@ -191,6 +205,8 @@ services:
   amneziawg:
     build: ./sidecars/amneziawg
     profiles: [amneziawg, all-sidecars]
+    mem_limit: 256m
+    cpus: 0.5
     cap_add: [NET_ADMIN]
     devices: ["/dev/net/tun:/dev/net/tun"]
     sysctls:
@@ -203,6 +219,8 @@ services:
   trusttunnel:
     build: ./sidecars/trusttunnel
     profiles: [trusttunnel, all-sidecars]
+    mem_limit: 256m
+    cpus: 0.5
     volumes:
       - ./data/sidecar-configs/trusttunnel:/etc/trusttunnel
     networks: [moav-net]
@@ -211,6 +229,8 @@ services:
   psiphon:
     build: ./sidecars/psiphon
     profiles: [psiphon, all-sidecars]
+    mem_limit: 256m
+    cpus: 0.5
     volumes:
       - ./data/sidecar-configs/psiphon:/etc/psiphon
       - psiphon-data:/var/lib/psiphon
@@ -220,12 +240,16 @@ services:
   dns-tunnels:
     build: ./sidecars/dns-tunnels
     profiles: [dns-tunnels]
+    mem_limit: 128m
+    cpus: 0.5
     networks: [moav-net]
     restart: unless-stopped
 
   tor:
     image: ${IMAGE_TOR:-peterdavehello/tor-socks-proxy:latest}
     profiles: [tor, all-sidecars]
+    mem_limit: 256m
+    cpus: 0.5
     networks: [moav-net]
     restart: unless-stopped
     # Tor SOCKS5 on :9150 (matches SidecarManager). Override the image's

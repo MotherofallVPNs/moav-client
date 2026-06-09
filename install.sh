@@ -322,15 +322,15 @@ CORE_KINDS=(proxy-core web-ui sing-box xray)
 SIDECAR_KINDS=(masterdns amneziawg psiphon trusttunnel tor)
 comp_meta() {
   case "$1" in
-    proxy-core)  echo "8|16|proxy-core|Go binary — SOCKS5 / HTTP CONNECT + balancer + API" ;;
+    proxy-core)  echo "8|18|proxy-core|Go binary — SOCKS5 / HTTP CONNECT + balancer + API" ;;
     web-ui)      echo "30|76|web-ui|React dashboard (nginx-alpine + built assets)" ;;
-    sing-box)    echo "45|113|sing-box|VLESS / Reality / Trojan / SS / Hysteria2 / WireGuard crypto" ;;
-    xray)        echo "15|35|xray|xhttp / splithttp transports (official XTLS binary)" ;;
-    masterdns)   echo "60|160|MasterDNS|DNS-tunnel client for MoaV DNS tunnels (m.<bundle>.<tld>)" ;;
-    amneziawg)   echo "70|180|AmneziaWG|amneziawg-go + microsocks (needs NET_ADMIN + /dev/net/tun)" ;;
-    psiphon)     echo "75|195|Psiphon|Psiphon ConsoleClient — connects via embedded config" ;;
-    trusttunnel) echo "35|85|TrustTunnel|HTTP/2 + HTTP/3 tunnel (official client; needs client.toml from your bundle)" ;;
-    tor)         echo "8|15|Tor|Tor SOCKS5 on :9150 (peterdavehello/tor-socks-proxy)" ;;
+    sing-box)    echo "50|116|sing-box|VLESS / Reality / Trojan / SS / Hysteria2 / WireGuard crypto" ;;
+    xray)        echo "25|66|xray|xhttp / splithttp transports (official XTLS binary)" ;;
+    masterdns)   echo "55|138|MasterDNS|DNS-tunnel client for MoaV DNS tunnels (m.<bundle>.<tld>)" ;;
+    amneziawg)   echo "60|149|AmneziaWG|amneziawg-go + microsocks (needs NET_ADMIN + /dev/net/tun)" ;;
+    psiphon)     echo "70|176|Psiphon|Psiphon ConsoleClient — connects via embedded config" ;;
+    trusttunnel) echo "60|147|TrustTunnel|HTTP/2 + HTTP/3 tunnel (official client; needs client.toml from your bundle)" ;;
+    tor)         echo "30|86|Tor|Tor SOCKS5 on :9150 (peterdavehello/tor-socks-proxy)" ;;
   esac
 }
 
