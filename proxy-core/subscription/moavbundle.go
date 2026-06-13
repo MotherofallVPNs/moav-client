@@ -18,7 +18,7 @@ import (
 // and each p= record is a comma-list:
 //
 //	p = <name>,<port>[,k=v[,k=v…]]
-//	name = reality | vless-ws | vless-xhttp | trojan | ss | hy2 | tuic | vmess
+//	name = reality | vless-ws | vless-xhttp | trojan | anytls | ss | hy2 | tuic | vmess
 //
 // Per-protocol k=v overrides anything in <shared>. Each materialised
 // Endpoint carries a synthetic RawURI of the equivalent single-protocol
@@ -134,6 +134,11 @@ func expandProto(rec, defaultHost, userTag, label string, shared map[string]stri
 		uri := fmt.Sprintf("trojan://%s@%s:%s?security=tls&sni=%s&type=tcp#%s-trojan",
 			pw, hostOverride, port, query(merged, "sni", "sni_default"), label)
 		return ParseURI(uri)
+	case "anytls":
+		pw := defaultStr(merged["pw"], merged["password"])
+		uri := fmt.Sprintf("anytls://%s@%s:%s?sni=%s&insecure=0#%s-anytls",
+			pw, hostOverride, port, query(merged, "sni", "sni_default"), label)
+		return ParseURI(uri)
 	case "ss":
 		method := defaultStr(merged["ss_method"], "aes-256-gcm")
 		pw := defaultStr(merged["ss_pw"], merged["password"])
@@ -161,7 +166,7 @@ func expandProto(rec, defaultHost, userTag, label string, shared map[string]stri
 			uuid, pw, hostOverride, port, query(merged, "sni", "sni_default"), label)
 		return ParseURI(uri)
 	default:
-		return Endpoint{}, fmt.Errorf("unknown protocol %q (valid: reality, vless-ws, vless-xhttp, trojan, ss, hy2, tuic, vmess)", name)
+		return Endpoint{}, fmt.Errorf("unknown protocol %q (valid: reality, vless-ws, vless-xhttp, trojan, anytls, ss, hy2, tuic, vmess)", name)
 	}
 }
 

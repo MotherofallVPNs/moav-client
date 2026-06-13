@@ -19,6 +19,7 @@ const PRETTY: Record<string, string> = {
   vless: "VLESS",
   vmess: "VMess",
   trojan: "Trojan",
+  anytls: "AnyTLS",
   tuic: "TUIC",
   ss: "Shadowsocks",
   shadowsocks: "Shadowsocks",

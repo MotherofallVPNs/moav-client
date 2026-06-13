@@ -12,7 +12,7 @@ extending the client.
 moav-client splits real protocol cryptography across two upstream dialers so
 each one only has to do what it's good at:
 
-- **sing-box** speaks VLESS / Reality / Trojan / SS-2022 / Hy2 / WireGuard.
+- **sing-box** speaks VLESS / Reality / Trojan / AnyTLS / SS-2022 / Hy2 / WireGuard.
   Generator: `proxy-core/singbox/generator.go`. Inbound port range: `10800+`.
 - **xray** speaks Xray-only transports — currently `xhttp`, `splithttp`, `raw`.
   Generator: `proxy-core/xray/generator.go`. Inbound port range: `11800+`. The
@@ -39,8 +39,8 @@ just idles in the wait loop.
 File: `proxy-core/singbox/generator.go`
 
 `Generate(eps, Config)` converts each parsed `subscription.Endpoint` into a
-sing-box outbound block (`vless` w/ Reality + utls, `trojan`, `shadowsocks`,
-`hysteria2` w/ obfs, `vmess`, `tuic`) and pairs it with a SOCKS5 inbound on
+sing-box outbound block (`vless` w/ Reality + utls, `trojan`, `anytls`,
+`shadowsocks`, `hysteria2` w/ obfs, `vmess`, `tuic`) and pairs it with a SOCKS5 inbound on
 `Config.ListenHost:Config.BasePort+i` plus a 1:1 route rule. The returned
 endpoint slice has `Config["socks5_addr"]` populated with `DialHost:port` —
 which is what `balancer.dialThrough` and `prober.ProbeOne` use to reach the
