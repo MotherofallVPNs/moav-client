@@ -95,6 +95,65 @@ func TestParseTrojan(t *testing.T) {
 	}
 }
 
+func TestParseAnyTLS(t *testing.T) {
+	uri := "anytls://s3cr3tpassword@anytls.example.com:8445?sni=anytls.example.com&insecure=0#MyAnyTLS"
+	ep, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.Protocol != "anytls" {
+		t.Errorf("protocol: got %q want anytls", ep.Protocol)
+	}
+	if ep.Config["password"] != "s3cr3tpassword" {
+		t.Errorf("password: got %q", ep.Config["password"])
+	}
+	if ep.Config["sni"] != "anytls.example.com" {
+		t.Errorf("sni: got %q", ep.Config["sni"])
+	}
+	if ep.Config["insecure"] != "0" {
+		t.Errorf("insecure: got %q want 0", ep.Config["insecure"])
+	}
+	if ep.Address != "anytls.example.com:8445" {
+		t.Errorf("address: got %q want anytls.example.com:8445", ep.Address)
+	}
+	if ep.Name != "MyAnyTLS" {
+		t.Errorf("name: got %q want MyAnyTLS", ep.Name)
+	}
+	if ep.LatencyMs != -1 {
+		t.Errorf("LatencyMs should be -1 on new endpoint")
+	}
+	if ep.Status != "unknown" {
+		t.Errorf("Status should be unknown, got %q", ep.Status)
+	}
+}
+
+func TestParseAnyTLS_IPv6_AllowInsecure(t *testing.T) {
+	// IPv6 host is bracketed; insecure expressed via the allowInsecure alias.
+	uri := "anytls://pass@[2001:db8::1]:8445?sni=cdn.example.com&allowInsecure=1#v6"
+	ep, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep.Protocol != "anytls" {
+		t.Errorf("protocol: got %q want anytls", ep.Protocol)
+	}
+	if ep.Address != "[2001:db8::1]:8445" {
+		t.Errorf("address: got %q want [2001:db8::1]:8445", ep.Address)
+	}
+	if ep.Config["password"] != "pass" {
+		t.Errorf("password: got %q", ep.Config["password"])
+	}
+	if ep.Config["sni"] != "cdn.example.com" {
+		t.Errorf("sni: got %q", ep.Config["sni"])
+	}
+	if ep.Config["insecure"] != "1" {
+		t.Errorf("insecure (via allowInsecure): got %q want 1", ep.Config["insecure"])
+	}
+	if ep.Name != "v6" {
+		t.Errorf("name: got %q want v6", ep.Name)
+	}
+}
+
 func TestParseSS_SIP002(t *testing.T) {
 	// SIP002 format: ss://base64(method:password)@host:port#name
 	userinfo := base64.StdEncoding.EncodeToString([]byte("chacha20-ietf-poly1305:mys3cr3t"))

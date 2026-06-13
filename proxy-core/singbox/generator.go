@@ -266,6 +266,8 @@ func outboundFromEndpoint(ep subscription.Endpoint) (map[string]any, bool) {
 		ob, ok = vlessOutbound(ep, host, port)
 	case "trojan":
 		ob, ok = trojanOutbound(ep, host, port)
+	case "anytls":
+		ob, ok = anytlsOutbound(ep, host, port)
 	case "ss":
 		ob, ok = ssOutbound(ep, host, port)
 	case "hysteria2":
@@ -361,6 +363,34 @@ func trojanOutbound(ep subscription.Endpoint, host string, port int) (map[string
 	}
 	if t != nil {
 		ob["transport"] = t
+	}
+	return ob, true
+}
+
+// anytlsOutbound maps an AnyTLS endpoint to a sing-box `anytls` outbound.
+// AnyTLS is always TLS (it's in the name); we mirror the Trojan TLS block and
+// honour the insecure flag. utls fingerprint randomisation is enabled to blend
+// the ClientHello with common browsers.
+func anytlsOutbound(ep subscription.Endpoint, host string, port int) (map[string]any, bool) {
+	c := ep.Config
+	tls := map[string]any{
+		"enabled":     true,
+		"server_name": c["sni"],
+		"insecure":    c["insecure"] == "1" || c["insecure"] == "true",
+		"utls": map[string]any{
+			"enabled":     true,
+			"fingerprint": "random",
+		},
+	}
+	if c["alpn"] != "" {
+		tls["alpn"] = strings.Split(c["alpn"], ",")
+	}
+	ob := map[string]any{
+		"type":        "anytls",
+		"server":      host,
+		"server_port": port,
+		"password":    c["password"],
+		"tls":         tls,
 	}
 	return ob, true
 }
