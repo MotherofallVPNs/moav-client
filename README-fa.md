@@ -80,6 +80,7 @@ moavc uninstall [--wipe]    # حذف استک (--wipe کانفیگ/داده را
 | VLESS / Reality | خروجی sing-box | اثرانگشت utls، کلید عمومی و short-id ریالیتی |
 | VLESS + WS + TLS (CDN) | خروجی sing-box | utls + ALPN + path / host |
 | Trojan + TLS | خروجی sing-box | اثرانگشت uTLS، SNI |
+| AnyTLS | خروجی sing-box | TLS + رمز عبور، اثرانگشت uTLS تصادفی، SNI، پرچم `insecure` |
 | Shadowsocks-2022 | خروجی sing-box | 2022-blake3-aes-128-gcm |
 | Hysteria 2 (+obfs) | خروجی sing-box | مبهم‌سازی salamander |
 | VLESS + XHTTP + Reality | خروجی xray | xhttp فقط در Xray است؛ روی ‎11800+‎ |

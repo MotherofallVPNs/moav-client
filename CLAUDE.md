@@ -21,7 +21,7 @@ moav-client is the local client for [**MoaV — Mother of all VPNs**](https://gi
 | `proxy-core/sidecars/` | Maps enabled sidecar entries (masterdns / amneziawg / trusttunnel / psiphon / tor / dnstt / slipstream) to synthetic `Endpoint` structs with `socks5_addr` set to `<docker-service>:<port>` + writes per-sidecar config files (`configgen.go`) from `config.yaml` parameters |
 | `proxy-core/singbox/` | Generates a sing-box config (1 SOCKS5 inbound + 1 protocol outbound per endpoint, plus 1 `endpoints[]` block per WireGuard endpoint) and rewrites `Endpoint.Config["socks5_addr"]` to point at the local sing-box port |
 | `proxy-core/state/` | Atomic JSON persistence of probe results to `data/state.json` |
-| `proxy-core/subscription/` | URI parsers for vless/vmess/trojan/ss/hysteria2/wireguard/tuic; base64-subscription decoder; HTTP fetcher |
+| `proxy-core/subscription/` | URI parsers for vless/vmess/trojan/anytls/ss/hysteria2/wireguard/tuic; base64-subscription decoder; HTTP fetcher |
 | `proxy-core/dockerctl/` | Engine-API client over `/var/run/docker.sock` — used by `handleEndpointPatch` to stop/start sidecar containers when the user toggles them in the dashboard |
 | `proxy-core/logbus/` | Pub/sub log bus + level classifier (info / warn / error) + ring buffer; mirrors every `log.Printf` for the Debug tab |
 | `web-ui/src/` | React 18 dark dashboard (Vite + TypeScript) styled after the MoaV admin panel: `App.tsx` (tabs + topbar refresh), `theme.ts` (palette), `components/EndpointTable.tsx` (toggle/priority controls), `Analytics.tsx` (per-protocol stacked area + sparklines), `Plugins.tsx` (hot-swap rule editor + template catalog), `Settings.tsx`, `Debug.tsx` (filtered log tail), `ConfigEditor.tsx` (loads on-disk YAML) |
@@ -52,7 +52,7 @@ moav-client is the local client for [**MoaV — Mother of all VPNs**](https://gi
 4. On `DecisionDirect`: `net.Dial` directly to destination.
 5. On `DecisionProxy`: `balancer.DialContext(network, addr)` called.
    - Tries up to `maxDialAttempts` (4) different endpoints. `pickExcluding(triedIDs)` selects the best remaining one by strategy.
-   - `dialThrough(ep, network, addr)`: if `Config["socks5_addr"]` is set (sing-box or sidecar), dials via SOCKS5 to that local port. Otherwise: `sidecar` → `127.0.0.1:1080`; vless/vmess/trojan/ss/tuic → legacy SOCKS5 to `ep.Address`; hysteria2/wireguard → error.
+   - `dialThrough(ep, network, addr)`: if `Config["socks5_addr"]` is set (sing-box or sidecar), dials via SOCKS5 to that local port. Otherwise: `sidecar` → `127.0.0.1:1080`; vless/vmess/trojan/ss/tuic → legacy SOCKS5 to `ep.Address`; anytls/hysteria2/wireguard → error.
    - On dial failure, `markError(ep.ID)` flips status to "error" and the loop picks the next-best endpoint. If all attempts fail, falls back to direct dial.
 6. Bidirectional `io.Copy` tunnel established.
 
@@ -77,7 +77,7 @@ moav-client is the local client for [**MoaV — Mother of all VPNs**](https://gi
 // proxy-core/subscription/parser.go
 type Endpoint struct {
     ID        string            // deterministic: "<protocol>:<host:port>"
-    Protocol  string            // vless | vmess | trojan | ss | hysteria2 | wireguard | tuic | sidecar
+    Protocol  string            // vless | vmess | trojan | anytls | ss | hysteria2 | wireguard | tuic | sidecar
     Name      string            // human-readable label from URI fragment (#name)
     Address   string            // "host:port" of the remote server
     RawURI    string            // original URI; used as dedup key

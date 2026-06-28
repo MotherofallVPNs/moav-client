@@ -86,6 +86,7 @@ The bundle parser accepts the standard MoaV subscription format (base64-encoded 
 | VLESS / Reality | sing-box outbound | utls fingerprint, Reality pbk + sid |
 | VLESS + WS + TLS (CDN) | sing-box outbound | utls + ALPN + path / host |
 | Trojan + TLS | sing-box outbound | uTLS fingerprint, SNI |
+| AnyTLS | sing-box outbound | TLS + password, uTLS random fingerprint, SNI, `insecure` flag |
 | Shadowsocks-2022 | sing-box outbound | 2022-blake3-aes-128-gcm |
 | Hysteria 2 (+obfs) | sing-box outbound | salamander obfs |
 | VLESS + XHTTP + Reality | xray outbound | xhttp is Xray-only; the xray sidecar handles it on 11800+ |
@@ -97,6 +98,8 @@ The bundle parser accepts the standard MoaV subscription format (base64-encoded 
 | Tor | `tor` sidecar | `peterdavehello/tor-socks-proxy` — SOCKS5 on :9150, no credentials |
 
 Every sidecar exposes its own SOCKS5 inbound on the `moav-net` Docker network; moav-client treats each as one entry in the balancer pool.
+
+> **AnyTLS client support is narrower than VLESS/Trojan.** It is dialed here via sing-box, and is also supported by Hiddify, sing-box (SFA/SFI), NekoBox, mihomo, and Shadowrocket 2.2.65+. Older or other clients may not speak it.
 
 ---
 
