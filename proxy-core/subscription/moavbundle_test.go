@@ -21,6 +21,7 @@ func TestParseMoaVBundle_Realistic(t *testing.T) {
 		"&p=vless-ws,443,host=cdn.example.com,path=/vless,sni=cdn.example.com,alpn=http/1.1" +
 		"&p=vless-xhttp,2096,sni=miui.example.com" +
 		"&p=trojan,8443,sni=tls.example.com" +
+		"&p=anytls,8445,sni=tls.example.com" +
 		"&p=ss,8388" +
 		"&p=hy2,443,sni=tls.example.com,obfs=salamander,obfs_pw=hy2-obfs" +
 		"#MoaV-demo"
@@ -29,8 +30,8 @@ func TestParseMoaVBundle_Realistic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(eps) != 6 {
-		t.Fatalf("expected 6 endpoints, got %d", len(eps))
+	if len(eps) != 7 {
+		t.Fatalf("expected 7 endpoints, got %d", len(eps))
 	}
 
 	want := []struct{ proto, addr string }{
@@ -38,6 +39,7 @@ func TestParseMoaVBundle_Realistic(t *testing.T) {
 		{"vless", "cdn.example.com:443"},
 		{"vless", "1.2.3.4:2096"},
 		{"trojan", "1.2.3.4:8443"},
+		{"anytls", "1.2.3.4:8445"},
 		{"ss", "1.2.3.4:8388"},
 		{"hysteria2", "1.2.3.4:443"},
 	}
@@ -73,12 +75,19 @@ func TestParseMoaVBundle_Realistic(t *testing.T) {
 	if eps[3].Config["sni"] != "tls.example.com" {
 		t.Errorf("trojan sni: %q", eps[3].Config["sni"])
 	}
-	// Hy2 obfs.
-	if eps[5].Config["obfs"] != "salamander" {
-		t.Errorf("hy2 obfs: %q", eps[5].Config["obfs"])
+	// AnyTLS should pick up the shared pw + per-record sni (mirrors Trojan).
+	if eps[4].Config["password"] != "trojan-and-hy2-pass" {
+		t.Errorf("anytls password not propagated: %q", eps[4].Config["password"])
 	}
-	if eps[5].Config["obfs_password"] != "hy2-obfs" {
-		t.Errorf("hy2 obfs_password: %q", eps[5].Config["obfs_password"])
+	if eps[4].Config["sni"] != "tls.example.com" {
+		t.Errorf("anytls sni: %q", eps[4].Config["sni"])
+	}
+	// Hy2 obfs.
+	if eps[6].Config["obfs"] != "salamander" {
+		t.Errorf("hy2 obfs: %q", eps[6].Config["obfs"])
+	}
+	if eps[6].Config["obfs_password"] != "hy2-obfs" {
+		t.Errorf("hy2 obfs_password: %q", eps[6].Config["obfs_password"])
 	}
 }
 

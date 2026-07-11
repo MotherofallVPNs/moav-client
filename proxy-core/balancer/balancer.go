@@ -270,7 +270,7 @@ func dialThrough(ep *subscription.Endpoint, network, addr string) (net.Conn, err
 	}
 
 	switch ep.Protocol {
-	case "hysteria2", "wireguard":
+	case "anytls", "hysteria2", "wireguard":
 		return nil, fmt.Errorf("protocol %s requires sing-box (no socks5_addr set)", ep.Protocol)
 
 	case "sidecar":

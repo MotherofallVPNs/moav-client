@@ -32,7 +32,7 @@ shared-query = <flat query-string carrying shared keys; see "Shared keys">
 
 proto-spec   = name "," port [ "," kv ("," kv)* ]
 name         = "reality" | "vless-ws" | "vless-xhttp"
-             | "trojan" | "ss" | "hy2" | "tuic" | "vmess"
+             | "trojan" | "anytls" | "ss" | "hy2" | "tuic" | "vmess"
 port         = 1..65535
 kv           = key "=" value         ; per-record override
 ```
@@ -45,7 +45,7 @@ overrides it. Order doesn't matter.
 | Key            | Used by               | Notes |
 |----------------|-----------------------|-------|
 | `uuid`         | vless / vmess / tuic  | required for those protocols |
-| `pw`           | trojan / hy2 / tuic   | also `password` as an alias |
+| `pw`           | trojan / anytls / hy2 / tuic | also `password` as an alias |
 | `ss_method`    | ss                    | e.g. `2022-blake3-aes-128-gcm` |
 | `ss_pw`        | ss                    | for `2022-blake3-*`, includes the `:` separator |
 | `pbk`          | reality / vless-xhttp | Reality public key |

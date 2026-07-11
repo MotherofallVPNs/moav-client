@@ -13,7 +13,7 @@ import (
 // Endpoint is a unified representation of one upstream proxy entry.
 type Endpoint struct {
 	ID        string
-	Protocol  string // vless, vmess, trojan, ss, hysteria2, wireguard, tuic, sidecar
+	Protocol  string // vless, vmess, trojan, anytls, ss, hysteria2, wireguard, tuic, sidecar
 	Name      string // fragment from URI
 	Address   string // host:port
 	RawURI    string // original URI before any parsing
@@ -83,6 +83,8 @@ func ParseURI(uri string) (Endpoint, error) {
 		return parseVMess(uri)
 	case strings.HasPrefix(uri, "trojan://"):
 		return parseTrojan(uri)
+	case strings.HasPrefix(uri, "anytls://"):
+		return parseAnyTLS(uri)
 	case strings.HasPrefix(uri, "ss://"):
 		return parseSS(uri)
 	case strings.HasPrefix(uri, "hysteria2://"):
@@ -214,6 +216,45 @@ func parseTrojan(uri string) (Endpoint, error) {
 	return Endpoint{
 		ID:        genID("trojan", u.Host),
 		Protocol:  "trojan",
+		Name:      u.Fragment,
+		Address:   u.Host,
+		RawURI:    uri,
+		Config:    cfg,
+		Enabled:   true,
+		LatencyMs: -1,
+		Status:    "unknown",
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// AnyTLS — anytls://password@host:port?sni=...&insecure=0#name
+//
+// AnyTLS is a TLS-based, password-authenticated protocol (close cousin of
+// Trojan) handled natively by sing-box. We parse it exactly like Trojan plus
+// the insecure/allowInsecure flag, then let the sing-box generator emit the
+// `anytls` outbound.
+// ---------------------------------------------------------------------------
+
+func parseAnyTLS(uri string) (Endpoint, error) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return Endpoint{}, fmt.Errorf("anytls: %w", err)
+	}
+	q := u.Query()
+	insecure := q.Get("insecure")
+	if insecure == "" {
+		insecure = q.Get("allowInsecure")
+	}
+	cfg := map[string]string{
+		"password": u.User.Username(),
+		"sni":      q.Get("sni"),
+		"insecure": insecure,
+		"alpn":     q.Get("alpn"),
+		"fp":       q.Get("fp"),
+	}
+	return Endpoint{
+		ID:        genID("anytls", u.Host),
+		Protocol:  "anytls",
 		Name:      u.Fragment,
 		Address:   u.Host,
 		RawURI:    uri,
