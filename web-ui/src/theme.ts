@@ -1,5 +1,5 @@
 // MoaV admin-style dark palette.
-// Pulled from shayanb/MoaV admin/templates/dashboard.html so the moav-client
+// Pulled from MotherofallVPNs/moav admin/templates/dashboard.html so the moav-client
 // dashboard looks like a peer of the server-side admin UI.
 export const theme = {
   bg: "#0a0e17",
