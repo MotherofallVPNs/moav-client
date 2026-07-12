@@ -40,27 +40,27 @@ fail() { printf '\033[0;31m[e2e] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # --- 1. configure the source -------------------------------------------------
 # Start from the example config, then point the subscription at the provided
-# bundle/URL. A file bundle is copied into data/ and referenced by path.
-[[ -f config.yaml ]] || cp config.yaml.example config.yaml
+# bundle/URL. NB: subscription.file wants a *subscription.txt* (a list of URIs),
+# NOT a bundle .zip — so we unzip the bundle and reference the files inside.
+cp config.yaml.example config.yaml
 if [[ -n "${MOAV_TEST_BUNDLE:-}" ]]; then
-  mkdir -p data
-  cp "$MOAV_TEST_BUNDLE" data/e2e-bundle.zip
-  log "using bundle file data/e2e-bundle.zip"
-  # subscription.file accepts a bundle zip; the importer expands it on start.
-  python3 - <<'PY'
-import re, io, sys
-p="config.yaml"; s=open(p).read()
-s=re.sub(r'(?m)^(subscription:\n(?:.*\n)*?\s*file:).*$', r'\1 "data/e2e-bundle.zip"', s, count=1)
-open(p,"w").write(s)
-PY
+  mkdir -p data/e2e-bundle
+  unzip -o -q "$MOAV_TEST_BUNDLE" -d data/e2e-bundle
+  [[ -f data/e2e-bundle/subscription.txt ]] \
+    || fail "bundle has no subscription.txt (is it a MoaV user bundle?)"
+  # WireGuard / AmneziaWG come as their own .conf files (one endpoint each).
+  wg=""
+  for f in wireguard.conf amneziawg.conf; do
+    [[ -f "data/e2e-bundle/$f" ]] && wg="${wg}\"data/e2e-bundle/$f\", "
+  done
+  log "using bundle: subscription.txt + [$(echo "$wg" | sed 's/, $//')]"
+  sed -i.bak 's|^  file: "".*|  file: "data/e2e-bundle/subscription.txt"|' config.yaml
+  sed -i.bak "s|^  wireguard_files: \[\].*|  wireguard_files: [${wg%, }]|" config.yaml
+  rm -f config.yaml.bak
 else
   log "using subscription URL from MOAV_TEST_SUB_URL"
-  python3 - "$MOAV_TEST_SUB_URL" <<'PY'
-import re, sys
-url=sys.argv[1]; p="config.yaml"; s=open(p).read()
-s=re.sub(r'(?m)^(subscription:\n(?:.*\n)*?\s*url:).*$', r'\1 "%s"' % url, s, count=1)
-open(p,"w").write(s)
-PY
+  sed -i.bak "s|^  url: \"\".*|  url: \"${MOAV_TEST_SUB_URL}\"|" config.yaml
+  rm -f config.yaml.bak
 fi
 
 # --- 2. bring the stack up ---------------------------------------------------
@@ -94,13 +94,25 @@ done
 log "parsed $n endpoint(s):"
 jq -r '.[] | "  \(.protocol)\t\(.id)"' "$ART/endpoints.json" 2>/dev/null || true
 
-# --- 4. built-in probe: ≥1 endpoint must validate (tunnel + TLS) -------------
-log "probing endpoints via /api/probe…"
-curl -fsS -X POST "$API/api/probe" -o "$ART/probe.json" 2>/dev/null \
-  || curl -fsS "$API/api/probe" -o "$ART/probe.json" 2>/dev/null || true
-oks=$(jq '[.. | objects | select(.status? == "ok")] | length' "$ART/probe.json" 2>/dev/null || echo 0)
-log "probe reports $oks endpoint(s) ok"
-[[ "${oks:-0}" -ge 1 ]] || fail "no endpoint validated (probe found 0 ok) — server down or bundle stale?"
+# --- 4. probe (async) then poll endpoints for status ------------------------
+# POST /api/probe returns 202 immediately and probes in a goroutine; results
+# land as each endpoint's status. Poll until ≥1 is "ok" (tunnels take a moment;
+# DNS-tunnel protocols are the slowest).
+log "triggering probe + waiting for an endpoint to validate…"
+curl -fsS -X POST "$API/api/probe" >/dev/null 2>&1 || true
+oks=0
+for i in $(seq 1 40); do
+  curl -fsS "$API/api/endpoints" -o "$ART/endpoints.json" 2>/dev/null || true
+  oks=$(jq '[.[] | select(.status == "ok")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  settled=$(jq '[.[] | select(.status != "unknown")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  [[ "${oks:-0}" -ge 1 ]] && break
+  # every endpoint reported a (non-ok) verdict and none is ok → stop waiting
+  [[ "${settled:-0}" -ge "${n:-1}" && $i -ge 5 ]] && break
+  sleep 3
+done
+log "probe result: $oks/$n endpoint(s) ok"
+jq -r '.[] | "  \(.protocol)\t\(.status)\t\(.latency_ms)ms"' "$ART/endpoints.json" 2>/dev/null || true
+[[ "${oks:-0}" -ge 1 ]] || fail "no endpoint validated (0 ok) — server down, bundle stale, or a client-side gap"
 
 # --- 5. exit-IP: a fetch through :1080 must egress from the SERVER -----------
 log "checking the exit IP through SOCKS5 $SOCKS…"
