@@ -98,13 +98,13 @@ log "waiting for endpoints to be parsed from the bundle…"
 n=0
 for i in $(seq 1 30); do
   curl -fsS "$API/api/endpoints" -o "$ART/endpoints.json" 2>/dev/null || true
-  n=$(jq 'length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  n=$(jq '.endpoints | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
   [[ "${n:-0}" -ge 1 ]] && break
   sleep 2
 done
 [[ "${n:-0}" -ge 1 ]] || fail "no endpoints parsed from the provided bundle"
 log "parsed $n endpoint(s):"
-jq -r '.[] | "  \(.protocol)\t\(.id)"' "$ART/endpoints.json" 2>/dev/null || true
+jq -r '.endpoints[] | "  \(.Protocol)\t\(.ID)"' "$ART/endpoints.json" 2>/dev/null || true
 
 # --- 4. probe (async) then poll endpoints for status ------------------------
 # POST /api/probe returns 202 immediately and probes in a goroutine; results
@@ -115,15 +115,15 @@ curl -fsS -X POST "$API/api/probe" >/dev/null 2>&1 || true
 oks=0
 for i in $(seq 1 40); do
   curl -fsS "$API/api/endpoints" -o "$ART/endpoints.json" 2>/dev/null || true
-  oks=$(jq '[.[] | select(.status == "ok")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
-  settled=$(jq '[.[] | select(.status != "unknown")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  oks=$(jq '[.endpoints[] | select(.Status == "ok")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  settled=$(jq '[.endpoints[] | select(.Status != "unknown")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
   [[ "${oks:-0}" -ge 1 ]] && break
   # every endpoint reported a (non-ok) verdict and none is ok → stop waiting
   [[ "${settled:-0}" -ge "${n:-1}" && $i -ge 5 ]] && break
   sleep 3
 done
 log "probe result: $oks/$n endpoint(s) ok"
-jq -r '.[] | "  \(.protocol)\t\(.status)\t\(.latency_ms)ms"' "$ART/endpoints.json" 2>/dev/null || true
+jq -r '.endpoints[] | "  \(.Protocol)\t\(.Status)\t\(.LatencyMs)ms"' "$ART/endpoints.json" 2>/dev/null || true
 [[ "${oks:-0}" -ge 1 ]] || fail "no endpoint validated (0 ok) — server down, bundle stale, or a client-side gap"
 
 # --- 5. exit-IP: a fetch through :1080 must egress from the SERVER -----------
