@@ -26,11 +26,35 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: go test (race)
-        run: go test -race -count=1 ./...
+      - name: golangci-lint (warn-only)
+        # Non-blocking to start (like the shellcheck step) — surfaces findings
+        # without gating on pre-existing style. Flip to blocking once the
+        # backlog is clean.
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: proxy-core
+
+      - name: go test (race + coverage)
+        run: go test -race -count=1 -covermode=atomic -coverprofile=cover.out ./...
+
+      - name: coverage summary
+        run: |
+          go tool cover -func=cover.out | tail -1
+          echo "--- per-package ---"
+          go tool cover -func=cover.out | awk '{print $1, $3}' | sed 's|github.com/[^/]*/[^/]*/proxy-core/||' | sort -u | tail -40
 
       - name: go build
         run: go build ./...
+
+      - name: upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: proxy-core/cover.out
+          if-no-files-found: ignore
 
   web-ui:
     name: web-ui
@@ -47,6 +71,9 @@ jobs:
           cache-dependency-path: web-ui/package-lock.json
 
       - run: npm ci
+
+      - name: vitest (unit tests)
+        run: npm test
 
       - name: tsc + vite build
         run: npm run build
@@ -70,3 +97,16 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
           shellcheck --severity=warning install.sh moav-client || true
+
+  compose:
+    name: docker compose validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose config
+        run: |
+          # Validate the stack definition parses + interpolates. Seed a .env so
+          # variable interpolation resolves (values are irrelevant here).
+          [ -f .env ] || cp .env.example .env 2>/dev/null || true
+          docker compose config >/dev/null && echo "docker-compose.yml is valid"

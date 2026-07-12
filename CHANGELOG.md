@@ -5,6 +5,28 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Testing
+- **Unit tests for the previously-untested Go packages** — `balancer` (0→57%:
+  strategy selection, priority ordering, weighted distribution, stats/flows),
+  `state` (0→75%: save/load round-trip, missing/corrupt files), `cmd` (0→37%:
+  the hand-rolled subscription/YAML field extractor + list output), `sidecars`
+  (0→93%: enabled-set→endpoint mapping + every config writer), and a big lift to
+  the sing-box generator (46→88%). The sing-box tests double as a **protocol
+  parity guard** (`singbox/parity_test.go`): each protocol's outbound shape is
+  pinned, and the Xray-only transports (xhttp/splithttp/raw) are asserted to be
+  rejected so they route to the xray core.
+- **web-ui unit tests** — adopt **Vitest** + Testing Library (there were none);
+  cover the display-label and status-color helpers. `npm test` / `test:coverage`.
+- **`docs/PROTOCOL-PARITY.md`** — audit of which MoaV-server protocols the client
+  can connect with (13 full, 2 partial) and the hard gaps (wstunnel, XDNS,
+  GooseRelay, Snowflake; Slipstream stub; dnstt config not generated).
+
+### CI
+- Wire the new tests into `.github/workflows/ci.yml`: `vitest` on web-ui, Go
+  test with `-coverprofile` + a printed coverage summary (uploaded as an
+  artifact), `golangci-lint` (warn-only for now), and a `docker compose config`
+  validation job.
+
 ### Fixed
 - `moavc stats` / `probe` / `status` no longer fail with `401` once a dashboard
   password is set (e.g. after exposing on the LAN) — the wrapper now sends the
