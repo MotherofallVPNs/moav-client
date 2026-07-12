@@ -45,7 +45,13 @@ fail() { printf '\033[0;31m[e2e] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 cp config.yaml.example config.yaml
 if [[ -n "${MOAV_TEST_BUNDLE:-}" ]]; then
   mkdir -p data/e2e-bundle
-  unzip -o -q "$MOAV_TEST_BUNDLE" -d data/e2e-bundle
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -o -q "$MOAV_TEST_BUNDLE" -d data/e2e-bundle
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -m zipfile -e "$MOAV_TEST_BUNDLE" data/e2e-bundle
+  else
+    fail "need 'unzip' or python3 on the runner to extract the bundle"
+  fi
   [[ -f data/e2e-bundle/subscription.txt ]] \
     || fail "bundle has no subscription.txt (is it a MoaV user bundle?)"
   # WireGuard / AmneziaWG come as their own .conf files (one endpoint each).
