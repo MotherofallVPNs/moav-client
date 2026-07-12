@@ -26,6 +26,12 @@ All notable changes to moav-client are documented here. Format loosely follows
   test with `-coverprofile` + a printed coverage summary (uploaded as an
   artifact), `golangci-lint` (warn-only for now), and a `docker compose config`
   validation job.
+- **Live e2e** (`.github/workflows/e2e.yml` + `tests/e2e-client.sh`) — on a
+  self-hosted runner, brings the client stack up against a **provided MoaV
+  server bundle** (secret) and asserts the endpoints parse, `/api/probe`
+  validates ≥1, and a fetch through SOCKS5 `:1080` egresses from the server's IP
+  (not the runner's). Runner setup + the planned cross-repo "server on the box
+  mints a fresh bundle per run" flow: `docs/devdocs/E2E-TESTING.md`.
 
 ### Removed
 - **Dead Slipstream sidecar stub** — it had no compose service and, when
