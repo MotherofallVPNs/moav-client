@@ -136,7 +136,7 @@ verify against a known operator pubkey.
 
 ## Open work
 
-- [ ] Server-side adoption in shayanb/MoaV (issuing `moav://` URLs
+- [ ] Server-side adoption in MotherofallVPNs/moav (issuing `moav://` URLs
       alongside the legacy URIs).
 - [ ] `moav-client bundle <subscription.txt>` CLI subcommand that
       collapses an N-URI subscription back into one or more bundles

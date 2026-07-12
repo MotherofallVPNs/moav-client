@@ -6,7 +6,7 @@
 
 **[English](README.md)** | فارسی
 
-کلاینتی برای سرورهای **[MoaV — مادر همه‌ی VPNها](https://github.com/shayanb/MoaV)**. یک باندل اشتراک چندپروتکلی را می‌خواند، رمزنگاری واقعی هر پروتکل را به sing-box و مجموعه‌ای از sidecarهای اختیاری (MasterDNS، AmneziaWG، Psiphon، TrustTunnel، Tor) واگذار می‌کند، تأخیر هر endpoint را به‌صورت سرتاسری از داخل تونل اندازه می‌گیرد، بار را روی مجموعه‌ی سالم پخش می‌کند، و یک پروکسی محلی واحد SOCKS5 / HTTP CONNECT ارائه می‌دهد. یک داشبورد React با ظاهری هماهنگ با پنل ادمین MoaV دید زنده‌ای از سلامت endpointها، پهنای‌باند هر پروتکل، ویرایش قوانین پلاگین و لاگ زنده می‌دهد.
+کلاینتی برای سرورهای **[MoaV — مادر همه‌ی VPNها](https://github.com/MotherofallVPNs/moav)**. یک باندل اشتراک چندپروتکلی را می‌خواند، رمزنگاری واقعی هر پروتکل را به sing-box و مجموعه‌ای از sidecarهای اختیاری (MasterDNS، AmneziaWG، Psiphon، TrustTunnel، Tor) واگذار می‌کند، تأخیر هر endpoint را به‌صورت سرتاسری از داخل تونل اندازه می‌گیرد، بار را روی مجموعه‌ی سالم پخش می‌کند، و یک پروکسی محلی واحد SOCKS5 / HTTP CONNECT ارائه می‌دهد. یک داشبورد React با ظاهری هماهنگ با پنل ادمین MoaV دید زنده‌ای از سلامت endpointها، پهنای‌باند هر پروتکل، ویرایش قوانین پلاگین و لاگ زنده می‌دهد.
 
 <!-- screenshot: dashboard overview (Endpoints tab) -->
 <!-- ![moav-client dashboard](docs/assets/dashboard.png) -->

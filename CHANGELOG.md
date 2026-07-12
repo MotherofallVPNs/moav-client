@@ -165,7 +165,7 @@ network-exposure controls, and the ability to add sources without a bundle.
 
 ## [1.0.0] — 2026-06-05
 
-First public release. A local client for [MoaV](https://github.com/shayanb/MoaV)
+First public release. A local client for [MoaV](https://github.com/MotherofallVPNs/moav)
 servers: ingests a multi-protocol subscription bundle, delegates protocol
 cryptography to sing-box + xray and a stack of optional sidecars, probes every
 endpoint end-to-end, load-balances across the healthy set, and exposes one
