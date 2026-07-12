@@ -1,0 +1,77 @@
+name: e2e
+
+# Live end-to-end test: bring the moav-client stack up against a REAL MoaV
+# server bundle and prove traffic is tunnelled (endpoints parse → /api/probe
+# validates → a fetch through SOCKS5 :1080 exits from the server's IP).
+#
+# NOT on the per-PR path — it needs Docker, the ~11-image client stack, and a
+# reachable MoaV server. Runs on a SELF-HOSTED runner (label `moav-client-e2e`).
+# Setup + the cross-repo "runner keeps a server up" plan: docs/devdocs/E2E-TESTING.md
+on:
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: "Dump client logs on completion"
+        type: boolean
+        default: false
+  release:
+    types: [published]
+
+concurrency:
+  group: moav-client-e2e-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: [self-hosted, moav-client-e2e]
+    timeout-minutes: 40
+    env:
+      # A subscription/bundle for a fully-running MoaV test server, plus that
+      # server's egress IP. Provide EITHER a URL or a base64 bundle secret.
+      MOAV_TEST_SUB_URL: ${{ secrets.MOAV_TEST_SUB_URL }}
+      MOAV_TEST_BUNDLE_B64: ${{ secrets.MOAV_TEST_BUNDLE_B64 }}
+      MOAV_TEST_EXIT_IP: ${{ secrets.MOAV_TEST_EXIT_IP }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight
+        run: |
+          docker --version && docker compose version
+          test -n "$MOAV_TEST_SUB_URL" -o -n "$MOAV_TEST_BUNDLE_B64" \
+            || { echo "::error::set secret MOAV_TEST_SUB_URL or MOAV_TEST_BUNDLE_B64"; exit 1; }
+
+      - name: Materialise the test bundle (if provided as base64)
+        if: env.MOAV_TEST_BUNDLE_B64 != ''
+        run: |
+          echo "$MOAV_TEST_BUNDLE_B64" | base64 -d > /tmp/moav-e2e-bundle.zip
+          echo "MOAV_TEST_BUNDLE=/tmp/moav-e2e-bundle.zip" >> "$GITHUB_ENV"
+
+      - name: Run the client e2e
+        run: ART_DIR="$PWD/e2e-artifacts" bash tests/e2e-client.sh
+
+      - name: Client logs (on failure or when verbose)
+        if: failure() || inputs.verbose
+        run: |
+          mkdir -p e2e-artifacts
+          docker compose logs --no-color > e2e-artifacts/compose-logs.txt 2>&1 || true
+          docker compose ps 2>&1 || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: moav-client-e2e
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+
+      - name: Teardown (reclaim workspace)
+        if: always()
+        run: |
+          docker compose down -v 2>/dev/null || true
+          rm -f config.yaml /tmp/moav-e2e-bundle.zip data/e2e-bundle.zip 2>/dev/null || true
+          # MoaV/client containers can leave root-owned files in bind mounts;
+          # hand the workspace back so the next checkout can clean it.
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE" 2>/dev/null || true
