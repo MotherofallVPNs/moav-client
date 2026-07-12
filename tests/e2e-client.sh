@@ -64,6 +64,10 @@ PY
 fi
 
 # --- 2. bring the stack up ---------------------------------------------------
+# docker-compose.yml declares `env_file: .env` (and bind-mounts ./.env), so
+# compose refuses to start without it. Seed from the example (values are
+# irrelevant for a loopback e2e run).
+[[ -f .env ]] || cp .env.example .env 2>/dev/null || touch .env
 log "bringing the client stack up…"
 ${COMPOSE_UP:-docker compose up -d --build}
 
