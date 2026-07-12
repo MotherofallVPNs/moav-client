@@ -37,8 +37,8 @@ local SOCKS5 the balancer dials:
 | MasterDNS | ✅ | sidecar `:5300` | bundle `masterdns-instructions.txt` → `writeMasterDNS` |
 | TrustTunnel | ✅ | sidecar `:5600` | bundle `trusttunnel.toml` → `writeTrustTunnel` |
 | Conduit (Psiphon) | 🟡 | sidecar `:5400` | Psiphon connectivity works; ships anonymous channel, not the in-app "Conduit" proxy specifically |
-| dnstt | 🟡 | sidecar `:5301` | **GAP: no `writeDNSTT` config generator** — the container exists but is never wired from the bundle |
-| Slipstream | ❌ | — | **GAP: declared-but-unwired stub** — config toggle + manager metadata exist, but no compose service and no config generator |
+| dnstt | ❌ | — | **GAP (bigger than it looks): the `dns-tunnels` sidecar Dockerfile is a mislabeled *MasterDNS* copy** (runs the `masterdns` binary, header comment and all), not a dnstt client. Needs a real dnstt-client sidecar container + a `writeDNSTT` config generator — feature work, not a configgen one-liner |
+| Slipstream | — | — | **Removed** the dead stub in this PR (it had no compose service and dialed a nonexistent `slipstream:5302`). Re-add as a real sidecar if demand warrants |
 | wstunnel (WG-over-wss) | ❌ | — | **GAP: no client path anywhere** |
 | XDNS (Xray mKCP over DNS) | ❌ | — | **GAP: no client path anywhere** |
 | GooseRelay | ❌ | — | **GAP: no client path anywhere** |
@@ -49,16 +49,19 @@ Client-only extras (supported by the client, not in the server roster): **VMess*
 
 ## Summary
 
-- **13 protocols at full parity**, 2 partial (dnstt, Conduit/Psiphon).
-- **4 hard gaps** with no client path: **wstunnel, XDNS, GooseRelay, Snowflake**.
-- **1 stub**: **Slipstream** (declared, unwired).
+- **13 protocols at full parity**, 1 partial (Conduit/Psiphon).
+- **5 hard gaps** with no client path: **wstunnel, XDNS, GooseRelay, Snowflake,
+  dnstt** (its sidecar is a mislabeled MasterDNS copy — see the table).
+- **Slipstream** dead stub was **removed** in this PR.
 
-## Recommended follow-ups (feature work — separate cards, not the testing PR)
+## Recommended follow-ups (feature work — separate cards)
 
-1. **Wire dnstt** — add `writeDNSTT` to `sidecars/configgen.go` so the existing
-   `dns-tunnels` container is configured from the bundle. Lowest-effort win.
-2. **Finish or remove Slipstream** — add the compose service + config generator,
-   or drop the dead toggle to stop it dialing a nonexistent host.
+1. **Build a real dnstt sidecar** — the `dns-tunnels` container currently runs the
+   MasterDNS binary, not dnstt. Needs a proper dnstt-client image + a `writeDNSTT`
+   generator (domain + server pubkey + DoH resolver from the bundle). Then it's a
+   real 14th protocol.
+2. ~~Finish or remove Slipstream~~ — **done** (removed; re-add as a real sidecar if
+   demand warrants).
 3. **wstunnel client** — WireGuard-over-`wss://` with the per-install upgrade-path
    secret the server now emits (server #139). Highest-value gap for censored nets.
 4. **XDNS / GooseRelay / Snowflake** — evaluate demand; each needs a dedicated

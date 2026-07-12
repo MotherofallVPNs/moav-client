@@ -46,7 +46,6 @@ const TAG_COLOR: Record<string, string> = {
   psiphon: "#a3e635",
   tor: "#818cf8",
   dnstt: "#facc15",
-  slipstream: "#fb923c",
 };
 
 function Tags({ tags }: { tags?: string[] }) {

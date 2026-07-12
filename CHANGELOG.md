@@ -27,6 +27,13 @@ All notable changes to moav-client are documented here. Format loosely follows
   artifact), `golangci-lint` (warn-only for now), and a `docker compose config`
   validation job.
 
+### Removed
+- **Dead Slipstream sidecar stub** — it had no compose service and, when
+  enabled, dialed a nonexistent `slipstream:5302` host. Removed the config
+  toggle, the manager entry, and the UI label/color leftovers. (The parity
+  audit also found the `dns-tunnels` "dnstt" sidecar is a mislabeled MasterDNS
+  copy — a real dnstt client is a separate follow-up. See `docs/PROTOCOL-PARITY.md`.)
+
 ### Fixed
 - `moavc stats` / `probe` / `status` no longer fail with `401` once a dashboard
   password is set (e.g. after exposing on the LAN) — the wrapper now sends the

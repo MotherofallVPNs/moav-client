@@ -30,7 +30,6 @@ func (m *SidecarManager) EnabledEndpoints() []subscription.Endpoint {
 	entries := []sidecarMeta{
 		{"masterdns", "masterdns", 5300, prio(m.Config.MasterDNS, 1), m.Config.MasterDNS},
 		{"dnstt", "dns-tunnels", 5301, prio(m.Config.DNSTT, 5), m.Config.DNSTT},
-		{"slipstream", "slipstream", 5302, prio(m.Config.Slipstream, 5), m.Config.Slipstream},
 		{"psiphon", "psiphon", 5400, prio(m.Config.Psiphon, 5), m.Config.Psiphon},
 		{"tor", "tor", 9150, prio(m.Config.Tor, 5), m.Config.Tor},
 		{"amneziawg", "amneziawg", 5500, prio(m.Config.AmneziaWG, 5), m.Config.AmneziaWG},
