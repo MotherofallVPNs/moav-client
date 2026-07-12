@@ -75,6 +75,11 @@ else
   rm -f config.yaml.bak
 fi
 
+# Tunnel-only: kill the involuntary direct fallback so a downed/undialable
+# endpoint can't make the exit-IP check pass on the runner's own IP. With this,
+# a fetch through :1080 either egresses from the server or fails cleanly.
+sed -i.bak 's|^  block_direct: false|  block_direct: true|' config.yaml && rm -f config.yaml.bak
+
 # --- 2. bring the stack up ---------------------------------------------------
 # docker-compose.yml declares `env_file: .env` (and bind-mounts ./.env), so
 # compose refuses to start without it. Seed from the example (values are
@@ -129,20 +134,29 @@ jq -r '.endpoints[] | "  \(.Protocol)\t\(.Status)\t\(.LatencyMs)ms"' "$ART/endpo
 # --- 5. exit-IP: a fetch through :1080 must egress from the SERVER -----------
 log "checking the exit IP through SOCKS5 $SOCKS…"
 runner_ip=$(curl -fsS --max-time 15 https://api.ipify.org 2>/dev/null || echo "unknown")
-got=""
-for ep in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com"; do
-  got=$(curl -fsS --max-time 25 --socks5-hostname "$SOCKS" "$ep" 2>/dev/null | tr -d '[:space:]' || true)
-  [[ -n "$got" ]] && break
+# Retry: the balancer may need a couple of failover attempts, and probing keeps
+# settling. block_direct=true means a fetch can't leak out the runner IP — it
+# either egresses from the server or fails. Accept on the expected match (or,
+# with no expected IP, on any proxied result).
+got=""; matched=""
+for attempt in $(seq 1 15); do
+  for ep in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com"; do
+    got=$(curl -fsS --max-time 20 --socks5-hostname "$SOCKS" "$ep" 2>/dev/null | tr -d '[:space:]' || true)
+    [[ -n "$got" ]] && break
+  done
+  if [[ -n "$EXIT_IP" ]]; then
+    [[ "$got" == "$EXIT_IP" ]] && { matched=1; break; }
+  else
+    [[ -n "$got" && "$got" != "$runner_ip" ]] && { matched=1; break; }
+  fi
+  log "  attempt $attempt: exit=${got:-<none>} (want ${EXIT_IP:-proxied≠$runner_ip}) — retrying…"
+  sleep 5
 done
-[[ -n "$got" ]] || fail "could not fetch an exit IP through the tunnel"
-log "runner IP=$runner_ip   tunnel exit IP=$got"
-
-if [[ -n "$EXIT_IP" ]]; then
-  [[ "$got" == "$EXIT_IP" ]] || fail "tunnel exit IP $got != expected server IP $EXIT_IP"
-  log "exit IP matches the server ✓"
-else
-  [[ "$got" != "$runner_ip" ]] || fail "tunnel exit IP equals the runner IP — traffic is NOT being proxied"
-  log "exit IP differs from the runner (proxied) ✓  — set MOAV_TEST_EXIT_IP to assert the exact server IP"
-fi
+log "runner IP=$runner_ip   tunnel exit IP=${got:-<none>}"
+[[ -n "$matched" ]] || {
+  if [[ -n "$EXIT_IP" ]]; then fail "tunnel exit IP ${got:-<none>} != expected server IP $EXIT_IP"
+  else fail "no proxied exit IP through the tunnel (got ${got:-<none>}, runner $runner_ip)"; fi
+}
+log "exit IP confirms tunnelled egress ✓"
 
 log "e2e PASSED"
