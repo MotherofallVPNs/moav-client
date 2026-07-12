@@ -52,15 +52,21 @@ if [[ -n "${MOAV_TEST_BUNDLE:-}" ]]; then
   else
     fail "need 'unzip' or python3 on the runner to extract the bundle"
   fi
-  [[ -f data/e2e-bundle/subscription.txt ]] \
-    || fail "bundle has no subscription.txt (is it a MoaV user bundle?)"
+  # Locate subscription.txt wherever it landed — a bundle may be flat or nested
+  # under a top-level dir depending on how it was zipped.
+  sub=$(find data/e2e-bundle -type f -name subscription.txt | head -1)
+  if [[ -z "$sub" ]]; then
+    echo "extracted files:"; find data/e2e-bundle -type f | sed 's/^/  /' | head -40
+    fail "bundle has no subscription.txt (is it a MoaV user bundle?)"
+  fi
+  bdir=$(dirname "$sub")
   # WireGuard / AmneziaWG come as their own .conf files (one endpoint each).
   wg=""
   for f in wireguard.conf amneziawg.conf; do
-    [[ -f "data/e2e-bundle/$f" ]] && wg="${wg}\"data/e2e-bundle/$f\", "
+    [[ -f "$bdir/$f" ]] && wg="${wg}\"$bdir/$f\", "
   done
-  log "using bundle: subscription.txt + [$(echo "$wg" | sed 's/, $//')]"
-  sed -i.bak 's|^  file: "".*|  file: "data/e2e-bundle/subscription.txt"|' config.yaml
+  log "using bundle: $sub + [${wg%, }]"
+  sed -i.bak "s|^  file: \"\".*|  file: \"$sub\"|" config.yaml
   sed -i.bak "s|^  wireguard_files: \[\].*|  wireguard_files: [${wg%, }]|" config.yaml
   rm -f config.yaml.bak
 else
