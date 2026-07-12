@@ -59,6 +59,14 @@ Provide **one** of the bundle secrets. To make a bundle: on the MoaV server,
 subscription URL. Use a **throwaway** test server, not production — the bundle
 holds working credentials and lives in CI secrets.
 
+> **Strip the bundle first** — a full bundle's `README.html` (~185 KB) + QR PNGs
+> blow past GitHub's ~64 KB secret limit. The importer ignores them, so drop
+> them and re-zip the config files only (~16 KB → ~21 KB base64):
+> ```bash
+> mkdir min && (cd min && unzip -q ../bundle.zip && rm -f README.html ./*.png && zip -qr ../min.zip .)
+> base64 -i min.zip | tr -d '\n' | pbcopy   # macOS; Linux: base64 -w0 min.zip
+> ```
+
 ## 3. Run it
 
 - **Manually:** Actions → **e2e** → Run workflow (tick *verbose* to always dump
