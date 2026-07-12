@@ -51,7 +51,7 @@ repo → **Settings → Secrets and variables → Actions**:
 | Secret | Value |
 |---|---|
 | `MOAV_TEST_SUB_URL` | *(option A)* a `moav://` / subscription URL for a fully-running MoaV **test** server |
-| `MOAV_TEST_BUNDLE_B64` | *(option B)* `base64 -w0 bundle.zip` — a MoaV user bundle for that test server |
+| `MOAV_TEST_BUNDLE_B64` | *(option B)* base64 of a MoaV user bundle `.zip` for that test server, no newlines — Linux: `base64 -w0 bundle.zip`; macOS: `base64 -i bundle.zip \| tr -d '\n'` (add `\| pbcopy` to copy it) |
 | `MOAV_TEST_EXIT_IP` | that server's public egress IP — the exact-match assertion. Omit to only assert "proxied ≠ runner IP" |
 
 Provide **one** of the bundle secrets. To make a bundle: on the MoaV server,
