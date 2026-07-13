@@ -8,6 +8,8 @@ name: e2e
 # reachable MoaV server. Runs on a SELF-HOSTED runner (label `moav-client-e2e`).
 # Setup + the cross-repo "runner keeps a server up" plan: docs/devdocs/E2E-TESTING.md
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       verbose:
