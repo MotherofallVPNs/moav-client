@@ -14,7 +14,6 @@ const PRETTY: Record<string, string> = {
   psiphon: "Psiphon",
   tor: "Tor",
   dnstt: "DNSTT",
-  slipstream: "Slipstream",
   hysteria2: "Hysteria2",
   vless: "VLESS",
   vmess: "VMess",

@@ -40,30 +40,51 @@ fail() { printf '\033[0;31m[e2e] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # --- 1. configure the source -------------------------------------------------
 # Start from the example config, then point the subscription at the provided
-# bundle/URL. A file bundle is copied into data/ and referenced by path.
-[[ -f config.yaml ]] || cp config.yaml.example config.yaml
+# bundle/URL. NB: subscription.file wants a *subscription.txt* (a list of URIs),
+# NOT a bundle .zip — so we unzip the bundle and reference the files inside.
+cp config.yaml.example config.yaml
 if [[ -n "${MOAV_TEST_BUNDLE:-}" ]]; then
-  mkdir -p data
-  cp "$MOAV_TEST_BUNDLE" data/e2e-bundle.zip
-  log "using bundle file data/e2e-bundle.zip"
-  # subscription.file accepts a bundle zip; the importer expands it on start.
-  python3 - <<'PY'
-import re, io, sys
-p="config.yaml"; s=open(p).read()
-s=re.sub(r'(?m)^(subscription:\n(?:.*\n)*?\s*file:).*$', r'\1 "data/e2e-bundle.zip"', s, count=1)
-open(p,"w").write(s)
-PY
+  mkdir -p data/e2e-bundle
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -o -q "$MOAV_TEST_BUNDLE" -d data/e2e-bundle
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -m zipfile -e "$MOAV_TEST_BUNDLE" data/e2e-bundle
+  else
+    fail "need 'unzip' or python3 on the runner to extract the bundle"
+  fi
+  # Locate subscription.txt wherever it landed — a bundle may be flat or nested
+  # under a top-level dir depending on how it was zipped.
+  sub=$(find data/e2e-bundle -type f -name subscription.txt | head -1)
+  if [[ -z "$sub" ]]; then
+    echo "extracted files:"; find data/e2e-bundle -type f | sed 's/^/  /' | head -40
+    fail "bundle has no subscription.txt (is it a MoaV user bundle?)"
+  fi
+  bdir=$(dirname "$sub")
+  # WireGuard / AmneziaWG come as their own .conf files (one endpoint each).
+  wg=""
+  for f in wireguard.conf amneziawg.conf; do
+    [[ -f "$bdir/$f" ]] && wg="${wg}\"$bdir/$f\", "
+  done
+  log "using bundle: $sub + [${wg%, }]"
+  sed -i.bak "s|^  file: \"\".*|  file: \"$sub\"|" config.yaml
+  sed -i.bak "s|^  wireguard_files: \[\].*|  wireguard_files: [${wg%, }]|" config.yaml
+  rm -f config.yaml.bak
 else
   log "using subscription URL from MOAV_TEST_SUB_URL"
-  python3 - "$MOAV_TEST_SUB_URL" <<'PY'
-import re, sys
-url=sys.argv[1]; p="config.yaml"; s=open(p).read()
-s=re.sub(r'(?m)^(subscription:\n(?:.*\n)*?\s*url:).*$', r'\1 "%s"' % url, s, count=1)
-open(p,"w").write(s)
-PY
+  sed -i.bak "s|^  url: \"\".*|  url: \"${MOAV_TEST_SUB_URL}\"|" config.yaml
+  rm -f config.yaml.bak
 fi
 
+# Tunnel-only: kill the involuntary direct fallback so a downed/undialable
+# endpoint can't make the exit-IP check pass on the runner's own IP. With this,
+# a fetch through :1080 either egresses from the server or fails cleanly.
+sed -i.bak 's|^  block_direct: false|  block_direct: true|' config.yaml && rm -f config.yaml.bak
+
 # --- 2. bring the stack up ---------------------------------------------------
+# docker-compose.yml declares `env_file: .env` (and bind-mounts ./.env), so
+# compose refuses to start without it. Seed from the example (values are
+# irrelevant for a loopback e2e run).
+[[ -f .env ]] || cp .env.example .env 2>/dev/null || touch .env
 log "bringing the client stack up…"
 ${COMPOSE_UP:-docker compose up -d --build}
 
@@ -82,39 +103,60 @@ log "waiting for endpoints to be parsed from the bundle…"
 n=0
 for i in $(seq 1 30); do
   curl -fsS "$API/api/endpoints" -o "$ART/endpoints.json" 2>/dev/null || true
-  n=$(jq 'length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  n=$(jq '.endpoints | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
   [[ "${n:-0}" -ge 1 ]] && break
   sleep 2
 done
 [[ "${n:-0}" -ge 1 ]] || fail "no endpoints parsed from the provided bundle"
 log "parsed $n endpoint(s):"
-jq -r '.[] | "  \(.protocol)\t\(.id)"' "$ART/endpoints.json" 2>/dev/null || true
+jq -r '.endpoints[] | "  \(.Protocol)\t\(.ID)"' "$ART/endpoints.json" 2>/dev/null || true
 
-# --- 4. built-in probe: ≥1 endpoint must validate (tunnel + TLS) -------------
-log "probing endpoints via /api/probe…"
-curl -fsS -X POST "$API/api/probe" -o "$ART/probe.json" 2>/dev/null \
-  || curl -fsS "$API/api/probe" -o "$ART/probe.json" 2>/dev/null || true
-oks=$(jq '[.. | objects | select(.status? == "ok")] | length' "$ART/probe.json" 2>/dev/null || echo 0)
-log "probe reports $oks endpoint(s) ok"
-[[ "${oks:-0}" -ge 1 ]] || fail "no endpoint validated (probe found 0 ok) — server down or bundle stale?"
+# --- 4. probe (async) then poll endpoints for status ------------------------
+# POST /api/probe returns 202 immediately and probes in a goroutine; results
+# land as each endpoint's status. Poll until ≥1 is "ok" (tunnels take a moment;
+# DNS-tunnel protocols are the slowest).
+log "triggering probe + waiting for an endpoint to validate…"
+curl -fsS -X POST "$API/api/probe" >/dev/null 2>&1 || true
+oks=0
+for i in $(seq 1 40); do
+  curl -fsS "$API/api/endpoints" -o "$ART/endpoints.json" 2>/dev/null || true
+  oks=$(jq '[.endpoints[] | select(.Status == "ok")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  settled=$(jq '[.endpoints[] | select(.Status != "unknown")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  [[ "${oks:-0}" -ge 1 ]] && break
+  # every endpoint reported a (non-ok) verdict and none is ok → stop waiting
+  [[ "${settled:-0}" -ge "${n:-1}" && $i -ge 5 ]] && break
+  sleep 3
+done
+log "probe result: $oks/$n endpoint(s) ok"
+jq -r '.endpoints[] | "  \(.Protocol)\t\(.Status)\t\(.LatencyMs)ms"' "$ART/endpoints.json" 2>/dev/null || true
+[[ "${oks:-0}" -ge 1 ]] || fail "no endpoint validated (0 ok) — server down, bundle stale, or a client-side gap"
 
 # --- 5. exit-IP: a fetch through :1080 must egress from the SERVER -----------
 log "checking the exit IP through SOCKS5 $SOCKS…"
 runner_ip=$(curl -fsS --max-time 15 https://api.ipify.org 2>/dev/null || echo "unknown")
-got=""
-for ep in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com"; do
-  got=$(curl -fsS --max-time 25 --socks5-hostname "$SOCKS" "$ep" 2>/dev/null | tr -d '[:space:]' || true)
-  [[ -n "$got" ]] && break
+# Retry: the balancer may need a couple of failover attempts, and probing keeps
+# settling. block_direct=true means a fetch can't leak out the runner IP — it
+# either egresses from the server or fails. Accept on the expected match (or,
+# with no expected IP, on any proxied result).
+got=""; matched=""
+for attempt in $(seq 1 15); do
+  for ep in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com"; do
+    got=$(curl -fsS --max-time 20 --socks5-hostname "$SOCKS" "$ep" 2>/dev/null | tr -d '[:space:]' || true)
+    [[ -n "$got" ]] && break
+  done
+  if [[ -n "$EXIT_IP" ]]; then
+    [[ "$got" == "$EXIT_IP" ]] && { matched=1; break; }
+  else
+    [[ -n "$got" && "$got" != "$runner_ip" ]] && { matched=1; break; }
+  fi
+  log "  attempt $attempt: exit=${got:-<none>} (want ${EXIT_IP:-proxied≠$runner_ip}) — retrying…"
+  sleep 5
 done
-[[ -n "$got" ]] || fail "could not fetch an exit IP through the tunnel"
-log "runner IP=$runner_ip   tunnel exit IP=$got"
-
-if [[ -n "$EXIT_IP" ]]; then
-  [[ "$got" == "$EXIT_IP" ]] || fail "tunnel exit IP $got != expected server IP $EXIT_IP"
-  log "exit IP matches the server ✓"
-else
-  [[ "$got" != "$runner_ip" ]] || fail "tunnel exit IP equals the runner IP — traffic is NOT being proxied"
-  log "exit IP differs from the runner (proxied) ✓  — set MOAV_TEST_EXIT_IP to assert the exact server IP"
-fi
+log "runner IP=$runner_ip   tunnel exit IP=${got:-<none>}"
+[[ -n "$matched" ]] || {
+  if [[ -n "$EXIT_IP" ]]; then fail "tunnel exit IP ${got:-<none>} != expected server IP $EXIT_IP"
+  else fail "no proxied exit IP through the tunnel (got ${got:-<none>}, runner $runner_ip)"; fi
+}
+log "exit IP confirms tunnelled egress ✓"
 
 log "e2e PASSED"

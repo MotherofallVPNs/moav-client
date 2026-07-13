@@ -157,7 +157,6 @@ type SidecarEntry struct {
 type SidecarsConfig struct {
 	MasterDNS   SidecarEntry `yaml:"masterdns"`
 	DNSTT       SidecarEntry `yaml:"dnstt"`
-	Slipstream  SidecarEntry `yaml:"slipstream"`
 	Psiphon     SidecarEntry `yaml:"psiphon"`
 	Tor         SidecarEntry `yaml:"tor"`
 	AmneziaWG   SidecarEntry `yaml:"amneziawg"`

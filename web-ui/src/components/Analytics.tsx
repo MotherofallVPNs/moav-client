@@ -108,7 +108,6 @@ const PROTOCOL_COLORS: Record<string, string> = {
   tor:          "#818cf8", // indigo
   trusttunnel:  "#c084fc", // violet
   dnstt:        "#facc15", // yellow
-  slipstream:   "#fb923c", // bright orange
 
   // Catch-all for legacy / unknown.
   sidecar:      "#94a3b8", // slate
