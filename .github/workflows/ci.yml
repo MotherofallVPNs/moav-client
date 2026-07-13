@@ -26,6 +26,13 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: cross-compile (windows/darwin) — catch OS-specific breakage
+        # proxy-core is meant to build on Windows/macOS too (issue #7 was a
+        # Windows-only syscall breakage that the Linux build missed).
+        run: |
+          GOOS=windows GOARCH=amd64 go build ./...
+          GOOS=darwin  GOARCH=arm64 go build ./...
+
       - name: golangci-lint (warn-only)
         # Non-blocking to start (like the shellcheck step) — surfaces findings
         # without gating on pre-existing style. Flip to blocking once the
