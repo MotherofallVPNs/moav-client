@@ -5,6 +5,8 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.3.2] — 2026-07-13
+
 ### Testing
 - **Unit tests for the previously-untested Go packages** — `balancer` (0→57%:
   strategy selection, priority ordering, weighted distribution, stats/flows),
