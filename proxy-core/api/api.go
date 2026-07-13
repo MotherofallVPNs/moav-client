@@ -1104,7 +1104,9 @@ func makeTTLControl(ttl int) func(string, string, syscall.RawConn) error {
 	return func(network, address string, c syscall.RawConn) error {
 		var sockerr error
 		err := c.Control(func(fd uintptr) {
-			sockerr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, ttl)
+			// fd's socket-option type differs by OS (int on Unix,
+			// syscall.Handle on Windows) — setSocketTTL is platform-split.
+			sockerr = setSocketTTL(fd, ttl)
 		})
 		if err != nil {
 			return err

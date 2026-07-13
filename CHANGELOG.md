@@ -5,6 +5,9 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- **Build from source now works on Windows** ([#7](https://github.com/MotherofallVPNs/moav-client/issues/7)). `makeTTLControl` (the by-hand traceroute in `/api/diag`) called `syscall.SetsockoptInt(int(fd), …)`, but a socket fd is an `int` on Unix and a `syscall.Handle` on Windows — so `go build` failed on Windows with *"cannot use int(fd) … as syscall.Handle value"*. Split the setter into `api/ttl_{unix,windows}.go` behind build tags. CI now cross-compiles for `windows`/`darwin` so OS-specific breakage is caught.
+
 ## [1.3.2] — 2026-07-13
 
 ### Testing
