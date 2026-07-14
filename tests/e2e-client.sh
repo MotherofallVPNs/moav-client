@@ -35,6 +35,23 @@ ART="${ART_DIR:-.}"; mkdir -p "$ART"
 log()  { printf '\033[0;34m[e2e]\033[0m %s\n' "$*"; }
 fail() { printf '\033[0;31m[e2e] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# Redact a server IP/domain for logs: keep only first+last char (and the TLD for
+# domains), e.g. 203.0.113.9 -> 2…9, sub.example.com -> s…e.com. The raw values
+# are still used for the actual assertion — this only affects what's printed, so
+# a public CI log doesn't leak the test server's address.
+mask() {
+  local v="$1"
+  case "$v" in ""|"<none>"|unknown|"proxied"*) printf '%s' "$v"; return ;; esac
+  if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf '%s…%s' "${v:0:1}" "${v: -1}"
+  elif [[ "$v" == *.* ]]; then
+    local tld="${v##*.}" name="${v%.*}"
+    printf '%s…%s.%s' "${name:0:1}" "${name: -1}" "$tld"
+  else
+    printf '%s…%s' "${v:0:1}" "${v: -1}"
+  fi
+}
+
 [[ -n "${MOAV_TEST_SUB_URL:-}" || -n "${MOAV_TEST_BUNDLE:-}" ]] \
   || fail "provide MOAV_TEST_SUB_URL or MOAV_TEST_BUNDLE (a server bundle to connect through)"
 
@@ -109,7 +126,8 @@ for i in $(seq 1 30); do
 done
 [[ "${n:-0}" -ge 1 ]] || fail "no endpoints parsed from the provided bundle"
 log "parsed $n endpoint(s):"
-jq -r '.endpoints[] | "  \(.Protocol)\t\(.ID)"' "$ART/endpoints.json" 2>/dev/null || true
+jq -r '.endpoints[] | "\(.Protocol)\t\(.ID)"' "$ART/endpoints.json" 2>/dev/null \
+  | while IFS=$'\t' read -r proto id; do printf '  %s\t%s\n' "$proto" "$(mask "$id")"; done || true
 
 # --- 4. probe (async) then poll endpoints for status ------------------------
 # POST /api/probe returns 202 immediately and probes in a goroutine; results
@@ -149,13 +167,13 @@ for attempt in $(seq 1 15); do
   else
     [[ -n "$got" && "$got" != "$runner_ip" ]] && { matched=1; break; }
   fi
-  log "  attempt $attempt: exit=${got:-<none>} (want ${EXIT_IP:-proxied≠$runner_ip}) — retrying…"
+  log "  attempt $attempt: exit=$(mask "${got:-<none>}") (want ${EXIT_IP:+$(mask "$EXIT_IP")}${EXIT_IP:-proxied≠$(mask "$runner_ip")}) — retrying…"
   sleep 5
 done
-log "runner IP=$runner_ip   tunnel exit IP=${got:-<none>}"
+log "runner IP=$(mask "$runner_ip")   tunnel exit IP=$(mask "${got:-<none>}")"
 [[ -n "$matched" ]] || {
-  if [[ -n "$EXIT_IP" ]]; then fail "tunnel exit IP ${got:-<none>} != expected server IP $EXIT_IP"
-  else fail "no proxied exit IP through the tunnel (got ${got:-<none>}, runner $runner_ip)"; fi
+  if [[ -n "$EXIT_IP" ]]; then fail "tunnel exit IP $(mask "${got:-<none>}") != expected server IP $(mask "$EXIT_IP")"
+  else fail "no proxied exit IP through the tunnel (got $(mask "${got:-<none>}"), runner $(mask "$runner_ip"))"; fi
 }
 log "exit IP confirms tunnelled egress ✓"
 

@@ -16,6 +16,22 @@ on:
         description: "Dump client logs on completion"
         type: boolean
         default: false
+      bundle_b64:
+        description: "Base64 of a MoaV bundle .zip to test — overrides the secret. Make one on the server with: moav test generate <user>  (or: base64 -w0 bundle.zip). NOTE: dispatch inputs are visible in the run metadata — use the secret for a long-lived server."
+        type: string
+        default: ""
+      sub_url:
+        description: "Subscription / moav:// URL to test — overrides the secret"
+        type: string
+        default: ""
+      exit_ip:
+        description: "Expected server egress IP for the assertion — overrides the secret (leave empty to accept any proxied exit)"
+        type: string
+        default: ""
+      full_logs:
+        description: "Capture full per-container log snapshots as artifacts (even on success)"
+        type: boolean
+        default: false
   release:
     types: [published]
 
@@ -32,10 +48,12 @@ jobs:
     timeout-minutes: 40
     env:
       # A subscription/bundle for a fully-running MoaV test server, plus that
-      # server's egress IP. Provide EITHER a URL or a base64 bundle secret.
-      MOAV_TEST_SUB_URL: ${{ secrets.MOAV_TEST_SUB_URL }}
-      MOAV_TEST_BUNDLE_B64: ${{ secrets.MOAV_TEST_BUNDLE_B64 }}
-      MOAV_TEST_EXIT_IP: ${{ secrets.MOAV_TEST_EXIT_IP }}
+      # server's egress IP. A dispatch input (for ad-hoc testing of a deployed
+      # server) overrides the secret (the standing test server); on push/release
+      # the inputs are empty so the secrets are used.
+      MOAV_TEST_SUB_URL: ${{ inputs.sub_url || secrets.MOAV_TEST_SUB_URL }}
+      MOAV_TEST_BUNDLE_B64: ${{ inputs.bundle_b64 || secrets.MOAV_TEST_BUNDLE_B64 }}
+      MOAV_TEST_EXIT_IP: ${{ inputs.exit_ip || secrets.MOAV_TEST_EXIT_IP }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +61,7 @@ jobs:
         run: |
           docker --version && docker compose version
           test -n "$MOAV_TEST_SUB_URL" -o -n "$MOAV_TEST_BUNDLE_B64" \
-            || { echo "::error::set secret MOAV_TEST_SUB_URL or MOAV_TEST_BUNDLE_B64"; exit 1; }
+            || { echo "::error::provide a config: the bundle_b64 / sub_url dispatch input, or the MOAV_TEST_SUB_URL / MOAV_TEST_BUNDLE_B64 secret"; exit 1; }
 
       - name: Materialise the test bundle (if provided as base64)
         if: env.MOAV_TEST_BUNDLE_B64 != ''
@@ -54,12 +72,25 @@ jobs:
       - name: Run the client e2e
         run: ART_DIR="$PWD/e2e-artifacts" bash tests/e2e-client.sh
 
-      - name: Client logs (on failure or when verbose)
-        if: failure() || inputs.verbose
+      - name: Client logs (on failure, verbose, or full_logs)
+        if: failure() || inputs.verbose || inputs.full_logs
         run: |
           mkdir -p e2e-artifacts
           docker compose logs --no-color > e2e-artifacts/compose-logs.txt 2>&1 || true
-          docker compose ps 2>&1 || true
+          docker compose ps > e2e-artifacts/compose-ps.txt 2>&1 || true
+          if [ "${{ inputs.full_logs }}" = "true" ]; then
+            for c in $(docker compose ps --services 2>/dev/null); do
+              docker compose logs --no-color "$c" > "e2e-artifacts/log-$c.txt" 2>&1 || true
+            done
+          fi
+          # Best-effort: redact the known exit IP in the captured logs (first…last).
+          # The server DOMAIN can't be masked here (it isn't known to the workflow);
+          # e2e-client.sh masks it in the live console, and artifacts are repo-scoped.
+          if [ -n "$MOAV_TEST_EXIT_IP" ]; then
+            esc=$(printf '%s' "$MOAV_TEST_EXIT_IP" | sed 's/[.[\*^$]/\\&/g')
+            rep="$(printf '%s' "$MOAV_TEST_EXIT_IP" | cut -c1)…$(printf '%s' "$MOAV_TEST_EXIT_IP" | rev | cut -c1)"
+            sed -i "s/$esc/$rep/g" e2e-artifacts/*.txt 2>/dev/null || true
+          fi
 
       - name: Upload artifacts
         if: always()
