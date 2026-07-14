@@ -73,8 +73,21 @@ if [[ -n "${MOAV_TEST_BUNDLE:-}" ]]; then
   # under a top-level dir depending on how it was zipped.
   sub=$(find data/e2e-bundle -type f -name subscription.txt | head -1)
   if [[ -z "$sub" ]]; then
-    echo "extracted files:"; find data/e2e-bundle -type f | sed 's/^/  /' | head -40
-    fail "bundle has no subscription.txt (is it a MoaV user bundle?)"
+    # Some bundles omit subscription.txt (it's normally written alongside the
+    # rendered README). Synthesize it from the share-link files — base64 of the
+    # joined V2Ray-compatible URIs, the same format MoaV emits — so a text-only
+    # bundle still works.
+    uris=$(find data/e2e-bundle -type f -name '*.txt' \
+             -exec grep -ahE '^(vless|trojan|ss|hysteria2|anytls|vmess)://' {} + 2>/dev/null | sort -u || true)
+    anchor=$(find data/e2e-bundle -type f -name '*.txt' | head -1)
+    if [[ -n "$uris" && -n "$anchor" ]]; then
+      sub="$(dirname "$anchor")/subscription.txt"
+      printf '%s' "$uris" | base64 | tr -d '\n' > "$sub"
+      log "no subscription.txt in bundle — synthesized from $(printf '%s\n' "$uris" | grep -c .) share-link(s)"
+    else
+      echo "extracted files:"; find data/e2e-bundle -type f | sed 's/^/  /' | head -40
+      fail "bundle has no subscription.txt and no vless/trojan/ss/… share links to build one"
+    fi
   fi
   bdir=$(dirname "$sub")
   # WireGuard / AmneziaWG come as their own .conf files (one endpoint each).
