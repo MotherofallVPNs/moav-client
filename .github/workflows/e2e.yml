@@ -17,7 +17,7 @@ on:
         type: boolean
         default: false
       bundle_b64:
-        description: "Base64 of a MoaV bundle .zip to test — overrides the secret. Make one on the server with: moav test generate <user>  (or: base64 -w0 bundle.zip). NOTE: dispatch inputs are visible in the run metadata — use the secret for a long-lived server."
+        description: "Base64 of a MoaV bundle .zip to test — overrides the secret. Make one on the server with: moav user base64 <user>  (or: base64 -w0 bundle.zip). NOTE: dispatch inputs are visible in the run metadata — use the secret for a long-lived server."
         type: string
         default: ""
       sub_url:
