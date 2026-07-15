@@ -5,6 +5,9 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Internal
+- **Telegram release notifier** (`.github/workflows/telegram-notify.yml`) — auto-posts to the MoaV Telegram channel when a moav-client Release is published (labeled `moav-client` so it's distinct from server posts in the shared channel), and when an issue is labeled `announce`. Manual `workflow_dispatch` sends a test message or — with a `release_tag` — a real notification for a past release. Small `curl` to the Telegram Bot API; message built + HTML-escaped by `.github/scripts/telegram_format.py`. Mirrors the server notifier. Needs repo secrets `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`; skips cleanly when unset.
+
 ### Fixed
 - **Build from source now works on Windows** ([#7](https://github.com/MotherofallVPNs/moav-client/issues/7)). `makeTTLControl` (the by-hand traceroute in `/api/diag`) called `syscall.SetsockoptInt(int(fd), …)`, but a socket fd is an `int` on Unix and a `syscall.Handle` on Windows — so `go build` failed on Windows with *"cannot use int(fd) … as syscall.Handle value"*. Split the setter into `api/ttl_{unix,windows}.go` behind build tags. CI now cross-compiles for `windows`/`darwin` so OS-specific breakage is caught.
 
