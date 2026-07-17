@@ -6,8 +6,7 @@ English | **[فارسی](README-fa.md)**
 
 A client for **[MoaV — Mother of all VPNs](https://github.com/MotherofallVPNs/moav)** servers. It ingests a multi-protocol subscription bundle, delegates real protocol cryptography to sing-box plus a stack of optional sidecars (MasterDNS, AmneziaWG, Psiphon, TrustTunnel, Tor), latency-probes every endpoint end-to-end through its tunnel, load-balances across the healthy set, and exposes a single local SOCKS5 / HTTP CONNECT proxy. A React dashboard styled to match the MoaV admin panel gives live visibility into endpoint health, per-protocol throughput, plugin rule editing, and a streaming debug log.
 
-<!-- screenshot: dashboard overview (Endpoints tab) -->
-<!-- ![moav-client dashboard](docs/assets/dashboard.png) -->
+![moav-client dashboard — Endpoints tab](docs/assets/dashboard.png)
 
 ---
 
@@ -117,12 +116,18 @@ Every sidecar exposes its own SOCKS5 inbound on the `moav-net` Docker network; m
 
 A `↻ Refresh` button in the topbar reloads every tab in place; the health pill next to it shows `healthy/total`.
 
-<!-- screenshot/gif: dashboard tabs walkthrough -->
-<!-- ![dashboard walkthrough](docs/assets/dashboard.gif) -->
-<!-- screenshot: Analytics tab (per-protocol throughput) -->
-<!-- ![analytics](docs/assets/analytics.png) -->
-<!-- screenshot: Plugins tab (routing rules) -->
-<!-- ![plugins](docs/assets/plugins.png) -->
+![Dashboard walkthrough — Endpoints, Configs, Analytics, Plugins, Settings](docs/assets/dashboard.gif)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/analytics.png" alt="Analytics — per-protocol throughput"><br><sub><b>Analytics</b> — live per-protocol throughput</sub></td>
+    <td width="50%"><img src="docs/assets/plugins.png" alt="Plugins — routing rules"><br><sub><b>Plugins</b> — first-match-wins routing rules</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/sources.png" alt="Configs — subscription sources"><br><sub><b>Configs</b> — multi-server bundle sources</sub></td>
+    <td width="50%"><img src="docs/assets/settings.png" alt="Settings — strategy, exposure, SNI-spoof"><br><sub><b>Settings</b> — strategy, exposure, access URLs</sub></td>
+  </tr>
+</table>
 
 ---
 

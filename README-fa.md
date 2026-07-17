@@ -8,8 +8,7 @@
 
 کلاینتی برای سرورهای **[MoaV — مادر همه‌ی VPNها](https://github.com/MotherofallVPNs/moav)**. یک باندل اشتراک چندپروتکلی را می‌خواند، رمزنگاری واقعی هر پروتکل را به sing-box و مجموعه‌ای از sidecarهای اختیاری (MasterDNS، AmneziaWG، Psiphon، TrustTunnel، Tor) واگذار می‌کند، تأخیر هر endpoint را به‌صورت سرتاسری از داخل تونل اندازه می‌گیرد، بار را روی مجموعه‌ی سالم پخش می‌کند، و یک پروکسی محلی واحد SOCKS5 / HTTP CONNECT ارائه می‌دهد. یک داشبورد React با ظاهری هماهنگ با پنل ادمین MoaV دید زنده‌ای از سلامت endpointها، پهنای‌باند هر پروتکل، ویرایش قوانین پلاگین و لاگ زنده می‌دهد.
 
-<!-- screenshot: dashboard overview (Endpoints tab) -->
-<!-- ![moav-client dashboard](docs/assets/dashboard.png) -->
+![داشبورد moav-client — تب Endpoints](docs/assets/dashboard.png)
 
 ---
 
@@ -107,8 +106,18 @@ moavc uninstall [--wipe]    # حذف استک (--wipe کانفیگ/داده را
 | **Debug** | لاگ زنده (بافرهای حلقوی per-level، ~۸۰۰ رویداد برای هر سطح). فیلتر، pause/autoscroll/copy/clear. به‌علاوه جدول flow هر اتصال. |
 | **Diagnostics** | بررسی اتصال از خود proxy-core: TCP، DNS یا traceroute — اختیاراً *از داخل* تونل یک endpoint مشخص. |
 
-<!-- screenshot/gif: dashboard tabs walkthrough -->
-<!-- ![dashboard walkthrough](docs/assets/dashboard.gif) -->
+![مرور داشبورد — Endpoints، Configs، Analytics، Plugins، Settings](docs/assets/dashboard.gif)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/analytics.png" alt="Analytics — پهنای باند هر پروتکل"><br><sub><b>Analytics</b> — پهنای باند زنده‌ی هر پروتکل</sub></td>
+    <td width="50%"><img src="docs/assets/plugins.png" alt="Plugins — قواعد مسیریابی"><br><sub><b>Plugins</b> — قواعد مسیریابی (اولین تطابق برنده)</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/sources.png" alt="Configs — منابع اشتراک"><br><sub><b>Configs</b> — منابع باندل چندسروره</sub></td>
+    <td width="50%"><img src="docs/assets/settings.png" alt="Settings — استراتژی، سطح دسترسی، SNI-spoof"><br><sub><b>Settings</b> — استراتژی، سطح دسترسی، آدرس‌ها</sub></td>
+  </tr>
+</table>
 
 ---
 
