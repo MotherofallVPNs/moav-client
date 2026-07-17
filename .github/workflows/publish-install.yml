@@ -1,0 +1,34 @@
+name: publish-install
+
+# Publish install.sh as the `client-install.sh` release asset so the website
+# can serve it at moav.sh/client-install.sh (reachable in censored networks).
+# Mirrors how the MoaV server distributes its install.sh. The moav-site deploy
+# pulls the latest release asset; a committed fallback covers the gap until a
+# release carrying this asset exists.
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to (re)upload the asset to (blank = latest release)"
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload install.sh as client-install.sh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || github.event.inputs.tag }}"
+          if [[ -z "$TAG" ]]; then
+            TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
+          fi
+          echo "Uploading install.sh -> client-install.sh on release $TAG"
+          gh release upload "$TAG" install.sh#client-install.sh --clobber

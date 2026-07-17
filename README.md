@@ -13,7 +13,7 @@ A client for **[MoaV — Mother of all VPNs](https://github.com/MotherofallVPNs/
 ## Quick start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
+curl -fsSL moav.sh/client-install.sh | bash
 ```
 
 The installer **auto-installs missing prerequisites** (docker, git, curl,

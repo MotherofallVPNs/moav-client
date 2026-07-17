@@ -3,7 +3,7 @@
 The one-liner covers most cases:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
+curl -fsSL moav.sh/client-install.sh | bash
 ```
 
 It checks prerequisites (git, curl, docker, docker compose v2, python3) and
@@ -40,7 +40,7 @@ MOAV_HEADLESS=1 \
 MOAV_DIR=/opt/moav-client \
 MOAV_SUBSCRIPTION=/etc/moav/subscription.txt \
 MOAV_SIDECARS=masterdns,psiphon \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh)"
+  bash -c "$(curl -fsSL moav.sh/client-install.sh)"
 ```
 
 Or with flags after a clone:

@@ -15,7 +15,7 @@
 ## شروع سریع
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
+curl -fsSL moav.sh/client-install.sh | bash
 ```
 
 نصب‌کننده پیش‌نیازهای نصب‌نشده (docker، git، curl، python3) را **خودکار نصب می‌کند**، مخزن را clone می‌کند، اجازه می‌دهد sidecarها را از یک چک‌لیست انتخاب کنید (فقط ایمیج‌های انتخابی build می‌شوند)، `config.yaml` را می‌سازد، ایمیج‌ها را build می‌کند، استک را بالا می‌آورد، در صورت تمایل آن را روی شبکه‌ی محلی باز می‌کند و دستور سراسری `moavc` را نصب می‌کند. هم تعاملی (حتی وقتی با `bash` پایپ شود) و هم کاملاً headless کار می‌کند — به [docs/INSTALL.md](docs/INSTALL.md) نگاه کنید.
