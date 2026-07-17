@@ -8,7 +8,7 @@
 
 کلاینتی برای سرورهای **[MoaV — مادر همه‌ی VPNها](https://github.com/MotherofallVPNs/moav)**. یک باندل اشتراک چندپروتکلی را می‌خواند، رمزنگاری واقعی هر پروتکل را به sing-box و مجموعه‌ای از sidecarهای اختیاری (MasterDNS، AmneziaWG، Psiphon، TrustTunnel، Tor) واگذار می‌کند، تأخیر هر endpoint را به‌صورت سرتاسری از داخل تونل اندازه می‌گیرد، بار را روی مجموعه‌ی سالم پخش می‌کند، و یک پروکسی محلی واحد SOCKS5 / HTTP CONNECT ارائه می‌دهد. یک داشبورد React با ظاهری هماهنگ با پنل ادمین MoaV دید زنده‌ای از سلامت endpointها، پهنای‌باند هر پروتکل، ویرایش قوانین پلاگین و لاگ زنده می‌دهد.
 
-![داشبورد moav-client — تب Endpoints](docs/assets/dashboard.png)
+![مرور داشبورد moav-client](docs/assets/dashboard.gif)
 
 ---
 
@@ -106,7 +106,7 @@ moavc uninstall [--wipe]    # حذف استک (--wipe کانفیگ/داده را
 | **Debug** | لاگ زنده (بافرهای حلقوی per-level، ~۸۰۰ رویداد برای هر سطح). فیلتر، pause/autoscroll/copy/clear. به‌علاوه جدول flow هر اتصال. |
 | **Diagnostics** | بررسی اتصال از خود proxy-core: TCP، DNS یا traceroute — اختیاراً *از داخل* تونل یک endpoint مشخص. |
 
-![مرور داشبورد — Endpoints، Configs، Analytics، Plugins، Settings](docs/assets/dashboard.gif)
+![تب Endpoints — وضعیت زنده، تأخیر، و کلید هر endpoint](docs/assets/dashboard.png)
 
 <table>
   <tr>

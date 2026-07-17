@@ -6,7 +6,7 @@ English | **[فارسی](README-fa.md)**
 
 A client for **[MoaV — Mother of all VPNs](https://github.com/MotherofallVPNs/moav)** servers. It ingests a multi-protocol subscription bundle, delegates real protocol cryptography to sing-box plus a stack of optional sidecars (MasterDNS, AmneziaWG, Psiphon, TrustTunnel, Tor), latency-probes every endpoint end-to-end through its tunnel, load-balances across the healthy set, and exposes a single local SOCKS5 / HTTP CONNECT proxy. A React dashboard styled to match the MoaV admin panel gives live visibility into endpoint health, per-protocol throughput, plugin rule editing, and a streaming debug log.
 
-![moav-client dashboard — Endpoints tab](docs/assets/dashboard.png)
+![moav-client dashboard walkthrough](docs/assets/dashboard.gif)
 
 ---
 
@@ -116,7 +116,7 @@ Every sidecar exposes its own SOCKS5 inbound on the `moav-net` Docker network; m
 
 A `↻ Refresh` button in the topbar reloads every tab in place; the health pill next to it shows `healthy/total`.
 
-![Dashboard walkthrough — Endpoints, Configs, Analytics, Plugins, Settings](docs/assets/dashboard.gif)
+![Endpoints tab — live status, latency, and per-endpoint toggles](docs/assets/dashboard.png)
 
 <table>
   <tr>
