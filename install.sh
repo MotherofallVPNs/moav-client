@@ -3,7 +3,7 @@
 #  moav-client installer
 #
 #  One-liner install:
-#    curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/moav-client/main/install.sh | bash
+#    curl -fsSL moav.sh/client-install.sh | bash
 #
 #  Interactive mode (default when TTY attached):
 #    bash install.sh
