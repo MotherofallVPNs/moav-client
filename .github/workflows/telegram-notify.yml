@@ -6,6 +6,9 @@ name: Telegram notify
 #   • manual dispatch             → a test message
 # Requires repo secrets TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID; if either is
 # unset the send is skipped cleanly (no failed runs on forks).
+# Optional TELEGRAM_TOPIC_ID: when the chat is a forum supergroup, set this to
+# the target topic's thread id to post into that topic (e.g. the "github logs"
+# topic). Unset = posts to the group's General topic, as before.
 
 on:
   release:
@@ -68,6 +71,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
         run: |
           if [ ! -s message.txt ]; then
             echo "Nothing to announce for this event — skipping."; exit 0
@@ -75,9 +79,13 @@ jobs:
           if [ -z "${BOT_TOKEN}" ] || [ -z "${CHAT_ID}" ]; then
             echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set — skipping send."; exit 0
           fi
-          echo "Sending $(wc -c < message.txt) bytes to Telegram…"
+          # Optional: target a specific forum-supergroup topic (e.g. "github logs").
+          EXTRA=()
+          if [ -n "${TOPIC_ID}" ]; then EXTRA=(--data-urlencode "message_thread_id=${TOPIC_ID}"); fi
+          echo "Sending $(wc -c < message.txt) bytes to Telegram${TOPIC_ID:+ (topic $TOPIC_ID)}…"
           curl -fsS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
+            "${EXTRA[@]}" \
             --data-urlencode "text@message.txt" \
             -d parse_mode=HTML \
             -d disable_web_page_preview=false \
