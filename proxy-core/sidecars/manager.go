@@ -4,8 +4,8 @@ package sidecars
 import (
 	"fmt"
 
-	"github.com/ibeezhan/moav-client/proxy-core/config"
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/config"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 )
 
 // SidecarManager converts the sidecars section of config into Endpoints.

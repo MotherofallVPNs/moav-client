@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 )
 
 // Config controls bind / dial hosts and the inbound port range.

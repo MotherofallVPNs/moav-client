@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 )
 
 // ep is a terse constructor for a live-by-default endpoint.

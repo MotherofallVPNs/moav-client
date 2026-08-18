@@ -1,4 +1,4 @@
-module github.com/ibeezhan/moav-client/proxy-core
+module github.com/MotherofallVPNs/moav-client/proxy-core
 
 go 1.25.0
 

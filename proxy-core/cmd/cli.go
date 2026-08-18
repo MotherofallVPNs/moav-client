@@ -10,8 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/ibeezhan/moav-client/proxy-core/prober"
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/prober"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 )
 
 // Version is set at build time via -ldflags "-X .../cmd.Version=…" (see

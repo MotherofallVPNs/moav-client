@@ -13,6 +13,8 @@ set -euo pipefail
 
 GITHUB_URL="https://github.com/MotherofallVPNs/moav-client"
 SITE_URL="https://moav.sh"
+TELEGRAM_URL="https://t.me/motherofallvpns"
+X_URL="https://x.com/motherofallvpns"
 
 SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SOURCE" ]]; do
@@ -63,8 +65,9 @@ ART
   printf '%s' "$CR"
   printf '  %sMother of all VPNs — local client%s\n\n' "$DIM" "$CR"
   printf '  %sversion%s %sv%s%s %s(%s)%s\n' "$DIM" "$CR" "$GRN" "$ver" "$CR" "$DIM" "$sha" "$CR"
-  printf '  %srepo%s    %s%s%s\n' "$DIM" "$CR" "$BLU" "$GITHUB_URL" "$CR"
-  printf '  %ssite%s    %s%s%s\n' "$DIM" "$CR" "$BLU" "$SITE_URL" "$CR"
+  printf '  %srepo%s      %s%s%s\n' "$DIM" "$CR" "$BLU" "$GITHUB_URL" "$CR"
+  printf '  %ssite%s      %s%s%s\n' "$DIM" "$CR" "$BLU" "$SITE_URL" "$CR"
+  printf '  %scommunity%s %s%s%s %s·%s %s%s%s\n' "$DIM" "$CR" "$BLU" "$TELEGRAM_URL" "$CR" "$DIM" "$CR" "$BLU" "$X_URL" "$CR"
 }
 
 usage() {

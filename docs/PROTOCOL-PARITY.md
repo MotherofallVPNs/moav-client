@@ -69,6 +69,5 @@ Client-only extras (supported by the client, not in the server roster): **VMess*
 
 ## Version note
 
-`proxy-core/go.mod` is still `github.com/ibeezhan/moav-client/proxy-core` (the
-pre-org owner). Rename to the `MotherofallVPNs` path as part of the v2.0.0 cut
-(invasive — its own change, not this PR).
+`proxy-core/go.mod` is `github.com/MotherofallVPNs/moav-client/proxy-core`,
+renamed from the pre-org `ibeezhan` owner.

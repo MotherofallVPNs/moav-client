@@ -6,8 +6,8 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/ibeezhan/moav-client/proxy-core/balancer"
-	"github.com/ibeezhan/moav-client/proxy-core/plugins"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/balancer"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/plugins"
 )
 
 type httpHandler struct {

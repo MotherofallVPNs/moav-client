@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 )
 
 func TestLoad_MissingFile_ReturnsEmptyState(t *testing.T) {

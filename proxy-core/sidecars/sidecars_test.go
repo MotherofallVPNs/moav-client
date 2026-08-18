@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ibeezhan/moav-client/proxy-core/config"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/config"
 )
 
 func TestEnabledEndpoints_None(t *testing.T) {

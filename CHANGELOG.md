@@ -5,10 +5,37 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.3.3] — 2026-08-18
+
+### Added
+- **Community links.** The `moavc` banner (`version` / `help` / `status`) lists
+  the Telegram and X links next to the repo and site, and the README (EN + FA)
+  gains a Community section.
+
+### Changed
+- **README refreshed to the MoaV server's style:** centered header, table of
+  contents, and a new **Import your config** section covering the three ways to
+  load a bundle (the `moav://` compact URL, a base64 or plain subscription, and
+  dropping a server `.zip`). The Farsi README is brought to full parity,
+  including the previously-missing REST API and Development sections.
+- **`install.sh` is now published as a release asset**, and the install
+  one-liner fetches `moav.sh/client-install.sh` instead of a raw GitHub URL.
+- **Go module path** renamed from `github.com/ibeezhan/moav-client` to
+  `github.com/MotherofallVPNs/moav-client` after the org move. Internal only,
+  no behaviour change.
+
 ### Internal
 - **Telegram release notifier** (`.github/workflows/telegram-notify.yml`) — auto-posts to the MoaV Telegram channel when a moav-client Release is published (labeled `moav-client` so it's distinct from server posts in the shared channel), and when an issue is labeled `announce`. Manual `workflow_dispatch` sends a test message or — with a `release_tag` — a real notification for a past release. Small `curl` to the Telegram Bot API; message built + HTML-escaped by `.github/scripts/telegram_format.py`. Mirrors the server notifier. Needs repo secrets `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`; skips cleanly when unset.
 
 ### Fixed
+- **Bundle import now recognizes v2 server bundle file names.** A real `moav
+  user package` zip renamed the per-protocol files, so importing a v2 bundle
+  silently dropped WireGuard, AmneziaWG, and MasterDNS. WireGuard/AmneziaWG are
+  now `moav-<server-tag>-wg.conf` / `-awg.conf` (not `wireguard.conf` /
+  `amneziawg.conf`), and MasterDNS ships `masterdns-client_config.toml` (a flat
+  `KEY = value` file) in place of the free-form `masterdns-instructions.txt`.
+  The importer matches WireGuard/AmneziaWG by suffix and parses the new TOML,
+  keeping the legacy names working.
 - **Build from source now works on Windows** ([#7](https://github.com/MotherofallVPNs/moav-client/issues/7)). `makeTTLControl` (the by-hand traceroute in `/api/diag`) called `syscall.SetsockoptInt(int(fd), …)`, but a socket fd is an `int` on Unix and a `syscall.Handle` on Windows — so `go build` failed on Windows with *"cannot use int(fd) … as syscall.Handle value"*. Split the setter into `api/ttl_{unix,windows}.go` behind build tags. CI now cross-compiles for `windows`/`darwin` so OS-specific breakage is caught.
 
 ## [1.3.2] — 2026-07-13

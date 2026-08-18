@@ -10,8 +10,8 @@ import (
 
 	gosocks5 "github.com/armon/go-socks5"
 
-	"github.com/ibeezhan/moav-client/proxy-core/balancer"
-	"github.com/ibeezhan/moav-client/proxy-core/plugins"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/balancer"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/plugins"
 )
 
 // Server holds both SOCKS5 and HTTP CONNECT listeners.
