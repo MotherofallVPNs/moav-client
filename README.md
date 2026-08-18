@@ -1,12 +1,57 @@
+<div align="center">
+
 # moav-client
 
-![Go](https://img.shields.io/badge/Go-1.25-blue?logo=go) ![License: MIT](https://img.shields.io/badge/License-MIT-green)
+**One local proxy in front of every protocol your MoaV server speaks.**
 
-English | **[فارسی](README-fa.md)**
+[![Go](https://img.shields.io/badge/Go-1.25-06b6d4.svg?logo=go&logoColor=white)](https://go.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/moav-client?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/moav-client/releases/latest)
 
-A client for **[MoaV — Mother of all VPNs](https://github.com/MotherofallVPNs/moav)** servers. It ingests a multi-protocol subscription bundle, delegates real protocol cryptography to sing-box plus a stack of optional sidecars (MasterDNS, AmneziaWG, Psiphon, TrustTunnel, Tor), latency-probes every endpoint end-to-end through its tunnel, load-balances across the healthy set, and exposes a single local SOCKS5 / HTTP CONNECT proxy. A React dashboard styled to match the MoaV admin panel gives live visibility into endpoint health, per-protocol throughput, plugin rule editing, and a streaming debug log.
+[![MoaV server](https://img.shields.io/badge/server-MoaV-ef4444.svg?logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV) [![Protocols](https://img.shields.io/badge/protocols-13%2B-8b5cf6.svg)](#supported-protocols) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
 
-![moav-client dashboard walkthrough](docs/assets/dashboard.gif)
+🇬🇧 [English](README.md) &nbsp;·&nbsp; 🇮🇷 [فارسی](README-fa.md)
+
+Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** community.
+
+</div>
+
+---
+
+## Why moav-client
+
+A MoaV server hands you many protocols on purpose: no single transport survives every
+censor, so when one path is fingerprinted you switch to another. But a phone or laptop
+usually speaks *one* protocol at a time, and picking the live one by hand, in the middle
+of an outage, is exactly the wrong moment to be editing config.
+
+moav-client takes the whole bundle and does that for you. It delegates the real protocol
+cryptography to sing-box plus a stack of optional sidecars (MasterDNS, AmneziaWG, Psiphon,
+TrustTunnel, Tor), latency-probes every endpoint end-to-end through its own tunnel, load-
+balances across the healthy set, and exposes a single local SOCKS5 / HTTP CONNECT proxy.
+Point your browser or system at that one address; it routes through whichever server
+endpoint is fastest and alive right now. A React dashboard styled to match the MoaV admin
+panel gives live visibility into endpoint health, per-protocol throughput, routing-rule
+editing, and a streaming debug log.
+
+---
+
+## Table of Contents
+
+**Links** &nbsp;·&nbsp; [MoaV server](https://github.com/MotherofallVPNs/MoaV) &nbsp;·&nbsp; [Docs](docs/) &nbsp;·&nbsp; [Telegram](https://t.me/motherofallvpns)
+
+**Get started** &nbsp;·&nbsp; [Why moav-client](#why-moav-client) &nbsp;·&nbsp; [See it in action](#see-it-in-action) &nbsp;·&nbsp; [Quick start](#quick-start) &nbsp;·&nbsp; [Import your config](#import-your-config)
+
+**Use it** &nbsp;·&nbsp; [Supported protocols](#supported-protocols) &nbsp;·&nbsp; [Web dashboard](#web-dashboard) &nbsp;·&nbsp; [Config](#config) &nbsp;·&nbsp; [Plugins](#plugins) &nbsp;·&nbsp; [CLI](#cli)
+
+**Under the hood** &nbsp;·&nbsp; [REST API](#rest-api) &nbsp;·&nbsp; [Docs](#docs) &nbsp;·&nbsp; [Development](#development)
+
+---
+
+## See it in action
+
+<div align="center">
+<a href="https://github.com/MotherofallVPNs/moav-client"><img src="docs/assets/dashboard.gif" alt="moav-client dashboard — probes every endpoint, routes the fastest" width="90%"></a>
+<br><sub><b>The dashboard</b> · live endpoint health, per-protocol throughput, and one-click routing</sub>
+</div>
 
 ---
 
@@ -76,9 +121,39 @@ with `docker builder prune`. Updates re-download only changed layers.
 
 ---
 
+## Import your config
+
+Everything moav-client routes starts from a MoaV bundle. There are three ways to load one; all of them end up in `config.yaml` and can be managed from the dashboard afterwards.
+
+### 1. `moav://` bundle URL (recommended)
+
+MoaV's compact bundle format packs every protocol for one server into a single line. It carries a `<defaultHost>` and the shared credentials once, then one `p=` record per protocol, so a six-protocol server that was ~2 KB as separate URIs becomes ~640 bytes base64'd:
+
+```
+moav://<name>@<host>?uuid=…&pw=…&pbk=…&sni_default=…&fp=chrome\
+  &p=reality,443,sni=…,flow=xtls-rprx-vision\
+  &p=vless-ws,443,host=…,path=…\
+  &p=trojan,8443,sni=…\
+  &p=hy2,443,obfs=salamander,obfs_pw=…#MoaV
+```
+
+(one line on the wire; wrapped here for readability). moav-client expands it into one endpoint per `p=` record, so the balancer, prober, and dashboard treat them exactly like individually-pasted URIs. Drop the `moav://` line into `subscription.url` (or a file at `subscription.file`), or paste it during install. Full grammar and per-protocol keys: **[docs/MOAV_BUNDLE.md](docs/MOAV_BUNDLE.md)**.
+
+### 2. Base64 / plain subscription
+
+The classic V2Ray subscription still works. Point `subscription.url` at an `https://…` link or `subscription.file` at a local `subscription.txt`; the content may be base64-encoded or plain, and may mix `moav://` bundles with legacy single-protocol URIs (`vless://`, `trojan://`, `hysteria2://`, …) one per line. Each line is parsed independently and deduped by URI, so a bundle and the loose URIs for the same server coexist cleanly. WireGuard / AmneziaWG `.conf` files listed in `subscription.wireguard_files` each become one endpoint.
+
+### 3. Drop a server `.zip` (multiple servers)
+
+To run several MoaV servers side by side, use the dashboard's **Configs** tab (or `POST /api/bundles`): drop a server's exported `.zip` and it extracts under `data/<name>/` and appends a `subscription.sources` entry. List, remove, and reload sources from the same tab, no hand-editing.
+
+> Most people never touch `config.yaml` directly. Importing a bundle and toggling endpoints in the dashboard writes it for you.
+
+---
+
 ## Supported protocols
 
-The bundle parser accepts the standard MoaV subscription format (base64-encoded V2Ray-style URIs) plus optional WireGuard `.conf` files alongside.
+The parser accepts MoaV's [`moav://` bundle format](#import-your-config) and the standard subscription format (base64-encoded V2Ray-style URIs), plus optional WireGuard `.conf` files alongside.
 
 | Protocol | Dial path | Notes |
 |---|---|---|
@@ -256,7 +331,7 @@ The API server listens on `proxy.api_port` (default 8088). Responses are JSON; a
 - [docs/SNI_SPOOFING.md](docs/SNI_SPOOFING.md) — optional decoy-ClientHello sidecar
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — sing-box bridge, balancer/failover, prober, docker control
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — common issues
-- [docs/MOAV_BUNDLE.md](docs/MOAV_BUNDLE.md) — `moav://` bundle format proposal ([#1](https://github.com/MotherofallVPNs/moav-client/issues/1))
+- [docs/MOAV_BUNDLE.md](docs/MOAV_BUNDLE.md) — the `moav://` bundle format: full grammar, shared vs per-protocol keys, dedup semantics
 - [CLAUDE.md](CLAUDE.md) — LLM agent guide
 
 ---
