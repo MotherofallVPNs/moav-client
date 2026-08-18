@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ibeezhan/moav-client/proxy-core/balancer"
-	"github.com/ibeezhan/moav-client/proxy-core/plugins"
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/balancer"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/plugins"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 )
 
 // newTestMux builds a Server + mux exactly like ListenAndServe but doesn't

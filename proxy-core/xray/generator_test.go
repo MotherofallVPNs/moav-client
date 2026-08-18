@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 )
 
 func TestHandlesEndpoint(t *testing.T) {

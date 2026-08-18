@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 )
 
 // When an endpoint has spoof_via set (non-Reality), the sing-box outbound's

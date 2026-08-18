@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ibeezhan/moav-client/proxy-core/subscription"
+	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
 	"golang.org/x/net/proxy"
 )
 
