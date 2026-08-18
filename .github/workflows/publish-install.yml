@@ -31,4 +31,9 @@ jobs:
             TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
           fi
           echo "Uploading install.sh -> client-install.sh on release $TAG"
-          gh release upload "$TAG" install.sh#client-install.sh --clobber
+          # gh's `file#label` sets only the display LABEL; the download filename
+          # stays the file's basename. moav-site fetches the asset by name
+          # (releases/latest/download/client-install.sh), so the file itself must
+          # be named client-install.sh — copy, don't just label.
+          cp install.sh client-install.sh
+          gh release upload "$TAG" client-install.sh --clobber
