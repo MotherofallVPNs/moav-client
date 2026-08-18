@@ -2,8 +2,10 @@
 # AmneziaWG sidecar
 #
 # Builds amnezia-vpn/amneziawg-go (userspace WireGuard with Amnezia
-# obfuscation: Jc/Jmin/Jmax/S1/S2/H1..H4) and amnezia-vpn/amneziawg-tools
-# (the `awg` / `awg-quick` CLIs needed to load the obfuscation params).
+# obfuscation) and amnezia-vpn/amneziawg-tools (the `awg` / `awg-quick` CLIs
+# needed to load the obfuscation params). Pinned to the AWG3 line (header
+# protection, content padding, randomized timings) — the go daemon and tools
+# must be a matched pair; the tools emit UAPI keys the daemon must understand.
 # Then runs `awg-quick up` against /etc/amneziawg/awg0.conf and exposes
 # a SOCKS5 listener on 5500 that egresses through the configured awg0
 # interface (kernel default route).
@@ -19,8 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 ARG GOPROXY="https://proxy.golang.org|https://goproxy.cn|direct"
 ARG GOSUMDB=off
 ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
+ARG AMNEZIAWG_GO_VERSION=v3.1.20260814
 WORKDIR /src
-RUN git clone --depth=1 https://github.com/amnezia-vpn/amneziawg-go.git \
+RUN git clone --branch ${AMNEZIAWG_GO_VERSION} --depth=1 https://github.com/amnezia-vpn/amneziawg-go.git \
     && cd amneziawg-go \
     && CGO_ENABLED=0 GOOS=linux go build -o /out/amneziawg-go .
 
@@ -28,9 +31,10 @@ FROM debian:bookworm AS toolsbuild
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git build-essential ca-certificates pkg-config \
     && rm -rf /var/lib/apt/lists/*
+ARG AWGTOOLS_VERSION=v3.1.20260812
 WORKDIR /src
 RUN mkdir -p /out \
-    && git clone --depth=1 https://github.com/amnezia-vpn/amneziawg-tools.git \
+    && git clone --branch ${AWGTOOLS_VERSION} --depth=1 https://github.com/amnezia-vpn/amneziawg-tools.git \
     && cd amneziawg-tools/src \
     && make \
     && { cp wg /out/awg || cp awg /out/awg; } \
