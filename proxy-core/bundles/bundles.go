@@ -1,6 +1,8 @@
 // Package bundles handles MoaV bundle imports: zip files containing a
-// per-user subscription.txt + the protocol .conf / instructions files
-// the server emits. The dashboard uploads these via POST /api/bundles
+// per-user subscription.txt + the protocol .conf / config files the server
+// emits (WireGuard/AmneziaWG as moav-<tag>-wg.conf / -awg.conf, TrustTunnel
+// as trusttunnel.toml, MasterDNS as masterdns-client_config.toml). The
+// dashboard uploads these via POST /api/bundles
 // and we extract them into data/<name>/, then register a new source in
 // config.yaml so the next proxy-core restart (or hot reload) picks them
 // up alongside any existing sources.
@@ -19,15 +21,15 @@ import (
 
 // Result describes what was extracted from a bundle import.
 type Result struct {
-	Name              string   `json:"name"`               // directory we extracted into (data/<name>/)
-	Files             []string `json:"files"`              // relative paths of extracted files
-	SubscriptionPath  string   `json:"subscription_path"`  // first subscription.txt found, if any
-	WireGuardConfPath string   `json:"wireguard_conf"`     // wireguard.conf path
-	AmneziaWGConfPath string   `json:"amneziawg_conf"`     // amneziawg.conf path
-	MasterDNSDomain   string   `json:"masterdns_domain"`   // parsed from masterdns-instructions.txt
-	MasterDNSKey      string   `json:"masterdns_key"`      // parsed from masterdns-instructions.txt
-	MasterDNSMethod   string   `json:"masterdns_method"`   // parsed from masterdns-instructions.txt
-	TrustTunnelPath   string   `json:"trusttunnel_path"`   // trusttunnel.toml path
+	Name              string   `json:"name"`              // directory we extracted into (data/<name>/)
+	Files             []string `json:"files"`             // relative paths of extracted files
+	SubscriptionPath  string   `json:"subscription_path"` // first subscription.txt found, if any
+	WireGuardConfPath string   `json:"wireguard_conf"`    // wireguard.conf path
+	AmneziaWGConfPath string   `json:"amneziawg_conf"`    // amneziawg.conf path
+	MasterDNSDomain   string   `json:"masterdns_domain"`  // parsed from masterdns-instructions.txt
+	MasterDNSKey      string   `json:"masterdns_key"`     // parsed from masterdns-instructions.txt
+	MasterDNSMethod   string   `json:"masterdns_method"`  // parsed from masterdns-instructions.txt
+	TrustTunnelPath   string   `json:"trusttunnel_path"`  // trusttunnel.toml path
 }
 
 // Extract unpacks a zip into <baseDir>/<name>/ and reports what it found.
@@ -110,21 +112,28 @@ func Extract(zipBytes []byte, baseDir, requestedName string) (*Result, error) {
 		}
 		res.Files = append(res.Files, clean)
 
+		// v2 server bundles name the WG/AWG confs moav-<server-tag>-wg.conf /
+		// -awg.conf (older bundles used the bare wireguard.conf / amneziawg.conf).
+		// Match by suffix so both keep working. Check -awg before -wg: the leading
+		// dash means "-wg.conf" never matches an "...awg.conf" name, but ordering
+		// it first keeps the intent obvious.
 		base := strings.ToLower(filepath.Base(clean))
-		switch base {
-		case "subscription.txt":
+		switch {
+		case base == "subscription.txt":
 			res.SubscriptionPath = outPath
-		case "wireguard.conf":
-			res.WireGuardConfPath = outPath
-		case "amneziawg.conf":
+		case base == "amneziawg.conf" || strings.HasSuffix(base, "-awg.conf"):
 			res.AmneziaWGConfPath = outPath
-		case "trusttunnel.toml":
+		case base == "wireguard.conf" || strings.HasSuffix(base, "-wg.conf"):
+			res.WireGuardConfPath = outPath
+		case base == "trusttunnel.toml":
 			res.TrustTunnelPath = outPath
-		case "masterdns-instructions.txt":
+		case base == "masterdns-client_config.toml":
+			// v2 format: a flat KEY = value file (MasterDnsVPN / MahsaNG).
+			d, k, m := parseMasterDNSToml(string(body))
+			res.MasterDNSDomain, res.MasterDNSKey, res.MasterDNSMethod = d, k, m
+		case base == "masterdns-instructions.txt":
 			d, k, m := parseMasterDNSInstructions(string(body))
-			res.MasterDNSDomain = d
-			res.MasterDNSKey = k
-			res.MasterDNSMethod = m
+			res.MasterDNSDomain, res.MasterDNSKey, res.MasterDNSMethod = d, k, m
 		}
 	}
 
@@ -167,6 +176,33 @@ func parseMasterDNSInstructions(body string) (domain, key, method string) {
 			if j := i + 1; j < len(lines) {
 				key = firstWord(lines[j])
 			}
+		}
+	}
+	return
+}
+
+// parseMasterDNSToml reads the v2 masterdns-client_config.toml: a flat
+// KEY = value file (MasterDnsVPN / MahsaNG). DOMAINS may be a comma list;
+// we take the first. Replaces the free-form instructions.txt of v1 bundles.
+func parseMasterDNSToml(body string) (domain, key, method string) {
+	for _, raw := range strings.Split(body, "\n") {
+		l := strings.TrimSpace(raw)
+		if l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(l, "=")
+		if !ok {
+			continue
+		}
+		k = strings.ToUpper(strings.TrimSpace(k))
+		v = strings.Trim(strings.TrimSpace(v), `"'`)
+		switch k {
+		case "DOMAINS", "DOMAIN":
+			domain = firstWord(strings.ReplaceAll(v, ",", " "))
+		case "ENCRYPTION_KEY":
+			key = v
+		case "DATA_ENCRYPTION_METHOD", "ENCRYPTION_METHOD":
+			method = v
 		}
 	}
 	return

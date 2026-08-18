@@ -84,12 +84,53 @@ abcdef0123456789
 	}
 }
 
+// The v2 server renamed the per-protocol files: WG/AWG carry a moav-<tag>-
+// prefix and short suffixes, and MasterDNS ships a TOML instead of the old
+// free-form instructions. This mirrors the exact names a real `moav user
+// package` zip contains, so the importer must still wire them up.
+func TestExtract_DetectsV2BundleNames(t *testing.T) {
+	base := t.TempDir()
+
+	zipBytes := makeZip(t, map[string]string{
+		"user-moav-configs/subscription.txt":     "dmxlc3M6Ly9hYmNAZXhhbXBsZS5jb206NDQz",
+		"user-moav-configs/moav-yorks-wg.conf":   "[Interface]\nPrivateKey = aaa\n",
+		"user-moav-configs/moav-yorks-wgws.conf": "[Interface]\nPrivateKey = ccc\n",
+		"user-moav-configs/moav-yorks-awg.conf":  "[Interface]\nPrivateKey = bbb\nJc = 4\n",
+		"user-moav-configs/trusttunnel.toml":     "[endpoint]\nhostname = \"t.example.com\"\n",
+		"user-moav-configs/masterdns-client_config.toml": `# MasterDNS client config
+DOMAINS = m.example.com
+DATA_ENCRYPTION_METHOD = 5
+ENCRYPTION_KEY = abcdef0123456789
+PROTOCOL_TYPE = udp
+`,
+	})
+
+	res, err := Extract(zipBytes, base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(res.WireGuardConfPath, "moav-yorks-wg.conf") {
+		t.Errorf("wireguard: v2 name not detected, got %q", res.WireGuardConfPath)
+	}
+	if !strings.HasSuffix(res.AmneziaWGConfPath, "moav-yorks-awg.conf") {
+		t.Errorf("amneziawg: v2 name not detected, got %q", res.AmneziaWGConfPath)
+	}
+	// -wgws.conf (WG-over-wstunnel) must NOT be misfiled as the plain WG conf.
+	if strings.HasSuffix(res.WireGuardConfPath, "wgws.conf") {
+		t.Errorf("wgws.conf wrongly taken as the primary wireguard conf: %q", res.WireGuardConfPath)
+	}
+	if res.MasterDNSDomain != "m.example.com" || res.MasterDNSKey != "abcdef0123456789" || res.MasterDNSMethod != "5" {
+		t.Errorf("masterdns toml parse: got domain=%q key=%q method=%q",
+			res.MasterDNSDomain, res.MasterDNSKey, res.MasterDNSMethod)
+	}
+}
+
 func TestExtract_RejectsZipSlip(t *testing.T) {
 	base := t.TempDir()
 	zipBytes := makeZip(t, map[string]string{
 		"good/innocuous.txt": "hi",
 		// Path traversal attempt.
-		"../escape.txt":  "boom",
+		"../escape.txt":   "boom",
 		"good/../../also": "x",
 	})
 	res, err := Extract(zipBytes, base, "test")
