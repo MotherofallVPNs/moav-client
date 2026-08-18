@@ -42,7 +42,7 @@ editing, and a streaming debug log.
 
 **Use it** &nbsp;·&nbsp; [Supported protocols](#supported-protocols) &nbsp;·&nbsp; [Web dashboard](#web-dashboard) &nbsp;·&nbsp; [Config](#config) &nbsp;·&nbsp; [Plugins](#plugins) &nbsp;·&nbsp; [CLI](#cli)
 
-**Under the hood** &nbsp;·&nbsp; [REST API](#rest-api) &nbsp;·&nbsp; [Docs](#docs) &nbsp;·&nbsp; [Development](#development)
+**Under the hood** &nbsp;·&nbsp; [REST API](#rest-api) &nbsp;·&nbsp; [Docs](#docs) &nbsp;·&nbsp; [Development](#development) &nbsp;·&nbsp; [Community](#community)
 
 ---
 
@@ -361,6 +361,12 @@ npm run dev
 cd proxy-core && go test ./...
 cd web-ui && npm run build  # type-check + bundle
 ```
+
+---
+
+## Community
+
+**Come say hi.** [Telegram](https://t.me/motherofallvpns) for questions, help and release announcements · [X](https://x.com/motherofallvpns) · [GitHub Issues](https://github.com/MotherofallVPNs/moav-client/issues) for bugs and feature requests · [MoaV server](https://github.com/MotherofallVPNs/MoaV) · [moav.sh](https://moav.sh).
 
 ---
 

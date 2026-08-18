@@ -8,8 +8,9 @@ All notable changes to moav-client are documented here. Format loosely follows
 ## [1.3.3] — 2026-08-18
 
 ### Added
-- **Community links in the CLI banner.** `moavc version` / `help` / `status` now
-  list the Telegram and X links next to the repo and site.
+- **Community links.** The `moavc` banner (`version` / `help` / `status`) lists
+  the Telegram and X links next to the repo and site, and the README (EN + FA)
+  gains a Community section.
 
 ### Changed
 - **README refreshed to the MoaV server's style:** centered header, table of

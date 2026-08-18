@@ -36,7 +36,7 @@ moav-client کل باندل را می‌گیرد و این کار را برای�
 
 **استفاده** &nbsp;·&nbsp; [پروتکل‌های پشتیبانی‌شده](#protocols) &nbsp;·&nbsp; [داشبورد وب](#dashboard) &nbsp;·&nbsp; [پیکربندی](#config) &nbsp;·&nbsp; [پلاگین‌ها](#plugins) &nbsp;·&nbsp; [CLI](#cli)
 
-**زیر پوسته** &nbsp;·&nbsp; [REST API](#api) &nbsp;·&nbsp; [مستندات](#docs) &nbsp;·&nbsp; [توسعه](#development)
+**زیر پوسته** &nbsp;·&nbsp; [REST API](#api) &nbsp;·&nbsp; [مستندات](#docs) &nbsp;·&nbsp; [توسعه](#development) &nbsp;·&nbsp; [جامعه](#community)
 
 ---
 
@@ -338,6 +338,14 @@ npm run dev
 cd proxy-core && go test ./...
 cd web-ui && npm run build  # type-check + بسته‌بندی
 ```
+
+---
+
+<a id="community"></a>
+
+## جامعه
+
+**سلام کنید.** [تلگرام](https://t.me/motherofallvpns) برای پرسش، کمک و اعلان انتشارها · [ایکس](https://x.com/motherofallvpns) · [GitHub Issues](https://github.com/MotherofallVPNs/moav-client/issues) برای باگ و درخواست ویژگی · [سرور MoaV](https://github.com/MotherofallVPNs/MoaV) · [moav.sh](https://moav.sh).
 
 ---
 
