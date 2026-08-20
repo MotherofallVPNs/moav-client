@@ -6,9 +6,10 @@ echo "[amneziawg] waiting for $CONF ..."
 while [ ! -s "$CONF" ]; do sleep 1; done
 echo "[amneziawg] config detected"
 
-# Parse Address from the [Interface] section. Default if missing.
+# Parse Address + MTU from the [Interface] section. Default Address if missing.
 ADDR=$(awk -F'=' '/^[[:space:]]*Address/{print $2}' "$CONF" | tr -d ' ' | head -1)
 ADDR=${ADDR:-10.67.67.6/32}
+MTU=$(awk -F'=' '/^[[:space:]]*MTU/{print $2}' "$CONF" | tr -d ' ' | head -1)
 
 # 1. Start amneziawg-go in userspace mode (creates the awg0 tun device).
 echo "[amneziawg] starting amneziawg-go on awg0"
@@ -47,6 +48,7 @@ if [ -n "$PEER_HOST" ] && [ -n "$ETH_GW" ]; then
 fi
 
 ip link set awg0 up
+[ -n "$MTU" ] && ip link set awg0 mtu "$MTU"   # AWG tunnels need headroom for the outer overhead
 ip addr add "$ADDR" dev awg0 || true
 ip route replace default dev awg0 || true
 
