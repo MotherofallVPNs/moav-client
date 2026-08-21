@@ -109,10 +109,20 @@ func main() {
 	var endpoints []subscription.Endpoint
 
 	addEndpoints := func(eps []subscription.Endpoint, source string) {
+		// Within one source, a moav:// bundle line and the legacy per-protocol
+		// URIs describe the same servers, so collapse by protocol+address (the
+		// RawURIs differ and wouldn't dedup). Scoped per-source so two configs
+		// pointing at the same server across sources stay distinct.
+		canon := make(map[string]struct{}, len(eps))
 		for _, ep := range eps {
 			if _, dup := seen[ep.RawURI]; dup {
 				continue
 			}
+			ck := ep.Protocol + "|" + ep.Address
+			if _, dup := canon[ck]; dup {
+				continue
+			}
+			canon[ck] = struct{}{}
 			seen[ep.RawURI] = struct{}{}
 			// Keep a pre-set Source (sidecars tagged with their origin bundle);
 			// otherwise attribute to the group/source being added.
