@@ -18,7 +18,7 @@ import (
 // and each p= record is a comma-list:
 //
 //	p = <name>,<port>[,k=v[,k=v…]]
-//	name = reality | vless-ws | vless-xhttp | trojan | anytls | ss | hy2 | tuic | vmess
+//	name = reality | vless-ws | vless-httpupgrade | vless-xhttp | trojan | anytls | ss | hy2 | tuic | vmess
 //
 // Per-protocol k=v overrides anything in <shared>. Each materialised
 // Endpoint carries a synthetic RawURI of the equivalent single-protocol
@@ -108,6 +108,11 @@ func expandProto(rec, defaultHost, userTag, label string, shared map[string]stri
 	case "vless-ws":
 		uri := buildVLESSURI(userTag, hostOverride, port, label, merged, "ws", merged["security"])
 		return ParseURI(uri)
+	case "vless-httpupgrade":
+		// CDN VLESS over httpupgrade (MoaV's default CDN transport); same Host/SNI
+		// handling as ws.
+		uri := buildVLESSURI(userTag, hostOverride, port, label, merged, "httpupgrade", merged["security"])
+		return ParseURI(uri)
 	case "vless-xhttp":
 		uri := buildVLESSURI(userTag, hostOverride, port, label, merged, "xhttp", "reality")
 		return ParseURI(uri)
@@ -166,7 +171,7 @@ func expandProto(rec, defaultHost, userTag, label string, shared map[string]stri
 			uuid, pw, hostOverride, port, query(merged, "sni", "sni_default"), label)
 		return ParseURI(uri)
 	default:
-		return Endpoint{}, fmt.Errorf("unknown protocol %q (valid: reality, vless-ws, vless-xhttp, trojan, anytls, ss, hy2, tuic, vmess)", name)
+		return Endpoint{}, fmt.Errorf("unknown protocol %q (valid: reality, vless-ws, vless-httpupgrade, vless-xhttp, trojan, anytls, ss, hy2, tuic, vmess)", name)
 	}
 }
 
@@ -194,10 +199,10 @@ func buildVLESSURI(user, host, port, label string, m map[string]string, transpor
 	if m["host"] != "" {
 		params = append(params, "host="+m["host"])
 	}
-	// ws needs a Host header; the p= record's host= is consumed as the connection
-	// address, so default the WS Host to that address (correct for the common
-	// CDN case where the fronting address and Host are the same domain).
-	if transport == "ws" && !hasParam(params, "host") {
+	// ws/httpupgrade need a Host header; the p= record's host= is consumed as the
+	// connection address, so default the Host to that address (correct for the
+	// common CDN case where the fronting address and Host are the same domain).
+	if (transport == "ws" || transport == "httpupgrade") && !hasParam(params, "host") {
 		params = append(params, "host="+host)
 	}
 	return fmt.Sprintf("vless://%s@%s:%s?%s#%s-%s", uuid, host, port, strings.Join(params, "&"), label, transport)

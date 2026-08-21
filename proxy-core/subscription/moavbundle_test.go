@@ -136,3 +136,16 @@ func TestParseMoaVBundle_CDNWSHost(t *testing.T) {
 		t.Errorf("ws host header not set: net=%q host=%q", e.Config["net"], e.Config["host"])
 	}
 }
+
+// CDN over httpupgrade (MoaV's default CDN transport) must round-trip with the
+// right transport + Host header.
+func TestParseMoaVBundle_CDNHttpupgrade(t *testing.T) {
+	eps, err := ParseMoaVBundle("moav://uid@1.2.3.4?p=vless-httpupgrade,443,host=cdn.example.com,path=/ws,sni=cdn.example.com,alpn=http/1.1#L")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := eps[0]
+	if e.Config["net"] != "httpupgrade" || e.Config["host"] != "cdn.example.com" || e.Address != "cdn.example.com:443" {
+		t.Errorf("httpupgrade CDN: net=%q host=%q addr=%q", e.Config["net"], e.Config["host"], e.Address)
+	}
+}
