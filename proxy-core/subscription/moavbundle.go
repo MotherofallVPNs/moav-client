@@ -194,6 +194,12 @@ func buildVLESSURI(user, host, port, label string, m map[string]string, transpor
 	if m["host"] != "" {
 		params = append(params, "host="+m["host"])
 	}
+	// ws needs a Host header; the p= record's host= is consumed as the connection
+	// address, so default the WS Host to that address (correct for the common
+	// CDN case where the fronting address and Host are the same domain).
+	if transport == "ws" && !hasParam(params, "host") {
+		params = append(params, "host="+host)
+	}
 	return fmt.Sprintf("vless://%s@%s:%s?%s#%s-%s", uuid, host, port, strings.Join(params, "&"), label, transport)
 }
 
