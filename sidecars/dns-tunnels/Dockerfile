@@ -9,7 +9,7 @@
 #
 FROM debian:bookworm-slim AS fetch
 
-ARG MDVPN_VERSION=v2026.05.10.180256-27c7e11
+ARG MASTERDNS_VERSION=v2026.05.10.180256-27c7e11
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl tar ca-certificates \
@@ -23,7 +23,7 @@ RUN set -eux; \
       aarch64) PKG="MasterDnsVPN_Client_Linux_ARM64" ;; \
       *) echo "unsupported arch $ARCH"; exit 1 ;; \
     esac; \
-    URL="https://github.com/masterking32/MasterDnsVPN/releases/download/${MDVPN_VERSION}/${PKG}.tar.gz"; \
+    URL="https://github.com/masterking32/MasterDnsVPN/releases/download/${MASTERDNS_VERSION}/${PKG}.tar.gz"; \
     echo "fetching $URL"; \
     curl -fL "$URL" -o pkg.tar.gz; \
     tar xzf pkg.tar.gz; \

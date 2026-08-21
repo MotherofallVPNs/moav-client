@@ -115,7 +115,15 @@ All responses include permissive CORS so the dashboard on a different port can f
 
 ## 5. Config reference
 
-All fields live in `config.yaml`. Defaults are set by `config.Defaults()`.
+Two files split the job (see `docs/CONFIGURATION.md`): **`.env`** owns component
+versions, host exposure/binds, proxy ports, and dashboard/SOCKS auth (the single
+source under docker-compose); **`config.yaml`** owns VPN/app behaviour below.
+`.env` `SOCKS5_PORT`/`HTTP_PORT`/`API_PORT` and `SOCKS5_USERNAME`/`PASSWORD`
+override the matching `config.yaml` fields (precedence: .env file > process env >
+config.yaml). App version comes from the `VERSION` file; component versions are
+the `_VERSION` vars in `.env.example` — `tests/version-sync-test.sh` gates drift.
+
+All app fields below live in `config.yaml`. Defaults are set by `config.Defaults()`.
 
 ```
 proxy:
