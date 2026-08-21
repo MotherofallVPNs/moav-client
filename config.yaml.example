@@ -1,10 +1,13 @@
+# Ports and auth here are the declarative BASE; .env overrides both (SOCKS5_PORT/
+# HTTP_PORT/API_PORT and SOCKS5_USERNAME/PASSWORD) and is the single source when
+# running under docker-compose. See docs/CONFIGURATION.md.
 proxy:
-  socks5_port: 1080
-  http_port: 8080
-  api_port: 8088
+  socks5_port: 1080   # overridden by .env SOCKS5_PORT under compose
+  http_port: 8080     # overridden by .env HTTP_PORT
+  api_port: 8088      # overridden by .env API_PORT
   auth:
-    username: ""        # empty = no SOCKS5 auth (loopback default is safe)
-    password: ""
+    username: ""        # empty = no SOCKS5 auth; .env SOCKS5_USERNAME overrides
+    password: ""        # .env SOCKS5_PASSWORD overrides (the dashboard writes here)
 
 subscription:
   # Single-source legacy form. Paste a V2Ray subscription (base64 or plain)

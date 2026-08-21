@@ -12,7 +12,7 @@ FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache git wget unzip ca-certificates
 
 ARG XRAY_REPO=https://github.com/XTLS/Xray-core.git
-ARG XRAY_VERSION=v26.5.9
+ARG XRAY_VERSION=v26.7.28
 ARG TARGETARCH
 
 # Go-module fetch resilience for the source-compile fallback only. Pipe (|)

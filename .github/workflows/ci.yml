@@ -97,6 +97,9 @@ jobs:
             bash -n "$f" && echo "syntax ok: $f"
           done
 
+      - name: version drift gate (single source of truth)
+        run: bash tests/version-sync-test.sh
+
       - name: shellcheck (warn-only)
         # We don't fail the build on shellcheck — it's noisy on heredocs —
         # but we surface findings.

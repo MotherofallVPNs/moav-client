@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -427,13 +428,17 @@ func main() {
 	b.SetBlockDirect(cfg.Plugins.BlockDirect)
 	tb := &plugins.TorrentBlocker{Enabled: cfg.Plugins.TorrentBlock}
 
-	proxyServer := proxy.NewServer(cfg.Proxy.SOCKS5Port, cfg.Proxy.HTTPPort, b, eng, tb)
-	// SOCKS5 auth precedence: .env FILE (live, written by the dashboard) >
-	// process env (baked into the container at creation by env_file) >
-	// config.yaml. Reading the file means a plain `restart` re-applies an
-	// auth change from the dashboard — without it, env_file values only
-	// refresh on a full container recreate.
+	// Ports + auth share one precedence: .env FILE (live, written by the
+	// dashboard) > process env (baked in by env_file at container creation) >
+	// config.yaml. .env is the single source of truth — the same *_PORT vars
+	// drive the compose port mapping — and reading the file means a plain
+	// `restart` re-applies a change the dashboard just wrote.
 	envFile := readDotEnv(".env")
+	socksPort := envPort(envFile, "SOCKS5_PORT", cfg.Proxy.SOCKS5Port)
+	httpPort := envPort(envFile, "HTTP_PORT", cfg.Proxy.HTTPPort)
+	apiPort := envPort(envFile, "API_PORT", cfg.Proxy.APIPort)
+
+	proxyServer := proxy.NewServer(socksPort, httpPort, b, eng, tb)
 	socksUser, socksPass := cfg.Proxy.Auth.Username, cfg.Proxy.Auth.Password
 	for _, v := range []string{os.Getenv("SOCKS5_USERNAME"), envFile["SOCKS5_USERNAME"]} {
 		if v != "" {
@@ -454,7 +459,7 @@ func main() {
 		}
 		proxyServer = proxyServer.WithAuth(socksUser, socksPass)
 	}
-	apiServer := api.New(cfg.Proxy.APIPort, *cfgPath, statePath, b, eng)
+	apiServer := api.New(apiPort, *cfgPath, statePath, b, eng)
 
 	errCh := make(chan error, 3)
 
@@ -493,6 +498,22 @@ func readDotEnv(path string) map[string]string {
 		out[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
 	}
 	return out
+}
+
+// envPort resolves a listener port with the same precedence as auth: process
+// env then .env FILE (last non-empty wins, so the file overrides), falling back
+// to the config.yaml value. A malformed or out-of-range value is ignored.
+func envPort(envFile map[string]string, key string, fallback int) int {
+	p := fallback
+	for _, v := range []string{os.Getenv(key), envFile[key]} {
+		if v == "" {
+			continue
+		}
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 && n < 65536 {
+			p = n
+		}
+	}
+	return p
 }
 
 // writeConfigIfChanged atomically writes content to path via .tmp + rename.
