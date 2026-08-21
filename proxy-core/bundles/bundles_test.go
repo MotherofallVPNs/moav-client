@@ -125,6 +125,28 @@ PROTOCOL_TYPE = udp
 	}
 }
 
+// Real MoaV bundles emit the TOML array form for DOMAINS and an inline
+// "# 5 = AES-256-GCM" comment after DATA_ENCRYPTION_METHOD; both must be
+// stripped or the masterdns sidecar gets a garbage domain/method.
+func TestParseMasterDNSToml_ArrayAndInlineComment(t *testing.T) {
+	body := `# MasterDNS client config
+DOMAINS = ["m.example.com"]
+DATA_ENCRYPTION_METHOD = 5   # 5 = AES-256-GCM
+ENCRYPTION_KEY = "deadbeefdeadbeefdeadbeefdeadbeef"
+PROTOCOL_TYPE = "SOCKS5"
+`
+	domain, key, method := parseMasterDNSToml(body)
+	if domain != "m.example.com" {
+		t.Errorf("domain: got %q, want %q", domain, "m.example.com")
+	}
+	if method != "5" {
+		t.Errorf("method: got %q, want %q (inline comment leaked)", method, "5")
+	}
+	if key != "deadbeefdeadbeefdeadbeefdeadbeef" {
+		t.Errorf("key: got %q", key)
+	}
+}
+
 func TestExtract_RejectsZipSlip(t *testing.T) {
 	base := t.TempDir()
 	zipBytes := makeZip(t, map[string]string{

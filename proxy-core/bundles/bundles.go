@@ -195,17 +195,34 @@ func parseMasterDNSToml(body string) (domain, key, method string) {
 			continue
 		}
 		k = strings.ToUpper(strings.TrimSpace(k))
-		v = strings.Trim(strings.TrimSpace(v), `"'`)
+		v = tomlScalar(v)
 		switch k {
 		case "DOMAINS", "DOMAIN":
 			domain = firstWord(strings.ReplaceAll(v, ",", " "))
 		case "ENCRYPTION_KEY":
 			key = v
 		case "DATA_ENCRYPTION_METHOD", "ENCRYPTION_METHOD":
-			method = v
+			method = firstWord(v)
 		}
 	}
 	return
+}
+
+// tomlScalar normalizes a raw TOML RHS: strips an inline "# comment", unwraps a
+// ["a","b"] array to space-separated elements, and removes surrounding quotes.
+func tomlScalar(v string) string {
+	v = strings.TrimSpace(v)
+	// Inline comment (TOML #) — only when preceded by whitespace, so a '#'
+	// inside a hex key or quoted value is left alone.
+	if i := strings.IndexByte(v, '#'); i > 0 && (v[i-1] == ' ' || v[i-1] == '\t') {
+		v = strings.TrimSpace(v[:i])
+	}
+	if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+		v = v[1 : len(v)-1]
+		v = strings.NewReplacer(`"`, " ", `'`, " ", ",", " ").Replace(v)
+		v = strings.TrimSpace(v)
+	}
+	return strings.Trim(v, `"'`)
 }
 
 func firstWord(s string) string {
