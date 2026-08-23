@@ -5,6 +5,41 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-08-23
+
+### Added
+- **`moav://` compact bundle support.** moav-client now imports the compact
+  `moav://` subscription the MoaV server emits (one URL encoding a server's whole
+  enabled proxy surface) and expands it into per-protocol endpoints — reality,
+  vless-ws, **vless-httpupgrade**, vless-xhttp, trojan, anytls, ss, hy2. CDN
+  endpoints get the correct WS/httpupgrade transport and Host header. When a
+  subscription carries both the `moav://` line and the equivalent legacy
+  `vless://…` URIs, they are **deduplicated by protocol + address**, so each
+  server appears once instead of twice. See `docs/MOAV_BUNDLE.md`.
+
+### Changed
+- **Config: a single source of truth for versions and ports.** The `VERSION`
+  file is authoritative for the app version, with a drift-gate test keeping the
+  build literals in sync (they had drifted to 1.3.1/1.3.2). Component versions
+  moved to uncommented `_VERSION` vars in `.env.example` matching the MoaV server
+  (sing-box 1.13.19, xray v26.7.28, and the rest), and
+  `SOCKS5_PORT`/`HTTP_PORT`/`API_PORT` in `.env` are now the single source,
+  overriding `config.yaml`. New `docs/CONFIGURATION.md` documents the `.env` vs
+  `config.yaml` boundary.
+- **Dependencies modernized.** web-ui to **React 19 / Vite 8 / Vitest 3** (plus
+  matching `@types`, plugin-react 6, jsdom 30); proxy-core `golang.org/x/*`
+  security bumps. CI and the web-ui build image move to Node 22, which the new
+  toolchain requires.
+
+### Fixed
+- **Reality public keys now survive a `moav://` import.** Expanding a bundle
+  rebuilt per-protocol URIs from decoded values without re-encoding, so a base64
+  `pbk` (which contains `+`) corrupted, with `+` becoming a space. Values are now
+  percent-escaped on the rebuild.
+
+### Internal
+- CI runs on the `dev` branch (was `main`-only), so the dev→main flow is gated.
+
 ## [1.3.3] — 2026-08-18
 
 ### Added
