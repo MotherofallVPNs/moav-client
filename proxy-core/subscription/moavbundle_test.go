@@ -117,3 +117,35 @@ func TestParseSubscription_HandlesMoaVAndLegacyMix(t *testing.T) {
 		t.Errorf("want 2 endpoints from mixed subscription, got %d", len(eps))
 	}
 }
+
+// A moav:// vless-ws (CDN) record must carry a WS Host header; host= is the
+// connection address, and for the common CDN case the Host defaults to it.
+func TestParseMoaVBundle_CDNWSHost(t *testing.T) {
+	eps, err := ParseMoaVBundle("moav://uid@1.2.3.4?p=vless-ws,443,host=cdn.example.com,path=/ws,sni=cdn.example.com,alpn=http/1.1#L")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eps) != 1 {
+		t.Fatalf("want 1 endpoint, got %d", len(eps))
+	}
+	e := eps[0]
+	if e.Address != "cdn.example.com:443" {
+		t.Errorf("address: got %q", e.Address)
+	}
+	if e.Config["net"] != "ws" || e.Config["host"] != "cdn.example.com" {
+		t.Errorf("ws host header not set: net=%q host=%q", e.Config["net"], e.Config["host"])
+	}
+}
+
+// CDN over httpupgrade (MoaV's default CDN transport) must round-trip with the
+// right transport + Host header.
+func TestParseMoaVBundle_CDNHttpupgrade(t *testing.T) {
+	eps, err := ParseMoaVBundle("moav://uid@1.2.3.4?p=vless-httpupgrade,443,host=cdn.example.com,path=/ws,sni=cdn.example.com,alpn=http/1.1#L")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := eps[0]
+	if e.Config["net"] != "httpupgrade" || e.Config["host"] != "cdn.example.com" || e.Address != "cdn.example.com:443" {
+		t.Errorf("httpupgrade CDN: net=%q host=%q addr=%q", e.Config["net"], e.Config["host"], e.Address)
+	}
+}

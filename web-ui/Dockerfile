@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
@@ -18,6 +18,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Default auth include (overwritten on start by 40-moav-auth.sh); ensures the
 # `include` in nginx.conf resolves even if the hook is skipped.
 RUN echo "auth_basic off;" > /etc/nginx/moav-auth.conf
+COPY 39-moav-api-port.sh /docker-entrypoint.d/39-moav-api-port.sh
 COPY 40-moav-auth.sh /docker-entrypoint.d/40-moav-auth.sh
-RUN chmod +x /docker-entrypoint.d/40-moav-auth.sh
+RUN chmod +x /docker-entrypoint.d/39-moav-api-port.sh /docker-entrypoint.d/40-moav-auth.sh
 EXPOSE 3000

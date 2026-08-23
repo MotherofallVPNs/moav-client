@@ -10,7 +10,7 @@
 # startup from sidecars.trusttunnel.config.source_path).
 #
 FROM debian:bookworm-slim AS fetch
-ARG TT_VERSION=v1.0.49
+ARG TRUSTTUNNEL_CLIENT_VERSION=v1.0.49
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /dl
@@ -21,7 +21,7 @@ RUN arch="$(uname -m)"; \
       armv7l)  A=linux-armv7 ;; \
       *) echo "unsupported arch $arch"; exit 1 ;; \
     esac; \
-    curl -fL "https://github.com/TrustTunnel/TrustTunnelClient/releases/download/${TT_VERSION}/trusttunnel_client-${TT_VERSION}-${A}.tar.gz" -o tt.tar.gz \
+    curl -fL "https://github.com/TrustTunnel/TrustTunnelClient/releases/download/${TRUSTTUNNEL_CLIENT_VERSION}/trusttunnel_client-${TRUSTTUNNEL_CLIENT_VERSION}-${A}.tar.gz" -o tt.tar.gz \
     && tar xzf tt.tar.gz \
     && bin="$(find . -type f -name 'trusttunnel_client*' ! -name '*.tar.gz' | head -1)" \
     && test -n "$bin" \
