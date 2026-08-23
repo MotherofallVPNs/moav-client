@@ -16,6 +16,10 @@ All notable changes to moav-client are documented here. Format loosely follows
   subscription carries both the `moav://` line and the equivalent legacy
   `vless://…` URIs, they are **deduplicated by protocol + address**, so each
   server appears once instead of twice. See `docs/MOAV_BUNDLE.md`.
+- **AmneziaWG v3 client support.** The bundled AmneziaWG sidecar is pinned to the
+  v3.1 daemon + tools (`amneziawg-go v3.1.20260814`, `amneziawg-tools
+  v3.1.20260812`), matching the MoaV server's move to v3 obfuscation, so imported
+  AmneziaWG configs handshake and connect.
 
 ### Changed
 - **Config: a single source of truth for versions and ports.** The `VERSION`
@@ -36,9 +40,16 @@ All notable changes to moav-client are documented here. Format loosely follows
   rebuilt per-protocol URIs from decoded values without re-encoding, so a base64
   `pbk` (which contains `+`) corrupted, with `+` becoming a space. Values are now
   percent-escaped on the rebuild.
+- **Bundle import: MasterDNS + AmneziaWG MTU.** Importing a server `.zip`
+  mis-parsed `masterdns-client_config.toml` — an inline `# comment` leaked into
+  the encryption method and `DOMAINS = ["host"]` kept its array brackets — and
+  the AmneziaWG sidecar ignored the config's `MTU` (staying at the kernel
+  default). Both are fixed.
 
 ### Internal
 - CI runs on the `dev` branch (was `main`-only), so the dev→main flow is gated.
+- The `install.sh` release asset is now published under the `client-install.sh`
+  download name the install one-liner fetches.
 
 ## [1.3.3] — 2026-08-18
 
