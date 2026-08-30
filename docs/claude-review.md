@@ -40,6 +40,25 @@ PR yet:
 
 Re-comment `@claude review` after pushing changes to get a fresh pass.
 
+## Issue triage
+
+A companion workflow (`.github/workflows/claude-issue-triage.yml`) triages issues
+the same way — admin-triggered and advisory. It reads the issue, applies labels
+from the repo's **existing** label set, and posts one concise triage comment
+(category, likely area, clarifying questions), following the rubric in
+[`TRIAGE.md`](../TRIAGE.md). It never edits code, opens a PR, or closes issues.
+
+- **Trigger:** a maintainer comments `@claude triage` on an issue, or runs
+  *Actions → Claude Issue Triage → Run workflow* with an issue number.
+- **Security:** for a circumvention client, the rubric tells it never to echo a
+  leaked secret / server IP / share-URI back into a comment — it flags it and
+  asks the reporter to redact.
+- **Enable auto-triage** of every new issue: uncomment the `issues` trigger in
+  the workflow (same pattern as enabling auto-review).
+
+It uses the same `CLAUDE_CODE_OAUTH_TOKEN` secret and the Claude GitHub App
+(which carries `issues: write`), so no extra setup beyond the token above.
+
 ## Where to tweak
 
 ### Turn on automatic review (the "hybrid" model)
