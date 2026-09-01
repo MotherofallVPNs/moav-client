@@ -63,9 +63,6 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # TEMPORARY (debug): unmask the SDK output so we can read the real
-          # auth error. Remove this line once triage runs cleanly.
-          show_full_output: true
           prompt: |
             Triage GitHub issue #${{ steps.issue.outputs.number }} in ${{ github.repository }}.
             First read TRIAGE.md (the rubric, including the security rules) and CLAUDE.md (repo context).
