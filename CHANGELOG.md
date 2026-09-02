@@ -5,6 +5,16 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+- **sing-box sidecar updated to 1.14.0** (was 1.13.19), matching the MoaV server.
+  No config-generation changes were needed: the generator already emits the
+  modern WireGuard `endpoints[]` form (not the outbound removed in 1.14), no
+  legacy DNS/`block`/`dns`/`sniff` constructs, and its output was validated
+  against the real 1.14 `sing-box check`. Hysteria2 `obfs` is passed through
+  verbatim, so a server offering the new `gecko` obfuscation works with no client
+  change. (Snell is intentionally not supported: sing-box's Snell *outbound* has
+  no v5, so the sidecar cannot dial a Snell v5 server.)
+
 ## [1.4.0] — 2026-08-23
 
 ### Added
