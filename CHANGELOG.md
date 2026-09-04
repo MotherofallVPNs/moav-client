@@ -5,6 +5,13 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- **Telegram release notification pins its link preview to the release page.**
+  The preview showed whatever link appeared first in the notes body (e.g. a
+  client's App Store page) instead of the release. It now sets
+  `link_preview_options.url` (Bot API 7.0) to the release/issue URL. Matches the
+  same fix on the MoaV server.
+
 ## [1.4.0] — 2026-08-23
 
 ### Added
