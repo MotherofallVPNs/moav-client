@@ -61,7 +61,7 @@ services:
   singbox:
     # Tag is driven by SINGBOX_VERSION in .env (single source, matches the MoaV
     # server). IMAGE_SINGBOX overrides the whole ref to pin/swap registries.
-    image: ${IMAGE_SINGBOX:-ghcr.io/sagernet/sing-box:v${SINGBOX_VERSION:-1.13.19}}
+    image: ${IMAGE_SINGBOX:-ghcr.io/sagernet/sing-box:v${SINGBOX_VERSION:-1.14.0}}
     entrypoint:
       - /bin/sh
       - -c
