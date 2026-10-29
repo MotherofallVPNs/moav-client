@@ -6,9 +6,11 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25-06b6d4.svg?logo=go&logoColor=white)](https://go.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/moav-client?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/moav-client/releases/latest)
 
-[![MoaV server](https://img.shields.io/badge/server-MoaV-ef4444.svg?logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV) [![Protocols](https://img.shields.io/badge/protocols-13%2B-8b5cf6.svg)](#supported-protocols) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
+[![MoaV server](https://img.shields.io/badge/server-MoaV-ef4444.svg?logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV) [![MoaV Deploy](https://img.shields.io/badge/app-MoaV--Deploy-7c3aed.svg?logo=github&logoColor=white)](https://github.com/MotherofallVPNs/moav-deploy-app) [![Protocols](https://img.shields.io/badge/protocols-13%2B-8b5cf6.svg)](#supported-protocols) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
 
 🇬🇧 [English](README.md) &nbsp;·&nbsp; 🇮🇷 [فارسی](README-fa.md)
+
+📱 **[MoaV Deploy](https://github.com/MotherofallVPNs/moav-deploy-app)**: install and manage a MoaV server from your phone (Android and iOS, [docs](https://moav.sh/docs/deploy/)).
 
 Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** community.
 
@@ -36,7 +38,7 @@ editing, and a streaming debug log.
 
 ## Table of Contents
 
-**Links** &nbsp;·&nbsp; [MoaV server](https://github.com/MotherofallVPNs/MoaV) &nbsp;·&nbsp; [Docs](docs/) &nbsp;·&nbsp; [Telegram](https://t.me/motherofallvpns)
+**Links** &nbsp;·&nbsp; [MoaV server](https://github.com/MotherofallVPNs/MoaV) &nbsp;·&nbsp; [Docs](docs/) &nbsp;·&nbsp; [Telegram](https://t.me/motherofallvpns) &nbsp;·&nbsp; [MoaV Deploy](https://github.com/MotherofallVPNs/moav-deploy-app)
 
 **Get started** &nbsp;·&nbsp; [Why moav-client](#why-moav-client) &nbsp;·&nbsp; [See it in action](#see-it-in-action) &nbsp;·&nbsp; [Quick start](#quick-start) &nbsp;·&nbsp; [Import your config](#import-your-config)
 
