@@ -5,6 +5,11 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Documentation
+- **Dependency audit 2026-11** (`docs/devdocs/DEPENDENCY-AUDIT-2026-11.md`):
+  inventory of every pinned component against upstream, with a prioritized
+  update plan. Planning only; no version is changed.
+
 ### Changed
 - **sing-box sidecar updated to 1.14.0** (was 1.13.19), matching the MoaV server.
   No config-generation changes were needed: the generator already emits the
