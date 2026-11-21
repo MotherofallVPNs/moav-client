@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27-alpine AS builder
 # Go-module fetch resilience: pipe (|) falls through to the next proxy on ANY
 # error (incl. the 403 Google's module CDN returns under rate-limiting from some
 # IPs/regions); goproxy.cn isn't subject to those limits. GOSUMDB=off drops the
