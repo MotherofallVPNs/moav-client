@@ -31,6 +31,11 @@ in `config.yaml`.** Copy the templates before first run:
 Change a component version and rebuild just that piece:
 `moav-client up` (or `docker compose up -d --build`).
 
+`.env` is a copy made at install time, so `moav-client update` re-syncs its
+`*_VERSION` lines with the pulled release's `.env.example` (it lists the changes
+and asks first). Use `moav-client update --keep-pins` to hold a version of your
+own, and `moav-client sync-pins` to run only the re-sync.
+
 ## Ports — `.env` is the source, `config.yaml` is the base
 
 `SOCKS5_PORT`, `HTTP_PORT`, and `API_PORT` in `.env` are authoritative:

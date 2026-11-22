@@ -5,6 +5,21 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- **`moav-client update` now carries component version bumps into an existing
+  install.** `.env` is seeded from `.env.example` once, at install, and nothing
+  refreshed its `*_VERSION` pins afterwards, so an updated install kept building
+  the sing-box, Xray and sidecar versions of the day it was installed, whatever
+  the release pinned. `update` now re-syncs those lines with the pulled
+  release (it lists each change and asks first, default yes, and proceeds on
+  its own without a terminal) before the rebuild, and leaves every other `.env`
+  line alone. `--keep-pins` skips it for a deliberately held version, the new
+  `moav-client sync-pins` runs only the re-sync, and re-running the installer
+  over an existing install does the same. **Upgrade note:** the update that
+  brings this change in is still run by the previous wrapper, so on an existing
+  install run `moav-client update` once more afterwards (or `moav-client
+  sync-pins`, then `moav-client up --build`).
+
 ## [1.4.0] — 2026-08-23
 
 ### Added

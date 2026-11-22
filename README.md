@@ -285,6 +285,7 @@ moavc <command>
   install                    re-run the install wizard
   expose <loopback|lan|public>   change network reach
   update [-b <branch>]       pull (optionally switch branch) + rebuild
+  sync-pins                  re-sync .env component version pins with this release
   uninstall [--wipe]         remove the stack (--wipe deletes config/data)
   open | version
 ```
