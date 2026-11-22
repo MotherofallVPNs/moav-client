@@ -7,12 +7,12 @@
 # source compile only when the prebuilt asset is unavailable (GitHub blocked or
 # no asset for the target arch).
 
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 RUN apk add --no-cache git wget unzip ca-certificates
 
 ARG XRAY_REPO=https://github.com/XTLS/Xray-core.git
-ARG XRAY_VERSION=v26.7.28
+ARG XRAY_VERSION=v26.11.9
 ARG TARGETARCH
 
 # Go-module fetch resilience for the source-compile fallback only. Pipe (|)
@@ -46,7 +46,7 @@ RUN set -eux; \
     /xray version
 
 # Runtime stage — /bin/sh is required by the compose inline entrypoint.
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /xray /usr/local/bin/xray
 RUN chmod +x /usr/local/bin/xray

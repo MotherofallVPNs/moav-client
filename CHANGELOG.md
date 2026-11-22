@@ -5,6 +5,28 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Security
+- **Xray-core sidecar updated to v26.11.9** (was v26.7.28, which upstream marks
+  as a pre-release). The range includes two emergency security releases: Xray
+  now verifies TLS against its own root CA set with the compromised roots
+  removed (v26.10.10, v26.10.21) and disables MPTCP on its listeners
+  (v26.10.31), plus XHTTP and mux race fixes. The default `chrome` uTLS
+  fingerprint becomes Chrome 155, which reaches every xhttp endpoint with no
+  config change because the generator already emits `fingerprint: chrome`. The
+  source-compile fallback moves to `golang:1.27-alpine` (Xray needs Go 1.27
+  since v26.9.8) and the runtime stage to `alpine:3.24` (3.21 went end of life
+  on 2026-11-01). The generated `xray.json` passes `xray run -test` on the new
+  binary unchanged.
+- **sing-box sidecar updated to 1.14.4** (was 1.13.19), matching the MoaV
+  server. 1.14.4 is built with Go 1.26.10, which carries the `crypto/x509`
+  distrust of compromised intermediates (CVE-2026-111943); 1.13.19 was built
+  with Go 1.25.12 and the 1.13 line is no longer released. No generator change
+  was needed: its output for every supported protocol passes the real 1.14.4
+  `sing-box check`. Note that since 1.14 Hysteria2 parrots Chrome's QUIC
+  handshake, and Chrome does not offer Ed25519, so a third-party Hysteria2
+  server with an Ed25519 certificate will fail to connect (MoaV servers use
+  ACME certificates and are not affected).
+
 ## [1.4.0] — 2026-08-23
 
 ### Added
