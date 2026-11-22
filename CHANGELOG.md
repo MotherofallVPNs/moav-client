@@ -5,6 +5,21 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Security
+- **Dashboard runtime image moves to `nginx:1.30-alpine`** (was
+  `nginx:1.27-alpine`). nginx 1.27 has been end of life since 2025-06 and that
+  tag was last built in 2025-04, so every dashboard image missed 19 months of
+  nginx and Alpine fixes (OpenSSL, busybox, and the `apache2-utils` that writes
+  the basic-auth file), including the resolver use-after-free CVE-2026-123634
+  on the `resolver` + variable `proxy_pass` path this config uses. The server
+  block and the entrypoint hooks are unchanged.
+- **web-ui dev toolchain: lockfile refreshed for the fixable advisories.** vite
+  8.2.2 to 8.3.8 (dev-server file disclosure and cross-origin script
+  execution), undici 8.10.0 to 8.13.1, brace-expansion and source-map-js, all
+  inside the existing `package.json` ranges. `npm audit` drops from 11 findings
+  to 7; the rest need the vitest major and are handled separately. None of
+  these packages ship in the dashboard bundle.
+
 ## [1.4.0] — 2026-08-23
 
 ### Added

@@ -7,7 +7,7 @@ RUN npm run build
 
 # nginx:alpine is ~50MB vs node + vite preview at ~340MB. Vite preview was
 # only needed during dev; production just serves the static dist.
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine
 # htpasswd (apache2-utils) for generating dashboard basic-auth credentials.
 RUN apk add --no-cache apache2-utils
 COPY --from=builder /app/dist /usr/share/nginx/html
