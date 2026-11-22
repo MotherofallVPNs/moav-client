@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 ARG GOPROXY="https://proxy.golang.org|https://goproxy.cn|direct"
 ARG GOSUMDB=off
 ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
+ARG PSIPHON_VERSION=v2.0.43
 WORKDIR /src
-RUN git clone --depth=1 https://github.com/Psiphon-Labs/psiphon-tunnel-core.git \
+RUN git clone --branch ${PSIPHON_VERSION} --depth=1 https://github.com/Psiphon-Labs/psiphon-tunnel-core.git \
     && cd psiphon-tunnel-core/ConsoleClient \
     && CGO_ENABLED=0 GOOS=linux go build -o /out/psiphon-console-client .
 

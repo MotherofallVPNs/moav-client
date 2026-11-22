@@ -43,6 +43,21 @@ same "AMNEZIAWG_GO_VERSION (.env/compose/Dockerfile)" "$(env_val AMNEZIAWG_GO_VE
 same "AWGTOOLS_VERSION (.env/compose/Dockerfile)" "$(env_val AWGTOOLS_VERSION)" "$(compose_def AWGTOOLS_VERSION)" "$(dockerfile_arg AWGTOOLS_VERSION sidecars/amneziawg/Dockerfile)"
 same "MASTERDNS_VERSION (.env/compose/Dockerfile)" "$(env_val MASTERDNS_VERSION)" "$(compose_def MASTERDNS_VERSION)" "$(dockerfile_arg MASTERDNS_VERSION sidecars/dns-tunnels/Dockerfile)"
 same "TRUSTTUNNEL_CLIENT_VERSION (.env/compose/Dockerfile)" "$(env_val TRUSTTUNNEL_CLIENT_VERSION)" "$(compose_def TRUSTTUNNEL_CLIENT_VERSION)" "$(dockerfile_arg TRUSTTUNNEL_CLIENT_VERSION sidecars/trusttunnel/Dockerfile)"
+same "PSIPHON_VERSION (.env/compose/Dockerfile)" "$(env_val PSIPHON_VERSION)" "$(compose_def PSIPHON_VERSION)" "$(dockerfile_arg PSIPHON_VERSION sidecars/psiphon/Dockerfile)"
+same "SNI_SPOOF_VERSION (.env/compose/Dockerfile)" "$(env_val SNI_SPOOF_VERSION)" "$(compose_def SNI_SPOOF_VERSION)" "$(dockerfile_arg SNI_SPOOF_VERSION sidecars/sni-spoof/Dockerfile)"
+same "CADDY_VERSION (.env/compose)" "$(env_val CADDY_VERSION)" "$(compose_def CADDY_VERSION)"
+
+# --- nothing floats: source builds clone a tag, pulled images carry a tag/digest
+if grep -nE 'git clone' sidecars/*/Dockerfile | grep -vE -- '--branch|-b "?\$'; then
+  bad "a sidecar Dockerfile clones a branch HEAD (pin it with --branch <tag>)"
+else
+  ok "every source build clones a pinned tag"
+fi
+if grep -nE '^[[:space:]]*image:.*(:latest|:-caddy:2\})' docker-compose.yml; then
+  bad "a compose image default floats (:latest / major-only tag)"
+else
+  ok "no floating image defaults in docker-compose.yml"
+fi
 
 # --- ports: .env.example defaults match config.yaml.example base -------------
 yaml_port() { grep -oE "$1: [0-9]+" config.yaml.example | head -1 | sed 's/.*: //'; }

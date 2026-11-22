@@ -16,8 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 ARG GOPROXY="https://proxy.golang.org|https://goproxy.cn|direct"
 ARG GOSUMDB=off
 ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
+ARG SNI_SPOOF_VERSION=v0.7.2
 WORKDIR /src
-RUN git clone --depth=1 https://github.com/aleskxyz/SNI-Spoofing-Go.git \
+RUN git clone --branch ${SNI_SPOOF_VERSION} --depth=1 https://github.com/aleskxyz/SNI-Spoofing-Go.git \
     && cd SNI-Spoofing-Go \
     && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/sni-spoofing .
 
