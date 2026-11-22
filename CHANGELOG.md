@@ -19,6 +19,12 @@ All notable changes to moav-client are documented here. Format loosely follows
   inside the existing `package.json` ranges. `npm audit` drops from 11 findings
   to 7; the rest need the vitest major and are handled separately. None of
   these packages ship in the dashboard bundle.
+- **web-ui test runner moves to vitest 4.1.12** (was 3.2.7), with
+  `@vitest/coverage-v8` to match. The vitest 3 line has no fix for the two
+  critical advisories in its tree (tinypool prototype pollution leading to code
+  execution, `@vitest/mocker` path traversal) or for the glob and minimatch
+  findings under the coverage provider. No test or config change was needed.
+  Together with the lockfile refresh above, `npm audit` is clean (0 findings).
 
 ## [1.4.0] — 2026-08-23
 
