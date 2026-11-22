@@ -26,6 +26,14 @@ All notable changes to moav-client are documented here. Format loosely follows
   findings under the coverage provider. No test or config change was needed.
   Together with the lockfile refresh above, `npm audit` is clean (0 findings).
 
+### Changed
+- **web-ui routine dependency bumps.** react and react-dom 19.3.1, `@types/react`
+  and `@types/react-dom` 19.3.0, `@vitejs/plugin-react` 6.3.0,
+  `@testing-library/react` 16.3.3 and jsdom 31.0.1, with the `package.json`
+  floors raised to match (vite's floor is now 8.3.8, the first release with the
+  dev-server fixes). The dashboard build image and the CI job move from Node 22
+  to Node 24 (active LTS).
+
 ## [1.4.0] — 2026-08-23
 
 ### Added
