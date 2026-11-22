@@ -202,7 +202,7 @@ services:
     build:
       context: ./sidecars/dns-tunnels
       args:
-        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.05.10.180256-27c7e11}"
+        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.11.18.210322-7198b45}"
     profiles: [masterdns, all-sidecars]
     mem_limit: 128m
     cpus: 0.5
@@ -215,7 +215,7 @@ services:
     build:
       context: ./sidecars/amneziawg
       args:
-        AMNEZIAWG_GO_VERSION: "${AMNEZIAWG_GO_VERSION:-v3.1.20260814}"
+        AMNEZIAWG_GO_VERSION: "${AMNEZIAWG_GO_VERSION:-v3.1.20261116}"
         AWGTOOLS_VERSION: "${AWGTOOLS_VERSION:-v3.1.20260812}"
     profiles: [amneziawg, all-sidecars]
     mem_limit: 256m
@@ -257,7 +257,7 @@ services:
     build:
       context: ./sidecars/dns-tunnels
       args:
-        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.05.10.180256-27c7e11}"
+        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.11.18.210322-7198b45}"
     profiles: [dns-tunnels]
     mem_limit: 128m
     cpus: 0.5

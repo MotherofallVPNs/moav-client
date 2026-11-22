@@ -9,7 +9,7 @@
 # Capabilities: NET_ADMIN — the upstream tool sets BPF / raw sockets
 #                          for low-level CH injection.
 #
-FROM golang:1.25-bookworm AS build
+FROM golang:1.27-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 # Go-module fetch resilience — fall through proxies on a 403 (CDN rate-limit).

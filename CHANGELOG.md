@@ -5,6 +5,22 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+- **AmneziaWG daemon updated to `amneziawg-go v3.1.20261116`** (was
+  v3.1.20260814; the tools stay at v3.1.20260812, still the latest). Upstream
+  hardened the AWG 3.1 obfuscation parameters: `jmin > jmax` is rejected instead
+  of underflowing the junk packet size, negative lengths in the `<r>/<rc>/<rd>/<dz>`
+  tags are rejected, I1 to I5 can change safely while handshakes are in flight,
+  and a timer race is fixed. Same wire format.
+- **MasterDNS client updated to v2026.11.18** (was v2026.05.10): FastStart with
+  background resolver discovery and scoring, a fix for resolver probation
+  starvation, and data-race fixes in session init and the resolver health loop.
+  The build now verifies the download against the release's `SHA256SUMS.txt`,
+  as the MoaV server does, and fails on a mismatch.
+- **AmneziaWG and SNI-spoof builders move to `golang:1.27-bookworm`** (was
+  1.25, end of life), so both binaries pick up the Go security fixes released
+  since August.
+
 ## [1.4.0] — 2026-08-23
 
 ### Added
