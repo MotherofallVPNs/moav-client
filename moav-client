@@ -343,7 +343,7 @@ sync_env_pins() {
     echo "${GRN}✓ .env component pins match this release${CR}"; return 0
   fi
   if [[ "$mode" == "keep" ]]; then
-    echo "${YLW}! --keep-pins: leaving the ${#keys[@]} pin(s) above as set in .env${CR}"; return 0
+    echo "${YLW}! not synced: the ${#keys[@]} pin(s) above stay as set in .env${CR}"; return 0
   fi
   if [[ "$mode" == "ask" ]] && ! confirm_yes "update these pin(s) in .env to this release's versions?"; then
     echo "${YLW}! kept your .env pins — run 'moav-client sync-pins' to apply them later${CR}"; return 0
