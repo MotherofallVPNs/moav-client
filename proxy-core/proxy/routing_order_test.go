@@ -361,3 +361,25 @@ func TestSOCKS5_IPLiteralInDomainFieldMatchesIPRules(t *testing.T) {
 	}
 	expectEcho(t, c, []byte("literal as a name"))
 }
+
+// A SOCKS5 domain is arbitrary client bytes; junk must not reach rules or logs.
+func TestSOCKS5_MalformedHostnameIsRefused(t *testing.T) {
+	for name, host := range map[string]string{
+		"empty":              "",
+		"space":              "bad host.test",
+		"newline":            "a.test\nBLOCK SOCKS5 b.test",
+		"NUL":                "a.test\x00b.test",
+		"only a trailing CR": "a.test\r",
+	} {
+		t.Run(name, func(t *testing.T) {
+			up := startRecordingUpstream(t)
+			c := dialRaw(t, startSOCKS5(t, NewServer(0, 0, balancerVia(up.addr), plugins.NewEngine(nil), nil)))
+			greet(t, c, methodNoAuth)
+			mustWrite(t, c, requestMsg(cmdConnect, atypDomain, []byte(host), 443))
+			expectFailure(t, c, repHostUnreachable)
+			if got := up.seen(); len(got) != 0 {
+				t.Errorf("malformed host reached the upstream: %+v", got)
+			}
+		})
+	}
+}

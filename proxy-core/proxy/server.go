@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 
 	gosocks5 "github.com/things-go/go-socks5"
 	"github.com/things-go/go-socks5/statute"
@@ -108,11 +109,18 @@ func (unresolved) Resolve(ctx context.Context, _ string) (context.Context, net.I
 	return ctx, nil, nil
 }
 
-// socks5Logger writes the library's per-connection errors to stdout.
+// socks5Logger writes the library's per-connection errors to stdout, one line
+// each: they quote the client's raw destination, which may hold control bytes.
 type socks5Logger struct{ *log.Logger }
 
 func (l socks5Logger) Errorf(format string, args ...interface{}) {
-	l.Printf("[ERR] socks: "+format, args...)
+	msg := strings.Map(func(r rune) rune {
+		if r < ' ' || r == 0x7f {
+			return '?'
+		}
+		return r
+	}, fmt.Sprintf(format, args...))
+	l.Printf("[ERR] socks: %s", msg)
 }
 
 // socks5Dial is the SOCKS5 dial hook: it applies the plugin decision
@@ -127,6 +135,9 @@ func (s *Server) socks5Dial(ctx context.Context, network, addr string) (net.Conn
 	if p, err2 := net.LookupPort("tcp", portStr); err2 == nil {
 		port = p
 	}
+	if !validHost(host) {
+		return nil, fmt.Errorf("invalid destination host %q", host)
+	}
 
 	switch s.pluginDecide(host, port, network) {
 	case plugins.DecisionBlock:
@@ -138,6 +149,20 @@ func (s *Server) socks5Dial(ctx context.Context, network, addr string) (net.Conn
 	default:
 		return s.balancer.DialContext(network, addr)
 	}
+}
+
+// validHost rejects an empty name and one with spaces or control characters:
+// a SOCKS5 domain is raw client bytes that end up in rules and log lines.
+func validHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	for i := 0; i < len(host); i++ {
+		if c := host[i]; c <= ' ' || c == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // ListenAndServeHTTP starts the HTTP CONNECT proxy listener.
