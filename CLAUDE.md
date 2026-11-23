@@ -45,12 +45,12 @@ moav-client is the local client for [**MoaV — Mother of all VPNs**](https://gi
 
 ### Connection (SOCKS5 or HTTP CONNECT)
 1. Client connects on `:1080` (SOCKS5) or `:8080` (HTTP CONNECT).
-2. `server.pluginDecide(host, port, network)` / `handler.decide(host, port, proto)`:
+2. `server.pluginDecide(host, port, network)` / `handler.decide(host, port, proto)`. `host` is the destination as the client sent it (hostname or IP literal); neither listener resolves it first (the SOCKS5 library's resolver is replaced by the no-op `unresolved`), so `domain*` rules match hostnames and IP rules match IP literals only:
    a. `TorrentBlocker.Match()` checked first — if true, `DecisionBlock`.
    b. `Engine.Evaluate()` iterates rules in order (first-match-wins) — returns `DecisionBlock`, `DecisionDirect`, or `DecisionProxy`.
 3. On `DecisionBlock`: connection closed immediately.
-4. On `DecisionDirect`: `net.Dial` directly to destination.
-5. On `DecisionProxy`: `balancer.DialContext(network, addr)` called.
+4. On `DecisionDirect`: `net.Dial` directly to destination (a hostname is resolved locally here).
+5. On `DecisionProxy`: `balancer.DialContext(network, addr)` called; a hostname is forwarded unresolved, so the endpoint resolves it.
    - Tries up to `maxDialAttempts` (4) different endpoints. `pickExcluding(triedIDs)` selects the best remaining one by strategy.
    - `dialThrough(ep, network, addr)`: if `Config["socks5_addr"]` is set (sing-box or sidecar), dials via SOCKS5 to that local port. Otherwise: `sidecar` → `127.0.0.1:1080`; vless/vmess/trojan/ss/tuic → legacy SOCKS5 to `ep.Address`; anytls/hysteria2/wireguard → error.
    - On dial failure, `markError(ep.ID)` flips status to "error" and the loop picks the next-best endpoint. If all attempts fail, falls back to direct dial.
