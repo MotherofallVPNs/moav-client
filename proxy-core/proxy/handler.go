@@ -75,7 +75,7 @@ func (h *httpHandler) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// Bytes the client sent before the 200 (or the read-ahead byte) are
 	// already buffered; forward them before the raw copy starts.
 	if n := bufrw.Reader.Buffered(); n > 0 {
-		early, _ := bufrw.Reader.Peek(n)
+		early, _ := bufrw.Peek(n)
 		if _, err := dst.Write(early); err != nil {
 			return
 		}
