@@ -234,7 +234,7 @@ moav://<name>@<host>?uuid=…&pw=…&pbk=…&sni_default=…&fp=chrome\
 
 ### GeoIP
 
-قوانین `geoip:<cc>` یک IP مقصد را با لیست CIDR در `geoip/<cc>.txt` تطبیق می‌دهند (لیست ایران در مخزن هست و هفتگی توسط CI به‌روز می‌شود). تطابق فقط روی **IP** است — میزبان‌های نام‌دار resolve نمی‌شوند. به [geoip/README.md](geoip/README.md) نگاه کنید.
+قوانین `geoip:<cc>` یک IP مقصد را با لیست CIDR در `geoip/<cc>.txt` تطبیق می‌دهند (لیست ایران در مخزن هست و هفتگی توسط CI به‌روز می‌شود). تطابق روی **IP** انجام می‌شود. اگر مقصد یک نام میزبان باشد و هیچ قانون دامنه‌ای با آن تطبیق نکند، proxy-core نام را با DNS محلی resolve می‌کند و پیش از باز کردن هر اتصالی، قانون را روی همان IP می‌سنجد؛ به این ترتیب با `geoip: ir → direct` سایت‌های داخل ایران مستقیم وصل می‌شوند و از تونل نمی‌گذرند. به [docs/PLUGINS.md](docs/PLUGINS.md#resolution-order) و [geoip/README.md](geoip/README.md) نگاه کنید.
 
 ---
 

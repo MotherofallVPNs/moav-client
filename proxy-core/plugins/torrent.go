@@ -49,7 +49,7 @@ func (t *TorrentBlocker) Match(host string, port int, protocolHint string) bool 
 	}
 
 	// 2. Known tracker domains (exact or subdomain).
-	lower := strings.ToLower(host)
+	lower := strings.ToLower(trimRootDot(host))
 	for _, td := range trackerDomains {
 		if lower == td || strings.HasSuffix(lower, "."+td) {
 			return true

@@ -27,10 +27,16 @@ through a chosen endpoint). Start there.
   `socks5://`. HTTP CONNECT clients send the hostname already.
 - Rules are first-match-wins, so an earlier `port` or `protocol` rule can
   take the connection before the domain rule is reached.
+- A trailing dot (`example.com.`) is ignored when matching, so it is not the
+  cause.
 - See [PLUGINS.md](PLUGINS.md#what-the-rules-see) for what each client sends.
 
 ### A `geoip:` rule isn't blocking/matching
-- geoip matches **IP-literal** destinations only — hostnames aren't resolved.
+- A hostname is tested against geoip only if no `domain*`, `port` or
+  `protocol` rule matched it first (name rules win), and only via proxy-core's
+  local DNS answer. If that lookup fails, the log shows
+  `route: local lookup of <name> … failed` and the connection takes the
+  default proxy route.
 - If `geoip/<cc>.txt` is missing, the rule is inert and proxy-core logs a
   one-time `WARN … rules matching geoip:<cc> are INERT`. Generate the list:
   `scripts/update-geoip.sh <cc>`.

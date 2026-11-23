@@ -22,9 +22,7 @@ import (
 type Server struct {
 	socks5Port   int
 	httpPort     int
-	balancer     *balancer.Balancer
-	engine       *plugins.Engine
-	torrent      *plugins.TorrentBlocker
+	router       *router
 	authUsername string
 	authPassword string
 }
@@ -34,9 +32,7 @@ func NewServer(socks5Port, httpPort int, b *balancer.Balancer, eng *plugins.Engi
 	return &Server{
 		socks5Port: socks5Port,
 		httpPort:   httpPort,
-		balancer:   b,
-		engine:     eng,
-		torrent:    tb,
+		router:     newRouter(b, eng, tb),
 	}
 }
 
@@ -74,7 +70,8 @@ func (s *Server) serveSOCKS5(ctx context.Context, ln net.Listener) error {
 func (s *Server) newSOCKS5Server() *gosocks5.Server {
 	opts := []gosocks5.Option{
 		gosocks5.WithDial(s.socks5Dial),
-		// Rules must see the hostname, so the library may not resolve it first.
+		// Name rules must see the hostname, so the library may not resolve it
+		// first; the router resolves it itself only for IP rules.
 		gosocks5.WithResolver(unresolved{}),
 		gosocks5.WithLogger(socks5Logger{log.New(os.Stdout, "", log.LstdFlags)}),
 		// CONNECT only. The library's own UDP ASSOCIATE relay would dial
@@ -102,7 +99,7 @@ func refuseSOCKS5Command(_ context.Context, w io.Writer, _ *gosocks5.Request) er
 }
 
 // unresolved hands a domain target to the dial hook as the client sent it.
-// The chosen route resolves it: the endpoint for proxy, net.Dial for direct.
+// The router decides when, and by whom, it is resolved.
 type unresolved struct{}
 
 func (unresolved) Resolve(ctx context.Context, _ string) (context.Context, net.IP, error) {
@@ -123,8 +120,8 @@ func (l socks5Logger) Errorf(format string, args ...interface{}) {
 	l.Printf("[ERR] socks: %s", msg)
 }
 
-// socks5Dial is the SOCKS5 dial hook: it applies the plugin decision
-// (block / direct / proxy) to the destination, a hostname or an IP literal.
+// socks5Dial is the SOCKS5 dial hook: it routes the destination, a hostname or
+// an IP literal, through the plugin decision (block / direct / proxy).
 func (s *Server) socks5Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -139,16 +136,22 @@ func (s *Server) socks5Dial(ctx context.Context, network, addr string) (net.Conn
 		return nil, fmt.Errorf("invalid destination host %q", host)
 	}
 
-	switch s.pluginDecide(host, port, network) {
+	r := s.router.decide(ctx, host, port, network)
+	switch r.decision {
 	case plugins.DecisionBlock:
 		log.Printf("BLOCK SOCKS5 %s:%d", host, port)
-		return nil, fmt.Errorf("blocked by plugin engine")
 	case plugins.DecisionDirect:
-		log.Printf("DIRECT SOCKS5 %s:%d", host, port)
-		return net.Dial(network, addr)
-	default:
-		return s.balancer.DialContext(network, addr)
+		log.Printf("DIRECT SOCKS5 %s:%d%s", host, port, viaAddrs(r))
 	}
+	return s.router.dial(ctx, r, network, host, port)
+}
+
+// viaAddrs notes, for the log, the resolved addresses an IP rule matched.
+func viaAddrs(r route) string {
+	if len(r.addrs) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (IP rule on %v)", r.addrs)
 }
 
 // validHost rejects an empty name and one with spaces or control characters:
@@ -170,7 +173,7 @@ func (s *Server) ListenAndServeHTTP(ctx context.Context) error {
 	addr := fmt.Sprintf("0.0.0.0:%d", s.httpPort)
 	log.Printf("HTTP CONNECT listening on %s", addr)
 
-	h := &httpHandler{balancer: s.balancer, engine: s.engine, torrent: s.torrent}
+	h := &httpHandler{router: s.router}
 	srv := &http.Server{Addr: addr, Handler: h}
 
 	go func() {
@@ -182,15 +185,4 @@ func (s *Server) ListenAndServeHTTP(ctx context.Context) error {
 		return fmt.Errorf("http listen: %w", err)
 	}
 	return nil
-}
-
-// pluginDecide applies TorrentBlocker then Engine to get a Decision.
-func (s *Server) pluginDecide(host string, port int, proto string) plugins.Decision {
-	if s.torrent != nil && s.torrent.Match(host, port, proto) {
-		return plugins.DecisionBlock
-	}
-	if s.engine != nil {
-		return s.engine.Evaluate(host, port, proto)
-	}
-	return plugins.DecisionProxy
 }

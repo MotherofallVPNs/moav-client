@@ -45,11 +45,13 @@ moav-client is the local client for [**MoaV — Mother of all VPNs**](https://gi
 
 ### Connection (SOCKS5 or HTTP CONNECT)
 1. Client connects on `:1080` (SOCKS5) or `:8080` (HTTP CONNECT).
-2. `server.pluginDecide(host, port, network)` / `handler.decide(host, port, proto)`. `host` is the destination as the client sent it (hostname or IP literal); neither listener resolves it first (the SOCKS5 library's resolver is replaced by the no-op `unresolved`), so `domain*` rules match hostnames and IP rules match IP literals only:
+2. `router.decide(ctx, host, port, proto)` (`proxy/route.go`, shared by both listeners). `host` is the destination as the client sent it (hostname or IP literal); the SOCKS5 library's resolver is replaced by the no-op `unresolved`, so it is never resolved first:
    a. `TorrentBlocker.Match()` checked first — if true, `DecisionBlock`.
-   b. `Engine.Evaluate()` iterates rules in order (first-match-wins) — returns `DecisionBlock`, `DecisionDirect`, or `DecisionProxy`.
+   b. Name pass: `Engine.MatchFirst([host])` iterates rules in order (first-match-wins). `domain*` / `port` / `protocol` match here; a single trailing dot is ignored by name matches.
+   c. Address pass, only if (b) matched nothing, `host` is a name and `Engine.HasIPRules()`: resolve with the local `Resolver` (`net.DefaultResolver`, 5 s, never through a tunnel), then `MatchFirst(addrs)`; the route keeps the addresses the deciding rule matched. This is what keeps `geoip: ir → direct` names off the tunnel.
+   d. Otherwise `DecisionProxy`.
 3. On `DecisionBlock`: connection closed immediately.
-4. On `DecisionDirect`: `net.Dial` directly to destination (a hostname is resolved locally here).
+4. On `DecisionDirect`: `router.dial` dials the address-pass addresses if there are any (no second lookup), else the destination (a hostname is resolved locally here).
 5. On `DecisionProxy`: `balancer.DialContext(network, addr)` called; a hostname is forwarded unresolved, so the endpoint resolves it.
    - Tries up to `maxDialAttempts` (4) different endpoints. `pickExcluding(triedIDs)` selects the best remaining one by strategy.
    - `dialThrough(ep, network, addr)`: if `Config["socks5_addr"]` is set (sing-box or sidecar), dials via SOCKS5 to that local port. Otherwise: `sidecar` → `127.0.0.1:1080`; vless/vmess/trojan/ss/tuic → legacy SOCKS5 to `ep.Address`; anytls/hysteria2/wireguard → error.

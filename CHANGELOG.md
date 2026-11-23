@@ -54,16 +54,27 @@ All notable changes to moav-client are documented here. Format loosely follows
   the torrent blocker only ever saw an IP: `domain`, `domain_suffix` and
   `domain_keyword` rules never matched SOCKS5 traffic, although they did on the
   HTTP CONNECT port. The hostname now reaches the rules as the client sent it
-  (`socks5h://`) and is resolved after the decision: by the selected endpoint
-  for `proxy`, locally for `direct`. proxy-core itself therefore no longer
-  looks up proxied SOCKS5 destinations on the local network, and the
-  per-connection flow log shows hostnames. A SOCKS5 destination name that is
-  empty or contains spaces or control characters is refused. **Upgrade note:** as a side
-  effect of the old lookup, `ip_cidr` and `geoip` rules also matched named
-  destinations on the SOCKS5 port. They now match IP literals only, on both
-  ports, as documented. If you relied on `geoip: ir → direct` for named sites,
-  add a `domain_suffix` rule next to it. See
-  [docs/PLUGINS.md](docs/PLUGINS.md#what-the-rules-see).
+  (`socks5h://`). A SOCKS5 destination name that is empty or contains spaces or
+  control characters is refused.
+- **`geoip` / `ip_cidr` rules now classify hostnames on both ports, before any
+  dial.** Routing is two-pass, like Xray's `IPIfNonMatch`: rules run on the
+  hostname first; if none matched and IP rules are enabled, the name is
+  resolved with the local resolver (never through a tunnel) and the rules run
+  again on its addresses. With `geoip: ir → direct`, a `socks5h://` or HTTP
+  CONNECT request for a name that resolves to an Iranian address now goes
+  direct and never reaches a MoaV endpoint, so the exit server's IP is not
+  exposed to servers inside Iran. Before, this only worked on the SOCKS5 port
+  as a side effect of resolving every name first, and never on HTTP CONNECT.
+  Proxied names are still forwarded to the endpoint unresolved, and a direct
+  dial reuses the classification lookup. No lookup is made when a name rule
+  matches or no IP rule is enabled. See
+  [docs/PLUGINS.md](docs/PLUGINS.md#resolution-order).
+- **A trailing dot no longer defeats domain rules.** `example.com.` now matches
+  `domain`, `domain_suffix`, `domain_list` and the torrent tracker list, on
+  both ports.
+- **Data race in `/api/flows`.** Reading the flow list while a connection
+  closed raced on the flow's result and byte counters. They are now read and
+  written under the ring's lock (and atomically for the counters).
 - **Telegram release notification pins its link preview to the release page.**
   The preview showed whatever link appeared first in the notes body (e.g. a
   client's App Store page) instead of the release. It now sets

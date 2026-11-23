@@ -291,8 +291,8 @@ func TestSOCKS5_ConnectIPv6(t *testing.T) {
 func TestSOCKS5_ConnectDomainName(t *testing.T) {
 	requireLocalhost(t)
 	echo := startEcho(t, "127.0.0.1:0")
-	// A domain target reaches the rules as a hostname, so only the domain rule
-	// can send it direct; the loopback CIDR rules never see an IP for it.
+	// A domain target reaches the rules as a hostname, so the domain rule
+	// matches it without a lookup.
 	eng := plugins.NewEngine([]plugins.Rule{
 		{Match: plugins.MatchExpr{Type: "domain", Value: "localhost"}, Action: plugins.DecisionDirect, Enabled: true},
 	})
