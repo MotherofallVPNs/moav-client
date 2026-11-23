@@ -21,6 +21,39 @@ All notable changes to moav-client are documented here. Format loosely follows
   client's App Store page) instead of the release. It now sets
   `link_preview_options.url` (Bot API 7.0) to the release/issue URL. Matches the
   same fix on the MoaV server.
+- **`moav-client update` now carries component version bumps into an existing
+  install.** `.env` is seeded from `.env.example` once, at install, and nothing
+  refreshed its `*_VERSION` pins afterwards, so an updated install kept building
+  the sing-box, Xray and sidecar versions of the day it was installed, whatever
+  the release pinned. `update` now re-syncs those lines with the pulled
+  release (it lists each change and asks first, default yes, and proceeds on
+  its own without a terminal) before the rebuild, and leaves every other `.env`
+  line alone. `--keep-pins` skips it for a deliberately held version, the new
+  `moav-client sync-pins` runs only the re-sync, and re-running the installer
+  over an existing install does the same. **Upgrade note:** the update that
+  brings this change in is still run by the previous wrapper, so on an existing
+  install run `moav-client update` once more afterwards (or `moav-client
+  sync-pins`, then `moav-client up --build`).
+
+### Internal
+- **CI: golangci-lint runs again.** `golangci-lint-action@v6` with
+  `version: latest` installed a golangci-lint built with Go 1.24, which refuses
+  a Go 1.25 module and exits 3; `continue-on-error` kept the step green, so
+  nothing had been linted since the move to Go 1.25. The step now uses action
+  v9 with golangci-lint pinned to v2.15.0 (built with Go 1.27). Findings stay
+  non-blocking for now (`--issues-exit-code=0`), but a linter that cannot run
+  fails the job.
+- **CI actions updated and pinned by commit SHA:** checkout v7.0.1, setup-go
+  v7.1.0, setup-node v7.1.0, upload-artifact v7.0.2, golangci-lint-action
+  v9.3.0 (each was three majors behind on a floating major tag). They run on
+  Node 24, so a self-hosted runner must be v2.327.1 or newer.
+- **Live e2e no longer gives up before the engines are up.** The single probe
+  could land before sing-box and xray were listening, fail every endpoint in
+  milliseconds, and end the run as "0 ok". The probe is now re-triggered while
+  waiting.
+- `.env.example` and `docs/CONFIGURATION.md` no longer claim the component pins
+  track the MoaV server's; shared components stay wire-compatible but are
+  bumped on the client's own schedule.
 
 ### Security
 - **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).

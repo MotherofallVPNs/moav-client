@@ -24,12 +24,19 @@ in `config.yaml`.** Copy the templates before first run:
   `XRAY_VERSION`, `AMNEZIAWG_GO_VERSION`, `AWGTOOLS_VERSION`, `MASTERDNS_VERSION`,
   `TRUSTTUNNEL_CLIENT_VERSION`). These are the single source; `docker-compose.yml`
   passes them as build args / image tags with matching `${VAR:-default}` fallbacks
-  (kept in sync by the same test), and the values track the MoaV server's
-  `.env.example`. Pulled images can be swapped wholesale with `IMAGE_SINGBOX`,
+  (kept in sync by the same test). Shared components stay wire-compatible with
+  the MoaV server's `.env.example` but are bumped on the client's own schedule
+  (see `docs/devdocs/` for the latest dependency audit). Pulled images can be
+  swapped wholesale with `IMAGE_SINGBOX`,
   `IMAGE_TOR`, `IMAGE_CADDY`.
 
 Change a component version and rebuild just that piece:
 `moav-client up` (or `docker compose up -d --build`).
+
+`.env` is a copy made at install time, so `moav-client update` re-syncs its
+`*_VERSION` lines with the pulled release's `.env.example` (it lists the changes
+and asks first). Use `moav-client update --keep-pins` to hold a version of your
+own, and `moav-client sync-pins` to run only the re-sync.
 
 ## Ports — `.env` is the source, `config.yaml` is the base
 

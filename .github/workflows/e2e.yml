@@ -55,7 +55,7 @@ jobs:
       MOAV_TEST_BUNDLE_B64: ${{ inputs.bundle_b64 || secrets.MOAV_TEST_BUNDLE_B64 }}
       MOAV_TEST_EXIT_IP: ${{ inputs.exit_ip || secrets.MOAV_TEST_EXIT_IP }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Preflight
         run: |
@@ -94,7 +94,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: moav-client-e2e
           path: e2e-artifacts/

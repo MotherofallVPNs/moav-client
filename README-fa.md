@@ -256,6 +256,7 @@ moavc <command>
   install                    اجرای دوباره‌ی ویزارد نصب
   expose <loopback|lan|public>   تغییر سطح دسترسی شبکه
   update [-b <branch>]       pull (و در صورت نیاز تعویض شاخه) + rebuild
+  sync-pins                  همگام‌سازی نسخه‌ی اجزا در .env با این نسخه
   uninstall [--wipe]         حذف استک (--wipe کانفیگ/داده را پاک می‌کند)
   open | version
 ```
