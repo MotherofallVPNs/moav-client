@@ -45,7 +45,34 @@ func (s *Server) WithAuth(username, password string) *Server {
 
 // ListenAndServeSOCKS5 starts the SOCKS5 proxy listener.
 func (s *Server) ListenAndServeSOCKS5(ctx context.Context) error {
-	conf := &gosocks5.Config{}
+	addr := fmt.Sprintf("0.0.0.0:%d", s.socks5Port)
+	log.Printf("SOCKS5 listening on %s", addr)
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("socks5 listen: %w", err)
+	}
+	return s.serveSOCKS5(ctx, ln)
+}
+
+// serveSOCKS5 serves SOCKS5 connections on ln until ctx is cancelled.
+func (s *Server) serveSOCKS5(ctx context.Context, ln net.Listener) error {
+	srv, err := s.newSOCKS5Server()
+	if err != nil {
+		ln.Close()
+		return fmt.Errorf("socks5 init: %w", err)
+	}
+	go func() {
+		<-ctx.Done()
+		ln.Close()
+	}()
+	return srv.Serve(ln)
+}
+
+// newSOCKS5Server builds the SOCKS5 protocol server: optional user/pass auth
+// plus the dial hook that routes every CONNECT through the plugin engine.
+func (s *Server) newSOCKS5Server() (*gosocks5.Server, error) {
+	conf := &gosocks5.Config{Dial: s.socks5Dial}
 
 	// A password alone turns auth on; the username may be empty (clients then
 	// send an empty username). Requiring both would leave the proxy open when
@@ -55,50 +82,32 @@ func (s *Server) ListenAndServeSOCKS5(ctx context.Context) error {
 		conf.AuthMethods = []gosocks5.Authenticator{gosocks5.UserPassAuthenticator{Credentials: creds}}
 		log.Printf("SOCKS5 auth enabled (user %q)", s.authUsername)
 	}
+	return gosocks5.New(conf)
+}
 
-	conf.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, portStr, err := net.SplitHostPort(addr)
-			if err != nil {
-				host = addr
-				portStr = "0"
-			}
-			port := 0
-			if p, err2 := net.LookupPort("tcp", portStr); err2 == nil {
-				port = p
-			}
-
-			// Apply plugin engine decision.
-			dec := s.pluginDecide(host, port, network)
-			switch dec {
-			case plugins.DecisionBlock:
-				log.Printf("BLOCK SOCKS5 %s:%d", host, port)
-				return nil, fmt.Errorf("blocked by plugin engine")
-			case plugins.DecisionDirect:
-				log.Printf("DIRECT SOCKS5 %s:%d", host, port)
-				return net.Dial(network, addr)
-			default:
-				return s.balancer.DialContext(network, addr)
-		}
-	}
-	srv, err := gosocks5.New(conf)
+// socks5Dial is the SOCKS5 dial hook: it applies the plugin decision
+// (block / direct / proxy) to the requested destination.
+func (s *Server) socks5Dial(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return fmt.Errorf("socks5 init: %w", err)
+		host = addr
+		portStr = "0"
+	}
+	port := 0
+	if p, err2 := net.LookupPort("tcp", portStr); err2 == nil {
+		port = p
 	}
 
-	addr := fmt.Sprintf("0.0.0.0:%d", s.socks5Port)
-	log.Printf("SOCKS5 listening on %s", addr)
-
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("socks5 listen: %w", err)
+	switch s.pluginDecide(host, port, network) {
+	case plugins.DecisionBlock:
+		log.Printf("BLOCK SOCKS5 %s:%d", host, port)
+		return nil, fmt.Errorf("blocked by plugin engine")
+	case plugins.DecisionDirect:
+		log.Printf("DIRECT SOCKS5 %s:%d", host, port)
+		return net.Dial(network, addr)
+	default:
+		return s.balancer.DialContext(network, addr)
 	}
-
-	go func() {
-		<-ctx.Done()
-		ln.Close()
-	}()
-
-	return srv.Serve(ln)
 }
 
 // ListenAndServeHTTP starts the HTTP CONNECT proxy listener.
