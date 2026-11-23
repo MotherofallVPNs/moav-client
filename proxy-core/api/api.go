@@ -30,8 +30,8 @@ import (
 	"github.com/MotherofallVPNs/moav-client/proxy-core/prober"
 	"github.com/MotherofallVPNs/moav-client/proxy-core/state"
 	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/net/websocket"
-	"gopkg.in/yaml.v3"
 )
 
 // Server is the API HTTP server.
@@ -1217,7 +1217,7 @@ func (s *Server) handleBundleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Patch config.yaml to add the new source. Best-effort; we use
-	// gopkg.in/yaml.v3 to preserve as much structure as we can but the
+	// go.yaml.in/yaml/v3 to preserve as much structure as we can but the
 	// resulting file may have re-ordered keys.
 	if err := s.addSourceToConfig(res); err != nil {
 		log.Printf("api: bundle extracted but config.yaml patch failed: %v", err)

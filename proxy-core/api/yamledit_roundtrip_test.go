@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Byte-level and value-level pins for the comment-preserving config.yaml
@@ -287,6 +287,9 @@ func TestYAMLNodeOf_StringsSurviveARoundTripAsStrings(t *testing.T) {
 		"فارسی و نیم\u200cفاصله", "emoji 🐾", "tab\there", "nbsp x", "bell\a", "nul\x00byte",
 		"line1\nline2", "line1\nline2\n", "trailing newline\n", "two trailing\n\n", "crlf\r\nline",
 		"  indented first\nsecond", "a\n\n\nb", "ends with space \nnext",
+		// Leading or bare newlines: gopkg.in/yaml.v3 emitted these as block
+		// scalars that read back without the newline (go-yaml/yaml#755).
+		"\n", "\n\n", "\nleading newline", "\n\nleading blank line\n", " \n", "\n ",
 		strings.Repeat("long ", 60),
 	}
 	for _, v := range values {
@@ -407,5 +410,23 @@ func TestEditYAML_AnchorsAndMergeKeysKeepTheirMeaning(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("anchor/alias syntax %q not preserved:\n%s", want, out)
 		}
+	}
+	// gopkg.in/yaml.v3 rewrote the merge key as "!!merge <<: *base" on every save.
+	if want := src + "plugins:\n    block_direct: true\n"; out != want {
+		t.Errorf("merge key not preserved verbatim\n--- got ---\n%s\n--- want ---\n%s", out, want)
+	}
+}
+
+func TestEditYAML_UnhashableMergeKeyIsAnErrorNotAPanic(t *testing.T) {
+	// gopkg.in/yaml.v3 panicked decoding this into a map; the handlers that
+	// read config.yaml generically must get an ordinary error instead.
+	body := "{[a]: 1, <<: {[b]: 2}}\n"
+	p := writeTemp(t, body)
+	s, _ := newTestMux(t, p, "", nil)
+	if err := s.persistBlockDirect(true); err == nil || !strings.Contains(err.Error(), "yaml:") {
+		t.Errorf("want a yaml error, got %v", err)
+	}
+	if got := readString(t, p); got != body {
+		t.Errorf("file was rewritten: %q", got)
 	}
 }
