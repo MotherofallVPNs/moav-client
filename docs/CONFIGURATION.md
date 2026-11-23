@@ -24,8 +24,10 @@ in `config.yaml`.** Copy the templates before first run:
   `XRAY_VERSION`, `AMNEZIAWG_GO_VERSION`, `AWGTOOLS_VERSION`, `MASTERDNS_VERSION`,
   `TRUSTTUNNEL_CLIENT_VERSION`). These are the single source; `docker-compose.yml`
   passes them as build args / image tags with matching `${VAR:-default}` fallbacks
-  (kept in sync by the same test), and the values track the MoaV server's
-  `.env.example`. Pulled images can be swapped wholesale with `IMAGE_SINGBOX`,
+  (kept in sync by the same test). Shared components stay wire-compatible with
+  the MoaV server's `.env.example` but are bumped on the client's own schedule
+  (see `docs/devdocs/` for the latest dependency audit). Pulled images can be
+  swapped wholesale with `IMAGE_SINGBOX`,
   `IMAGE_TOR`, `IMAGE_CADDY`.
 
 Change a component version and rebuild just that piece:

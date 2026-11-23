@@ -22,6 +22,26 @@ All notable changes to moav-client are documented here. Format loosely follows
   `link_preview_options.url` (Bot API 7.0) to the release/issue URL. Matches the
   same fix on the MoaV server.
 
+### Internal
+- **CI: golangci-lint runs again.** `golangci-lint-action@v6` with
+  `version: latest` installed a golangci-lint built with Go 1.24, which refuses
+  a Go 1.25 module and exits 3; `continue-on-error` kept the step green, so
+  nothing had been linted since the move to Go 1.25. The step now uses action
+  v9 with golangci-lint pinned to v2.15.0 (built with Go 1.27). Findings stay
+  non-blocking for now (`--issues-exit-code=0`), but a linter that cannot run
+  fails the job.
+- **CI actions updated and pinned by commit SHA:** checkout v7.0.1, setup-go
+  v7.1.0, setup-node v7.1.0, upload-artifact v7.0.2, golangci-lint-action
+  v9.3.0 (each was three majors behind on a floating major tag). They run on
+  Node 24, so a self-hosted runner must be v2.327.1 or newer.
+- **Live e2e no longer gives up before the engines are up.** The single probe
+  could land before sing-box and xray were listening, fail every endpoint in
+  milliseconds, and end the run as "0 ok". The probe is now re-triggered while
+  waiting.
+- `.env.example` and `docs/CONFIGURATION.md` no longer claim the component pins
+  track the MoaV server's; shared components stay wire-compatible but are
+  bumped on the client's own schedule.
+
 ## [1.4.0] — 2026-08-23
 
 ### Added
