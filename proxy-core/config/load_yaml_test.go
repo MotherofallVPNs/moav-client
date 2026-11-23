@@ -41,6 +41,7 @@ func TestLoad_ExampleConfigMatchesDefaults(t *testing.T) {
 	want.Subscription.WireGuardFiles = []string{}
 	want.Plugins.RoutingRules = []RoutingRuleConfig{
 		{Match: MatchExprConfig{Type: "geoip", Value: "ir"}, Action: "direct"},
+		{Match: MatchExprConfig{Type: "domain_suffix", Value: "ir"}, Action: "direct"},
 	}
 	want.Sidecars = SidecarsConfig{
 		MasterDNS:   SidecarEntry{Priority: 1, Config: map[string]string{"domain": "", "method": "5", "key": ""}},

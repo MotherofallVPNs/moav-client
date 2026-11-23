@@ -264,7 +264,9 @@ See **[docs/PLUGINS.md](docs/PLUGINS.md)** for the full catalog, every rule, the
 (Iran ships in-repo, refreshed weekly by CI). A hostname destination that no
 domain rule matched is resolved with the local DNS and tested on its address
 before any connection is made, so `geoip: ir → direct` keeps Iranian sites off
-the tunnel. See [docs/PLUGINS.md](docs/PLUGINS.md#resolution-order) and
+the tunnel. The shipped config also enables `domain_suffix: ir → direct`, which
+keeps `.ir` names direct even when that local lookup fails, so they never reach
+an exit server. See [docs/PLUGINS.md](docs/PLUGINS.md#resolution-order) and
 [geoip/README.md](geoip/README.md) for sources and how to add countries.
 
 ---

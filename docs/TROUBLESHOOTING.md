@@ -36,7 +36,9 @@ through a chosen endpoint). Start there.
   `protocol` rule matched it first (name rules win), and only via proxy-core's
   local DNS answer. If that lookup fails, the log shows
   `route: local lookup of <name> … failed` and the connection takes the
-  default proxy route.
+  default proxy route. `.ir` names are still kept direct in that case by the
+  shipped `domain_suffix: ir → direct` rule, which needs no lookup (see
+  [PLUGINS.md](PLUGINS.md#why-ir-names-also-have-a-name-rule)).
 - If `geoip/<cc>.txt` is missing, the rule is inert and proxy-core logs a
   one-time `WARN … rules matching geoip:<cc> are INERT`. Generate the list:
   `scripts/update-geoip.sh <cc>`.
