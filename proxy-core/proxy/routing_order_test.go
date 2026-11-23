@@ -145,12 +145,14 @@ func rule(matchType, value string, action plugins.Decision) plugins.Rule {
 // tunnel.
 type inbound struct {
 	name    string
-	connect func(t *testing.T, b *balancer.Balancer, eng *plugins.Engine, tb *plugins.TorrentBlocker, host string, port int) (io.ReadWriter, bool)
+	connect func(t *testing.T, rt *router, host string, port int) (io.ReadWriter, bool)
 }
 
 var inbounds = []inbound{
-	{"socks5", func(t *testing.T, b *balancer.Balancer, eng *plugins.Engine, tb *plugins.TorrentBlocker, host string, port int) (io.ReadWriter, bool) {
-		c := dialRaw(t, startSOCKS5(t, NewServer(0, 0, b, eng, tb)))
+	{"socks5", func(t *testing.T, rt *router, host string, port int) (io.ReadWriter, bool) {
+		srv := NewServer(0, 0, nil, nil, nil)
+		srv.router = rt
+		c := dialRaw(t, startSOCKS5(t, srv))
 		greet(t, c, methodNoAuth)
 		mustWrite(t, c, hostRequestMsg(host, port))
 		if r := readReply(t, c); r.rep != repSuccess {
@@ -162,8 +164,8 @@ var inbounds = []inbound{
 		}
 		return c, true
 	}},
-	{"http-connect", func(t *testing.T, b *balancer.Balancer, eng *plugins.Engine, tb *plugins.TorrentBlocker, host string, port int) (io.ReadWriter, bool) {
-		srv := httptest.NewServer(&httpHandler{balancer: b, engine: eng, torrent: tb})
+	{"http-connect", func(t *testing.T, rt *router, host string, port int) (io.ReadWriter, bool) {
+		srv := httptest.NewServer(&httpHandler{router: rt})
 		t.Cleanup(srv.Close)
 		c := dialRaw(t, srv.Listener.Addr().String())
 		target := net.JoinHostPort(host, strconv.Itoa(port))
@@ -193,8 +195,8 @@ func hostRequestMsg(host string, port int) []byte {
 	return requestMsg(cmdConnect, atypDomain, []byte(host), port)
 }
 
-// The .test names below never resolve (RFC 6761), so a pass also proves that
-// proxy-core did not need a local DNS answer to route them.
+// The .test names below never resolve (RFC 6761), and the router gets a
+// resolver that knows none of them, so no case depends on the host's DNS.
 func TestRouting_DestinationReachesRulesAndUpstreamUnresolved(t *testing.T) {
 	onlyExampleProxied := []plugins.Rule{
 		rule("domain_suffix", "example.test", plugins.DecisionProxy),
@@ -224,7 +226,9 @@ func TestRouting_DestinationReachesRulesAndUpstreamUnresolved(t *testing.T) {
 		{name: "ip_cidr rule matches an IPv4 literal", rules: blockCIDR, host: "203.0.113.7", port: 443, blocked: true},
 		{name: "IPv4 literal outside the CIDR is proxied", rules: blockCIDR, host: "198.51.100.7", port: 443, wantAtyp: atypIPv4},
 		{name: "IPv6 literal with no matching rule is proxied", rules: blockCIDR, host: "2001:db8::7", port: 443, wantAtyp: atypIPv6},
-		{name: "ip_cidr rule ignores a hostname", rules: blockCIDR, host: "www.example.test", port: 443, wantAtyp: atypDomain},
+		{name: "ip_cidr rule: a name that does not resolve locally takes the default route", rules: blockCIDR, host: "www.example.test", port: 443, wantAtyp: atypDomain},
+		{name: "domain_suffix block matches a name with a trailing dot", rules: blockSuffix, host: "www.example.test.", port: 443, blocked: true},
+		{name: "domain block matches the apex with a trailing dot", rules: blockExact, host: "example.test.", port: 443, blocked: true},
 		{name: "torrent heuristic sees the tracker hostname", torrent: true, host: "tracker.opentrackr.org", port: 1337, blocked: true},
 	}
 
@@ -238,7 +242,9 @@ func TestRouting_DestinationReachesRulesAndUpstreamUnresolved(t *testing.T) {
 					tb = &plugins.TorrentBlocker{Enabled: true}
 				}
 
-				stream, ok := in.connect(t, b, plugins.NewEngine(tc.rules), tb, tc.host, tc.port)
+				rt := newRouter(b, plugins.NewEngine(tc.rules), tb)
+				rt.resolver = &fakeResolver{}
+				stream, ok := in.connect(t, rt, tc.host, tc.port)
 				if tc.blocked {
 					if ok {
 						t.Error("request was accepted, want it blocked")
@@ -324,12 +330,13 @@ func TestSOCKS5_DomainRulesSeeHostnameNotResolvedIP(t *testing.T) {
 		}
 	})
 
-	t.Run("IP rules match literals only", func(t *testing.T) {
+	t.Run("a name rule wins over an IP rule on its address", func(t *testing.T) {
 		echo := startEcho(t, "127.0.0.1:0")
 		rules := append(append([]plugins.Rule{}, blockLoopback...), rule("domain", "localhost", plugins.DecisionDirect))
 		addr := startSOCKS5(t, NewServer(0, 0, noUpstream(), plugins.NewEngine(rules), nil))
 
-		// The hostname is not resolved for matching, so the CIDR block skips it.
+		// Name rules run first, so the domain rule decides before the CIDR
+		// block could see 127.0.0.1.
 		c := dialRaw(t, addr)
 		greet(t, c, methodNoAuth)
 		mustWrite(t, c, requestMsg(cmdConnect, atypDomain, []byte("localhost"), echo.addr.Port))

@@ -35,8 +35,10 @@ plugins:
   # Only default-enabled rule: Iranian destinations bypass the proxy and go
   # direct, so domestic traffic keeps your real (Iranian) IP — this avoids both
   # breaking IR sites that block foreign IPs and signalling "this user is on a
-  # VPN". Matches IP-literal destinations in geoip/ir.txt; hostname targets are
-  # not resolved here (see geoip/README.md). Everything else is proxied.
+  # VPN". Matches destinations whose address is in geoip/ir.txt: IP literals
+  # as sent, hostnames via a local lookup made before any tunnel is dialled, so
+  # an Iranian site never reaches a MoaV endpoint (docs/PLUGINS.md#resolution-order).
+  # Everything else is proxied.
   routing_rules:
     - match: {type: geoip, value: ir}
       action: direct

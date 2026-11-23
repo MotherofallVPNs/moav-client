@@ -18,13 +18,13 @@ var geoipWarned sync.Map
 // matchExpr evaluates a single MatchExpr against connection attributes.
 // It is the shared matching logic used by both Engine and Router.
 func matchExpr(m MatchExpr, host string, port int, protocolHint string) bool {
-	lower := strings.ToLower(host)
+	lower := strings.ToLower(trimRootDot(host))
 	switch m.Type {
 	case "domain":
-		return strings.EqualFold(m.Value, host)
+		return strings.EqualFold(trimRootDot(m.Value), lower)
 
 	case "domain_suffix":
-		suffix := strings.ToLower(m.Value)
+		suffix := strings.ToLower(trimRootDot(m.Value))
 		// Match "example.com" against "example.com" or "sub.example.com".
 		return lower == suffix || strings.HasSuffix(lower, "."+suffix)
 
@@ -46,7 +46,7 @@ func matchExpr(m MatchExpr, host string, port int, protocolHint string) bool {
 		return matchGeoIP(host, strings.ToUpper(m.Value))
 
 	case "domain_list":
-		return matchDomainList(host, m.Value)
+		return matchDomainList(lower, m.Value)
 
 	case "ip_list":
 		return matchIPList(host, m.Value)
@@ -58,6 +58,21 @@ func matchExpr(m MatchExpr, host string, port int, protocolHint string) bool {
 		return strings.EqualFold(protocolHint, m.Value)
 	}
 	return false
+}
+
+// isIPMatch reports whether a match type can only match an IP address.
+func isIPMatch(matchType string) bool {
+	switch matchType {
+	case "ip_cidr", "geoip", "ip_list":
+		return true
+	}
+	return false
+}
+
+// trimRootDot drops one trailing dot, so the fully qualified "example.com."
+// matches name rules written as "example.com".
+func trimRootDot(name string) string {
+	return strings.TrimSuffix(name, ".")
 }
 
 // matchPort checks whether port matches the value, which may be a single

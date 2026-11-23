@@ -261,10 +261,11 @@ See **[docs/PLUGINS.md](docs/PLUGINS.md)** for the full catalog, every rule, the
 ### GeoIP
 
 `geoip:<cc>` rules match a destination IP against `geoip/<cc>.txt` CIDR lists
-(Iran ships in-repo, refreshed weekly by CI). Matching is **IP-only** —
-hostname destinations aren't resolved, so geoip rules apply to IP-literal
-targets. See [geoip/README.md](geoip/README.md) for sources and how to add
-countries.
+(Iran ships in-repo, refreshed weekly by CI). A hostname destination that no
+domain rule matched is resolved with the local DNS and tested on its address
+before any connection is made, so `geoip: ir → direct` keeps Iranian sites off
+the tunnel. See [docs/PLUGINS.md](docs/PLUGINS.md#resolution-order) and
+[geoip/README.md](geoip/README.md) for sources and how to add countries.
 
 ---
 
