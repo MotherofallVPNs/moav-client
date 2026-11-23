@@ -31,6 +31,27 @@ in `config.yaml`.** Copy the templates before first run:
   swapped wholesale with `IMAGE_SINGBOX`,
   `IMAGE_TOR`, `IMAGE_CADDY`.
 
+### Automated update PRs (Renovate)
+
+[`.github/renovate.json`](../.github/renovate.json) opens dependency PRs
+against `dev`. Nothing is automerged; every PR goes through normal review.
+
+| Group | What | When |
+|---|---|---|
+| protocol components | the `_VERSION` pins above, updated in `.env.example`, the compose `${VAR:-default}` fallbacks and the sidecar Dockerfile `ARG` defaults in the same PR, so `tests/version-sync-test.sh` keeps passing | weekly, Monday 00-05 UTC |
+| runtime images | `CADDY_VERSION` | weekly |
+| base images | Dockerfile `FROM` tags (golang, node, nginx, alpine) | weekly |
+| web-ui npm | minor and patch updates to `web-ui/package.json` + lockfile | weekly |
+| github actions | SHA-pinned actions (with a version comment), `golangci-lint` and Node versions set in CI | monthly, on the 1st |
+| image digest refresh | same tag rebuilt upstream, including the tagless Tor image pinned by digest | monthly |
+| web-ui lockfile maintenance | lockfile refresh within existing ranges | monthly |
+
+Major updates are never batched: each gets its own PR with a `major` label.
+Debian codename tags (`bookworm-slim`) are not tracked; moving to a new Debian
+release is a deliberate change. Go modules (`proxy-core/go.mod`) are not
+tracked yet. A merged pin bump reaches existing installs through
+`moav-client update`, which re-syncs `.env` (below).
+
 Change a component version and rebuild just that piece:
 `moav-client up` (or `docker compose up -d --build`).
 

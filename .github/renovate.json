@@ -1,0 +1,282 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommitTypeAll(chore)",
+    ":semanticCommitScope(deps)"
+  ],
+  "baseBranchPatterns": [
+    "dev"
+  ],
+  "enabledManagers": [
+    "dockerfile",
+    "docker-compose",
+    "github-actions",
+    "npm",
+    "custom.regex"
+  ],
+  "dependencyDashboard": {
+    "enabled": false
+  },
+  "timezone": "UTC",
+  "schedule": [
+    "* 0-5 * * 1"
+  ],
+  "prConcurrentLimit": 4,
+  "prHourlyLimit": 2,
+  "automerge": false,
+  "rebaseWhen": "conflicted",
+  "labels": [
+    "dependencies"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "SINGBOX_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?SINGBOX_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)",
+        "ghcr\\.io/sagernet/sing-box:v(?<currentValue>\\d[^\\s}\"']*)"
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "ghcr.io/sagernet/sing-box",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "XRAY_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?XRAY_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "XTLS/Xray-core"
+    },
+    {
+      "customType": "regex",
+      "description": "AMNEZIAWG_GO_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?AMNEZIAWG_GO_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "amnezia-vpn/amneziawg-go"
+    },
+    {
+      "customType": "regex",
+      "description": "AWGTOOLS_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?AWGTOOLS_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "amnezia-vpn/amneziawg-tools"
+    },
+    {
+      "customType": "regex",
+      "description": "MASTERDNS_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?MASTERDNS_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "masterking32/MasterDnsVPN",
+      "versioningTemplate": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\.(?<build>\\d+)(?:-[0-9a-f]+)?$"
+    },
+    {
+      "customType": "regex",
+      "description": "TRUSTTUNNEL_CLIENT_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?TRUSTTUNNEL_CLIENT_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "TrustTunnel/TrustTunnelClient"
+    },
+    {
+      "customType": "regex",
+      "description": "PSIPHON_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?PSIPHON_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "Psiphon-Labs/psiphon-tunnel-core"
+    },
+    {
+      "customType": "regex",
+      "description": "SNI_SPOOF_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?SNI_SPOOF_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "aleskxyz/SNI-Spoofing-Go"
+    },
+    {
+      "customType": "regex",
+      "description": "CADDY_VERSION: .env.example is the source; compose build-arg and Dockerfile ARG defaults move with it (tests/version-sync-test.sh)",
+      "managerFilePatterns": [
+        "/^\\.env\\.example$/",
+        "/^docker-compose\\.yml$/",
+        "/^sidecars/[^/]+/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "(?:^|[\\s{])(?:ARG\\s+)?CADDY_VERSION(?:=|:-)\"?(?<currentValue>[^\\s}\"']+)"
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "caddy"
+    },
+    {
+      "customType": "regex",
+      "description": "Tor has no version tags upstream: keep the compose digest pin fresh against :latest",
+      "managerFilePatterns": [
+        "/^docker-compose\\.yml$/"
+      ],
+      "matchStrings": [
+        "(?<depName>peterdavehello/tor-socks-proxy)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "currentValueTemplate": "latest",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Protocol components: one PR per week; .env.example, compose defaults and Dockerfile ARGs move together",
+      "matchDepNames": [
+        "ghcr.io/sagernet/sing-box",
+        "XTLS/Xray-core",
+        "amnezia-vpn/amneziawg-go",
+        "amnezia-vpn/amneziawg-tools",
+        "masterking32/MasterDnsVPN",
+        "TrustTunnel/TrustTunnelClient",
+        "Psiphon-Labs/psiphon-tunnel-core",
+        "aleskxyz/SNI-Spoofing-Go"
+      ],
+      "groupName": "protocol components"
+    },
+    {
+      "description": "Pulled runtime images (Caddy, Tor digest)",
+      "matchDepNames": [
+        "caddy",
+        "peterdavehello/tor-socks-proxy"
+      ],
+      "groupName": "runtime images"
+    },
+    {
+      "description": "The Tor digest is tracked by the regex manager above (against :latest); skip the compose manager's tagless copy",
+      "matchManagers": [
+        "docker-compose"
+      ],
+      "matchDepNames": [
+        "peterdavehello/tor-socks-proxy"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Dockerfile base and builder images",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "groupName": "base images"
+    },
+    {
+      "description": "web-ui npm dependencies (minor + patch, lockfile included)",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "web-ui npm"
+    },
+    {
+      "description": "Lockfile maintenance for web-ui, monthly",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "lockFileMaintenance"
+      ],
+      "groupName": "web-ui lockfile maintenance"
+    },
+    {
+      "description": "Image digest refreshes (same tag, rebuilt upstream, incl. the Tor pin): one batch a month",
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "groupName": "image digest refresh",
+      "schedule": [
+        "* 0-5 1 * *"
+      ]
+    },
+    {
+      "description": "GitHub Actions and the CI tool versions they set (golangci-lint, Node), kept SHA-pinned with a version comment; monthly",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github actions",
+      "schedule": [
+        "* 0-5 1 * *"
+      ]
+    },
+    {
+      "description": "Majors never ride along with a batch",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "groupName": null,
+      "addLabels": [
+        "major"
+      ]
+    },
+    {
+      "description": "Never automerge",
+      "matchPackageNames": [
+        "*"
+      ],
+      "automerge": false
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "* 0-5 1 * *"
+    ]
+  }
+}
