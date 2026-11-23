@@ -5,6 +5,16 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+- **Renovate for dependency updates** (`.github/renovate.json`), matching the
+  MoaV server's setup: grouped PRs against `dev` for the component pins in
+  `.env.example` (moved together with their compose and Dockerfile `ARG`
+  fallbacks so the version-sync gate stays green), Dockerfile base images,
+  Caddy and the digest-pinned Tor image, web-ui npm dependencies and the
+  SHA-pinned GitHub Actions. Weekly on Monday, actions and digest refreshes
+  monthly, majors always in their own PR, no automerge, no dependency
+  dashboard issue. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#automated-update-prs-renovate).
+
 ### Changed
 - **TrustTunnel sidecar client updated to 1.3.0** (was 1.0.49), pairing with
   TrustTunnel endpoint 1.3.1 on the MoaV server. No config-generation changes
