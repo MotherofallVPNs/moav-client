@@ -14,10 +14,10 @@ moav-client is the local client for [**MoaV — Mother of all VPNs**](https://gi
 | `proxy-core/api/` | REST + WebSocket API server consumed by the web-ui |
 | `proxy-core/balancer/` | Load balancer: strategies latency / priority / weighted; dials upstreams via SOCKS5 |
 | `proxy-core/cmd/` | CLI subcommands: serve, probe, list, fetch-sub, version, help |
-| `proxy-core/config/` | YAML config loader using `gopkg.in/yaml.v3`; defines all config structs |
+| `proxy-core/config/` | YAML config loader using `go.yaml.in/yaml/v3`; defines all config structs |
 | `proxy-core/plugins/` | Plugin engine (first-match-wins rule list) + TorrentBlocker heuristic |
 | `proxy-core/prober/` | Concurrent TCP latency prober with background loop; 10 parallel goroutines max |
-| `proxy-core/proxy/` | SOCKS5 listener (`armon/go-socks5`) and HTTP CONNECT handler; both call `pluginDecide` then `balancer.DialContext` |
+| `proxy-core/proxy/` | SOCKS5 listener (`things-go/go-socks5`, CONNECT only) and HTTP CONNECT handler; both call `pluginDecide` then `balancer.DialContext` |
 | `proxy-core/sidecars/` | Maps enabled sidecar entries (masterdns / amneziawg / trusttunnel / psiphon / tor / dnstt / slipstream) to synthetic `Endpoint` structs with `socks5_addr` set to `<docker-service>:<port>` + writes per-sidecar config files (`configgen.go`) from `config.yaml` parameters |
 | `proxy-core/singbox/` | Generates a sing-box config (1 SOCKS5 inbound + 1 protocol outbound per endpoint, plus 1 `endpoints[]` block per WireGuard endpoint) and rewrites `Endpoint.Config["socks5_addr"]` to point at the local sing-box port |
 | `proxy-core/state/` | Atomic JSON persistence of probe results to `data/state.json` |
@@ -32,7 +32,7 @@ moav-client is the local client for [**MoaV — Mother of all VPNs**](https://gi
 
 ### Startup
 1. `main.go` parses `--config` flag, dispatches via `cmd.ParseAndRun()`.
-2. `config.Load()` reads `config.yaml` with yaml.v3; defaults applied first.
+2. `config.Load()` reads `config.yaml` with `go.yaml.in/yaml/v3`; defaults applied first.
 3. `state.Load("data/state.json")` — restores `LatencyMs` / `Status` from previous run; non-fatal on missing file.
 4. Subscription endpoints loaded: file first (`os.ReadFile` → `subscription.ParseSubscription`), then URL (`subscription.FetchSubscription`). Duplicates are deduped by `RawURI`.
 5. Saved state merged into newly parsed endpoints (restores latency without re-probing).
