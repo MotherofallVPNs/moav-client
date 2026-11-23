@@ -73,6 +73,8 @@ func (s *Server) serveSOCKS5(ctx context.Context, ln net.Listener) error {
 func (s *Server) newSOCKS5Server() *gosocks5.Server {
 	opts := []gosocks5.Option{
 		gosocks5.WithDial(s.socks5Dial),
+		// Rules must see the hostname, so the library may not resolve it first.
+		gosocks5.WithResolver(unresolved{}),
 		gosocks5.WithLogger(socks5Logger{log.New(os.Stdout, "", log.LstdFlags)}),
 		// CONNECT only. The library's own UDP ASSOCIATE relay would dial
 		// datagrams outside the tunnel, so both commands stay refused.
@@ -98,6 +100,14 @@ func refuseSOCKS5Command(_ context.Context, w io.Writer, _ *gosocks5.Request) er
 	return gosocks5.SendReply(w, statute.RepCommandNotSupported, nil)
 }
 
+// unresolved hands a domain target to the dial hook as the client sent it.
+// The chosen route resolves it: the endpoint for proxy, net.Dial for direct.
+type unresolved struct{}
+
+func (unresolved) Resolve(ctx context.Context, _ string) (context.Context, net.IP, error) {
+	return ctx, nil, nil
+}
+
 // socks5Logger writes the library's per-connection errors to stdout.
 type socks5Logger struct{ *log.Logger }
 
@@ -106,7 +116,7 @@ func (l socks5Logger) Errorf(format string, args ...interface{}) {
 }
 
 // socks5Dial is the SOCKS5 dial hook: it applies the plugin decision
-// (block / direct / proxy) to the requested destination.
+// (block / direct / proxy) to the destination, a hostname or an IP literal.
 func (s *Server) socks5Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {

@@ -289,14 +289,16 @@ func TestSOCKS5_ConnectIPv6(t *testing.T) {
 }
 
 func TestSOCKS5_ConnectDomainName(t *testing.T) {
-	if ip, err := net.ResolveIPAddr("ip", "localhost"); err != nil || !ip.IP.Equal(net.IPv4(127, 0, 0, 1)) {
-		t.Skipf("localhost does not resolve to 127.0.0.1 here (%v, %v)", ip, err)
-	}
+	requireLocalhost(t)
 	echo := startEcho(t, "127.0.0.1:0")
-	// The SOCKS5 layer resolves a domain target before calling the dial hook,
-	// so rules see the resolved IP and this domain rule does not fire.
-	domainRule := plugins.Rule{Match: plugins.MatchExpr{Type: "domain", Value: "localhost"}, Action: plugins.DecisionBlock, Enabled: true}
-	c := dialRaw(t, startSOCKS5(t, directServer(domainRule)))
+	// A domain target reaches the rules as a hostname, so only the domain rule
+	// can send it direct; the loopback CIDR rules never see an IP for it.
+	eng := plugins.NewEngine([]plugins.Rule{
+		{Match: plugins.MatchExpr{Type: "domain", Value: "localhost"}, Action: plugins.DecisionDirect, Enabled: true},
+	})
+	b := balancer.New(balancer.StrategyLatency)
+	b.SetBlockDirect(true)
+	c := dialRaw(t, startSOCKS5(t, NewServer(0, 0, b, eng, nil)))
 
 	greet(t, c, methodNoAuth)
 	mustWrite(t, c, requestMsg(cmdConnect, atypDomain, []byte("localhost"), echo.addr.Port))
