@@ -125,7 +125,16 @@ After changing a version: `moavc up` (or `docker compose up -d --build`).
 ```bash
 moavc update              # pull current branch + rebuild + restart
 moavc update -b dev       # switch to (and track) another branch
+moavc update --keep-pins  # update, but leave the *_VERSION pins in .env alone
+moavc sync-pins           # only re-sync the pins (add --check to just list them)
 ```
+
+`.env` is seeded from `.env.example` once, at install, so it keeps the
+component versions (`SINGBOX_VERSION`, `XRAY_VERSION`, ...) of that day. `update`
+therefore re-syncs those `*_VERSION` lines with the release it just pulled,
+listing each change and asking first (default yes; it proceeds on its own when
+there is no terminal). Nothing else in `.env` is touched. Pass `--keep-pins` if
+you hold a component at a version of your own.
 
 The installer makes a shallow, single-branch clone, so `update` fetches the
 target branch's tip explicitly — `-b <branch>` works even though
