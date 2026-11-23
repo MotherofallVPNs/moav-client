@@ -69,9 +69,26 @@ All notable changes to moav-client are documented here. Format loosely follows
   dial reuses the classification lookup. No lookup is made when a name rule
   matches or no IP rule is enabled. See
   [docs/PLUGINS.md](docs/PLUGINS.md#resolution-order).
+- **`.ir` names stay direct even when the local lookup fails.** The shipped
+  `config.yaml.example` now enables `domain_suffix: ir → direct` next to
+  `geoip: ir → direct`. The `geoip` rule needs a local DNS answer to classify a
+  name; without one the name took the proxy route, and the exit server would
+  connect to an in-country server from its own IP. The suffix rule matches on
+  the name, with no lookup, so `.ir` names never reach a tunnel. Existing
+  installs keep their own `config.yaml`; add the rule by hand or from the
+  dashboard Plugins tab. See
+  [docs/PLUGINS.md](docs/PLUGINS.md#why-ir-names-also-have-a-name-rule).
 - **A trailing dot no longer defeats domain rules.** `example.com.` now matches
   `domain`, `domain_suffix`, `domain_list` and the torrent tracker list, on
   both ports.
+- **HTTP CONNECT no longer drops the first byte a client sends.** The handler
+  wrote the `200` and then hijacked the connection, and `net/http` flushes that
+  `200` before it stops its one-byte background read. A client that answered
+  quickly (a TLS ClientHello right after the `200`) could have its first byte
+  parked in the server's read buffer, which the handler discarded, breaking
+  the handshake intermittently. Bytes sent along with the CONNECT request were
+  always lost. The handler now hijacks first, writes the `200` itself and
+  forwards anything already buffered before the copy starts.
 - **Data race in `/api/flows`.** Reading the flow list while a connection
   closed raced on the flow's result and byte counters. They are now read and
   written under the ring's lock (and atomically for the counters).
