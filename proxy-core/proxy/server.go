@@ -4,11 +4,14 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"os"
 
-	gosocks5 "github.com/armon/go-socks5"
+	gosocks5 "github.com/things-go/go-socks5"
+	"github.com/things-go/go-socks5/statute"
 
 	"github.com/MotherofallVPNs/moav-client/proxy-core/balancer"
 	"github.com/MotherofallVPNs/moav-client/proxy-core/plugins"
@@ -57,11 +60,7 @@ func (s *Server) ListenAndServeSOCKS5(ctx context.Context) error {
 
 // serveSOCKS5 serves SOCKS5 connections on ln until ctx is cancelled.
 func (s *Server) serveSOCKS5(ctx context.Context, ln net.Listener) error {
-	srv, err := s.newSOCKS5Server()
-	if err != nil {
-		ln.Close()
-		return fmt.Errorf("socks5 init: %w", err)
-	}
+	srv := s.newSOCKS5Server()
 	go func() {
 		<-ctx.Done()
 		ln.Close()
@@ -71,18 +70,39 @@ func (s *Server) serveSOCKS5(ctx context.Context, ln net.Listener) error {
 
 // newSOCKS5Server builds the SOCKS5 protocol server: optional user/pass auth
 // plus the dial hook that routes every CONNECT through the plugin engine.
-func (s *Server) newSOCKS5Server() (*gosocks5.Server, error) {
-	conf := &gosocks5.Config{Dial: s.socks5Dial}
+func (s *Server) newSOCKS5Server() *gosocks5.Server {
+	opts := []gosocks5.Option{
+		gosocks5.WithDial(s.socks5Dial),
+		gosocks5.WithLogger(socks5Logger{log.New(os.Stdout, "", log.LstdFlags)}),
+		// CONNECT only. The library's own UDP ASSOCIATE relay would dial
+		// datagrams outside the tunnel, so both commands stay refused.
+		gosocks5.WithBindHandle(refuseSOCKS5Command),
+		gosocks5.WithAssociateHandle(refuseSOCKS5Command),
+	}
 
 	// A password alone turns auth on; the username may be empty (clients then
 	// send an empty username). Requiring both would leave the proxy open when
 	// someone sets only a password.
 	if s.authPassword != "" {
 		creds := gosocks5.StaticCredentials{s.authUsername: s.authPassword}
-		conf.AuthMethods = []gosocks5.Authenticator{gosocks5.UserPassAuthenticator{Credentials: creds}}
+		opts = append(opts, gosocks5.WithAuthMethods([]gosocks5.Authenticator{
+			gosocks5.UserPassAuthenticator{Credentials: creds},
+		}))
 		log.Printf("SOCKS5 auth enabled (user %q)", s.authUsername)
 	}
-	return gosocks5.New(conf)
+	return gosocks5.NewServer(opts...)
+}
+
+// refuseSOCKS5Command answers a request with "command not supported".
+func refuseSOCKS5Command(_ context.Context, w io.Writer, _ *gosocks5.Request) error {
+	return gosocks5.SendReply(w, statute.RepCommandNotSupported, nil)
+}
+
+// socks5Logger writes the library's per-connection errors to stdout.
+type socks5Logger struct{ *log.Logger }
+
+func (l socks5Logger) Errorf(format string, args ...interface{}) {
+	l.Printf("[ERR] socks: "+format, args...)
 }
 
 // socks5Dial is the SOCKS5 dial hook: it applies the plugin decision
