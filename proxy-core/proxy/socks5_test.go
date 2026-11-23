@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"strconv"
 	"sync"
@@ -653,5 +654,13 @@ func TestSOCKS5_ServeStopsOnContextCancel(t *testing.T) {
 	if c2, err := net.DialTimeout("tcp", ln.Addr().String(), time.Second); err == nil {
 		_ = c2.Close()
 		t.Error("listener still accepting after cancel")
+	}
+}
+
+func TestSOCKS5_LoggerKeepsErrPrefix(t *testing.T) {
+	var buf bytes.Buffer
+	socks5Logger{log.New(&buf, "", 0)}.Errorf("server: %v", errors.New("boom"))
+	if got, want := buf.String(), "[ERR] socks: server: boom\n"; got != want {
+		t.Errorf("log line = %q, want %q", got, want)
 	}
 }
