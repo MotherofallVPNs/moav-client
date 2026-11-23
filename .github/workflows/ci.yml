@@ -123,3 +123,6 @@ jobs:
           # variable interpolation resolves (values are irrelevant here).
           [ -f .env ] || cp .env.example .env 2>/dev/null || true
           docker compose config >/dev/null && echo "docker-compose.yml is valid"
+
+      - name: trusttunnel sidecar smoke (pinned client accepts the generated config)
+        run: bash tests/trusttunnel-sidecar-test.sh

@@ -10,10 +10,12 @@
 # startup from sidecars.trusttunnel.config.source_path).
 #
 FROM debian:bookworm-slim AS fetch
-ARG TRUSTTUNNEL_CLIENT_VERSION=v1.0.49
+ARG TRUSTTUNNEL_CLIENT_VERSION=v1.3.0
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /dl
+# Match the binary by exact name: the tarball also ships trusttunnel_client.sig,
+# which a 'trusttunnel_client*' glob can pick first. --version proves it runs here.
 RUN arch="$(uname -m)"; \
     case "$arch" in \
       x86_64)  A=linux-x86_64 ;; \
@@ -23,10 +25,11 @@ RUN arch="$(uname -m)"; \
     esac; \
     curl -fL "https://github.com/TrustTunnel/TrustTunnelClient/releases/download/${TRUSTTUNNEL_CLIENT_VERSION}/trusttunnel_client-${TRUSTTUNNEL_CLIENT_VERSION}-${A}.tar.gz" -o tt.tar.gz \
     && tar xzf tt.tar.gz \
-    && bin="$(find . -type f -name 'trusttunnel_client*' ! -name '*.tar.gz' | head -1)" \
+    && bin="$(find . -type f -name trusttunnel_client | head -1)" \
     && test -n "$bin" \
     && cp "$bin" /trusttunnel_client \
-    && chmod +x /trusttunnel_client
+    && chmod +x /trusttunnel_client \
+    && /trusttunnel_client --version
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \

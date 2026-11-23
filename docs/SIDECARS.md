@@ -23,8 +23,15 @@ Runs the upstream prebuilt CLI client
 ([TrustTunnel/TrustTunnelClient](https://github.com/TrustTunnel/TrustTunnelClient),
 Apache-2.0) in SOCKS5 mode. The bundle ships a `[listener.tun]` config; the
 sidecar rewrites it to a loopback `[listener.socks]` and `socat`-republishes it
-on `0.0.0.0:5600`, so no TUN device or `NET_ADMIN` is needed. Pin the client
-version via the `TT_VERSION` build arg in `sidecars/trusttunnel/Dockerfile`.
+on `0.0.0.0:5600`, so no TUN device or `NET_ADMIN` is needed. The client version
+is pinned by `TRUSTTUNNEL_CLIENT_VERSION` in `.env` (currently `v1.3.0`, which
+pairs with TrustTunnel endpoint 1.3.1 on the MoaV server).
+
+Everything outside the `[listener.*]` sections of the bundle's `trusttunnel.toml`
+reaches the client untouched, so the per-endpoint keys added in client 1.3.0
+(`tls_profile`, `client_random_auth_key`) work as soon as a bundle carries them.
+`tests/trusttunnel-sidecar-test.sh` builds the image and checks that the pinned
+client accepts the generated config and serves SOCKS5 on `:5600`.
 
 ## Tor
 

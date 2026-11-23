@@ -242,7 +242,7 @@ services:
     build:
       context: ./sidecars/trusttunnel
       args:
-        TRUSTTUNNEL_CLIENT_VERSION: "${TRUSTTUNNEL_CLIENT_VERSION:-v1.0.49}"
+        TRUSTTUNNEL_CLIENT_VERSION: "${TRUSTTUNNEL_CLIENT_VERSION:-v1.3.0}"
     profiles: [trusttunnel, all-sidecars]
     mem_limit: 256m
     cpus: 0.5

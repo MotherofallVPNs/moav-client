@@ -6,6 +6,19 @@ All notable changes to moav-client are documented here. Format loosely follows
 ## [Unreleased]
 
 ### Changed
+- **TrustTunnel sidecar client updated to 1.3.0** (was 1.0.49), pairing with
+  TrustTunnel endpoint 1.3.1 on the MoaV server. No config-generation changes
+  were needed: the client's TOML format is backward compatible, and the generated
+  `client.toml` was validated against the real 1.3.0 binary (it parses and serves
+  SOCKS5). Everything outside the bundle's `[listener.*]` sections is passed
+  through verbatim, so the new per-endpoint `tls_profile` and
+  `client_random_auth_key` keys work as soon as a server bundle carries them.
+  Upstream changes that reach this sidecar: the QUIC/HTTP3 stack moved from
+  quiche to ngtcp2/nghttp3 (1.1.5), several HTTP/3 crash fixes, a Chrome
+  ClientHello refreshed to November 2026, and idle SOCKS5 connections now see
+  the destination's close immediately instead of being reused as zombies. An
+  unknown `tls_profile` value is a hard config error in 1.3.0 (older clients
+  ignored the key).
 - **sing-box sidecar updated to 1.14.0** (was 1.13.19), matching the MoaV server.
   No config-generation changes were needed: the generator already emits the
   modern WireGuard `endpoints[]` form (not the outbound removed in 1.14), no
@@ -119,6 +132,13 @@ All notable changes to moav-client are documented here. Format loosely follows
   library change listed under Internal.
 
 ### Internal
+- **TrustTunnel sidecar has a smoke test.** `tests/trusttunnel-sidecar-test.sh`
+  (run in CI) builds the image at the pinned version and checks that the real
+  client accepts the `client.toml` proxy-core generates and answers SOCKS5 on
+  `:5600`. The image build now picks the client binary by exact name (the
+  release tarball also ships `trusttunnel_client.sig`, which the old glob could
+  match first) and runs `--version` so a wrong or unrunnable asset fails the
+  build instead of the container.
 - **CI: golangci-lint runs again.** `golangci-lint-action@v6` with
   `version: latest` installed a golangci-lint built with Go 1.24, which refuses
   a Go 1.25 module and exits 3; `continue-on-error` kept the step green, so
