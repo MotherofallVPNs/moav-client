@@ -56,18 +56,30 @@ func (h *httpHandler) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer dst.Close()
-	w.WriteHeader(http.StatusOK)
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
 		return
 	}
-	clientConn, _, herr := hijacker.Hijack()
+	// Hijack before answering: net/http flushes a written status before it
+	// stops its background read, which can then hold the client's first byte.
+	clientConn, bufrw, herr := hijacker.Hijack()
 	if herr != nil {
 		log.Printf("CONNECT hijack: %v", herr)
 		return
 	}
 	defer clientConn.Close()
+	if _, err := io.WriteString(clientConn, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
+		return
+	}
+	// Bytes the client sent before the 200 (or the read-ahead byte) are
+	// already buffered; forward them before the raw copy starts.
+	if n := bufrw.Reader.Buffered(); n > 0 {
+		early, _ := bufrw.Reader.Peek(n)
+		if _, err := dst.Write(early); err != nil {
+			return
+		}
+	}
 	tunnel(clientConn, dst)
 }
 
