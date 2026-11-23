@@ -8,7 +8,9 @@ persist back to `config.yaml`.
 
 ## How a decision is made
 
-For each connection (`host`, `port`, `protocol`):
+For each connection (`host`, `port`, `protocol`), where `host` is the
+destination exactly as the client sent it (see
+[What the rules see](#what-the-rules-see)):
 
 1. **TorrentBlocker** (if `plugins.torrent_block: true`) runs first — known
    BitTorrent ports / tracker domains / torrent keywords → **block**.
@@ -36,10 +38,43 @@ Match types:
 | `port` | exact port (`443`) or inclusive range (`1000-2000`) |
 | `protocol` | `tcp` / `udp` |
 
-> **Hostname vs IP.** `ip_cidr` and `geoip` only match when the destination is
-> an **IP literal**. With SOCKS5 remote DNS (`socks5h`), the proxy usually
-> receives a hostname for domain targets, so use `domain_suffix` for those and
-> reserve `ip_cidr`/`geoip` for IP-addressed traffic (LAN, geo CIDRs).
+## What the rules see
+
+Both listeners (SOCKS5 and HTTP CONNECT) pass the destination to the rules
+exactly as the client sent it. proxy-core does **not** look a hostname up
+before deciding, so what a rule can match depends on what the client sends:
+
+| Client | proxy-core receives | Rules that can match |
+|---|---|---|
+| SOCKS5 with remote DNS (`socks5h://`, the recommended setting) | the hostname | `domain`, `domain_suffix`, `domain_keyword`, `port`, `protocol` |
+| SOCKS5 with client-side DNS (`socks5://`) | the IP the client resolved | `ip_cidr`, `geoip`, `port`, `protocol` |
+| HTTP CONNECT | the host in the request, normally a hostname | same as the row that fits what was sent |
+| Any client, destination typed as an IP | the IP literal | `ip_cidr`, `geoip`, `port`, `protocol` |
+
+Two consequences:
+
+- **Domain rules need the hostname.** A client that resolves names itself
+  (`socks5://`, or an app with its own DNS) only ever sends IPs, so no
+  `domain*` rule can match its traffic. Use `socks5h://`.
+- **IP rules match IP literals only.** A hostname is never resolved just to
+  test it against `ip_cidr` or `geoip`. To steer named destinations, add a
+  `domain_suffix` rule next to the IP rule (for example `domain_suffix: ir`
+  alongside `geoip: ir`).
+
+The hostname is resolved only after the decision, by whichever route was
+chosen:
+
+| Decision | Who resolves the hostname |
+|---|---|
+| `proxy` | The selected endpoint. proxy-core forwards the name as is and makes no lookup of its own. sing-box and Xray endpoints send the name on to the server, which resolves it; a SOCKS5 sidecar resolves it its own way (the AmneziaWG sidecar looks it up inside its container). |
+| `direct` | proxy-core's own resolver (the host's or container's DNS), then a direct dial. |
+| `block` | Nobody. The connection is dropped without a lookup. |
+
+If every endpoint is down and `block_direct` is off, the balancer's fallback
+dial resolves the name locally, like `direct`.
+
+The TorrentBlocker gets the same unresolved `host`, so its tracker-domain and
+keyword checks apply on both listeners.
 
 ## Block-direct (kill-switch)
 

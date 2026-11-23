@@ -21,6 +21,14 @@ through a chosen endpoint). Start there.
   means the tunnel carried bytes end-to-end. If a specific destination fails,
   use **Diagnostics** to TCP/DNS-test it *through* that endpoint.
 
+### A `domain` / `domain_suffix` rule isn't matching
+- Domain rules match the hostname the client sends. A client that resolves
+  names itself sends only an IP: use `socks5h://` (remote DNS), not
+  `socks5://`. HTTP CONNECT clients send the hostname already.
+- Rules are first-match-wins, so an earlier `port` or `protocol` rule can
+  take the connection before the domain rule is reached.
+- See [PLUGINS.md](PLUGINS.md#what-the-rules-see) for what each client sends.
+
 ### A `geoip:` rule isn't blocking/matching
 - geoip matches **IP-literal** destinations only — hostnames aren't resolved.
 - If `geoip/<cc>.txt` is missing, the rule is inert and proxy-core logs a

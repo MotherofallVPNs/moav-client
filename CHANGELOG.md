@@ -49,6 +49,21 @@ All notable changes to moav-client are documented here. Format loosely follows
   the version ranges at build time.
 
 ### Fixed
+- **Domain rules now match on the SOCKS5 port.** The SOCKS5 listener resolved a
+  hostname on the proxy-core host before the rules ran, so the rule engine and
+  the torrent blocker only ever saw an IP: `domain`, `domain_suffix` and
+  `domain_keyword` rules never matched SOCKS5 traffic, although they did on the
+  HTTP CONNECT port. The hostname now reaches the rules as the client sent it
+  (`socks5h://`) and is resolved after the decision: by the selected endpoint
+  for `proxy`, locally for `direct`. proxy-core itself therefore no longer
+  looks up proxied SOCKS5 destinations on the local network, and the
+  per-connection flow log shows hostnames. A SOCKS5 destination name that is
+  empty or contains spaces or control characters is refused. **Upgrade note:** as a side
+  effect of the old lookup, `ip_cidr` and `geoip` rules also matched named
+  destinations on the SOCKS5 port. They now match IP literals only, on both
+  ports, as documented. If you relied on `geoip: ir → direct` for named sites,
+  add a `domain_suffix` rule next to it. See
+  [docs/PLUGINS.md](docs/PLUGINS.md#what-the-rules-see).
 - **Telegram release notification pins its link preview to the release page.**
   The preview showed whatever link appeared first in the notes body (e.g. a
   client's App Store page) instead of the release. It now sets
