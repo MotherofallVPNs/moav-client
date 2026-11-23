@@ -177,6 +177,14 @@ All notable changes to moav-client are documented here. Format loosely follows
   bypass the tunnel, so both commands are refused explicitly). New wire-level
   SOCKS5 tests and config.yaml decoding and round-trip tests were written
   against the old libraries first and pass unchanged on the new ones.
+- **web-ui type-checks with TypeScript 7.0.2** (was 5.9.3), the native
+  compiler. `tsc` is only the type-check half of `npm run build`; vite produces
+  the bundle, and the built dashboard is byte-identical. The source needed no
+  change (it was already clean under the TypeScript 6 defaults that 7 enforces:
+  `types: []`, checked side-effect imports, stable type ordering).
+  `tsconfig.json` drops `DOM.Iterable`, an empty lib since TypeScript 6, and now
+  also type-checks `vite.config.ts` and `vitest.config.ts`, so a config option
+  removed by a tool major fails the build instead of being ignored.
 
 ### Security
 - **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).
