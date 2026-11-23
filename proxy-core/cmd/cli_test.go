@@ -170,8 +170,10 @@ func captureStdout(t *testing.T, fn func()) string {
 		done <- string(b)
 	}()
 	fn()
-	w.Close()
 	os.Stdout = orig
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return <-done
 }
 

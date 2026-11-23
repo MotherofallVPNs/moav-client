@@ -44,7 +44,6 @@ type Server struct {
 	engine    *plugins.Engine // hot-swappable plugin engine (Plugins tab)
 
 	// in-memory config store (for POST /api/config).
-	cfgMu  sync.RWMutex
 	config map[string]interface{}
 
 	// WebSocket hub: broadcast endpoint updates to connected clients.
@@ -323,10 +322,14 @@ func observedProxyIPRefresh() (string, string) {
 	if err != nil {
 		return "", ""
 	}
+	ctxDialer, ok := dialer.(proxy.ContextDialer)
+	if !ok {
+		return "", ""
+	}
 	c := &http.Client{
 		Timeout: 8 * time.Second,
 		Transport: &http.Transport{
-			Dial: dialer.Dial,
+			DialContext: ctxDialer.DialContext,
 		},
 	}
 	return lookupIPCountry(c, "")
@@ -836,7 +839,10 @@ func (s *Server) handleSNISpoof(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var root map[string]any
-		yaml.Unmarshal(raw, &root)
+		if err := yaml.Unmarshal(raw, &root); err != nil {
+			http.Error(w, "parse config: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		section, _ := root["sni_spoof"].(map[string]any)
 		if section == nil {
 			section = map[string]any{}
@@ -1349,7 +1355,7 @@ func (s *Server) handleExposure(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		bindAddr := "127.0.0.1"
+		var bindAddr string
 		switch body.Exposure {
 		case "", "loopback":
 			body.Exposure = "loopback"

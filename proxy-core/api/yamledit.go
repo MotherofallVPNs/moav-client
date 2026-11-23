@@ -125,17 +125,6 @@ func (m yamlMap) seq(key string) *yaml.Node {
 	return s
 }
 
-// del removes key if present; reports whether it existed.
-func (m yamlMap) del(key string) bool {
-	for i := 0; i+1 < len(m.n.Content); i += 2 {
-		if m.n.Content[i].Value == key {
-			m.n.Content = append(m.n.Content[:i], m.n.Content[i+2:]...)
-			return true
-		}
-	}
-	return false
-}
-
 // yamlNodeOf encodes a Go value into a fresh node (scalar / sequence / mapping).
 func yamlNodeOf(v any) *yaml.Node {
 	n := &yaml.Node{}

@@ -117,7 +117,7 @@ func matchGeoIP(host, cc string) bool {
 		}
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {

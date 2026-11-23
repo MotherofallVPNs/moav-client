@@ -31,7 +31,8 @@ var Exclude = map[string]bool{
 func Create(installRoot string) ([]byte, error) {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	defer w.Close()
+	// Error paths only: the success path closes (and checks) w below.
+	defer func() { _ = w.Close() }()
 
 	add := func(rel string) error {
 		full := filepath.Join(installRoot, rel)
@@ -88,7 +89,7 @@ func addFile(w *zip.Writer, srcAbs, relPath string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only
 
 	wr, err := w.Create(relPath)
 	if err != nil {
