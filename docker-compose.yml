@@ -61,7 +61,7 @@ services:
   singbox:
     # Tag is driven by SINGBOX_VERSION in .env (single source, matches the MoaV
     # server). IMAGE_SINGBOX overrides the whole ref to pin/swap registries.
-    image: ${IMAGE_SINGBOX:-ghcr.io/sagernet/sing-box:v${SINGBOX_VERSION:-1.14.0}}
+    image: ${IMAGE_SINGBOX:-ghcr.io/sagernet/sing-box:v${SINGBOX_VERSION:-1.14.4}}
     entrypoint:
       - /bin/sh
       - -c
@@ -116,7 +116,7 @@ services:
     build:
       context: ./sidecars/xray
       args:
-        XRAY_VERSION: "${XRAY_VERSION:-v26.7.28}"
+        XRAY_VERSION: "${XRAY_VERSION:-v26.11.9}"
     entrypoint:
       - /bin/sh
       - -c
