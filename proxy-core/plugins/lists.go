@@ -45,7 +45,7 @@ func loadList(path string) *listCacheEntry {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only
 
 	out := &listCacheEntry{ips: map[string]bool{}, mtime: st.ModTime()}
 	sc := bufio.NewScanner(f)

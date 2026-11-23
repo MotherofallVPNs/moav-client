@@ -90,12 +90,14 @@ func TestRestore_RejectsZipSlip(t *testing.T) {
 	}
 	parent := filepath.Dir(dst)
 	walked := false
-	filepath.Walk(parent, func(p string, _ os.FileInfo, _ error) error {
+	if err := filepath.Walk(parent, func(p string, _ os.FileInfo, _ error) error {
 		if filepath.Base(p) == "escape.txt" {
 			walked = true
 		}
 		return nil
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if walked {
 		t.Error("zip-slip path traversal succeeded")
 	}

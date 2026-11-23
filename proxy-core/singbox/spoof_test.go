@@ -28,7 +28,9 @@ func TestApplySpoof_RewritesServer_TrojanTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	var root map[string]any
-	json.Unmarshal(jsonBytes, &root)
+	if err := json.Unmarshal(jsonBytes, &root); err != nil {
+		t.Fatal(err)
+	}
 	outbounds, _ := root["outbounds"].([]any)
 	first, _ := outbounds[0].(map[string]any)
 	if first["server"] != "sni-spoof" {
@@ -64,7 +66,9 @@ func TestApplySpoof_SkipsReality(t *testing.T) {
 		t.Fatal(err)
 	}
 	var root map[string]any
-	json.Unmarshal(jsonBytes, &root)
+	if err := json.Unmarshal(jsonBytes, &root); err != nil {
+		t.Fatal(err)
+	}
 	outbounds, _ := root["outbounds"].([]any)
 	first, _ := outbounds[0].(map[string]any)
 	if first["server"] == "sni-spoof" {

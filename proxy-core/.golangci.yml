@@ -1,0 +1,22 @@
+version: "2"
+
+# Default linter set (errcheck, govet, ineffassign, staticcheck, unused).
+# Findings fail CI, so each exception is listed here with its reason.
+linters:
+  settings:
+    errcheck:
+      # Closing a connection, a listener or a read-side handle on the way out:
+      # nothing can be done with the error and `defer x.Close()` is the idiom.
+      # Anything we write through (*os.File, zip/gzip writers) stays checked.
+      exclude-functions:
+        - (io.ReadCloser).Close
+        - (mime/multipart.File).Close
+        - (net.Conn).Close
+        - (net.Listener).Close
+        - (*golang.org/x/net/websocket.Conn).Close
+
+issues:
+  # Report every finding. The defaults (50 per linter, 3 per identical
+  # message) truncate the list, so fixing what is shown reveals more.
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -19,7 +19,9 @@ func makeZip(t *testing.T, files map[string]string) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.Write([]byte(body))
+		if _, err := f.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
@@ -160,12 +162,14 @@ func TestExtract_RejectsZipSlip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Walk base; nothing should exist outside <base>/test/ .
-	filepath.Walk(filepath.Dir(base), func(p string, _ os.FileInfo, _ error) error {
+	if err := filepath.Walk(filepath.Dir(base), func(p string, _ os.FileInfo, _ error) error {
 		if strings.Contains(p, "escape.txt") || strings.HasSuffix(p, "also") {
 			t.Errorf("zip-slip leaked file outside dest: %s", p)
 		}
 		return nil
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	_ = res
 }
 

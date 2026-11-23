@@ -2,7 +2,6 @@ package main
 
 import (
 	"net"
-	"os"
 	"testing"
 )
 
@@ -10,9 +9,6 @@ import (
 // config.yaml fallback; malformed/out-of-range values are ignored.
 func TestEnvPort(t *testing.T) {
 	const key = "SOCKS5_PORT"
-	os.Unsetenv(key)
-	t.Cleanup(func() { os.Unsetenv(key) })
-
 	cases := []struct {
 		name string
 		env  string // process env ("" = unset)
@@ -28,11 +24,7 @@ func TestEnvPort(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if c.env == "" {
-				os.Unsetenv(key)
-			} else {
-				os.Setenv(key, c.env)
-			}
+			t.Setenv(key, c.env) // envPort treats "" as unset
 			envFile := map[string]string{}
 			if c.file != "" {
 				envFile[key] = c.file

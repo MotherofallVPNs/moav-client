@@ -86,7 +86,9 @@ func TestAnyTLSOutbound_Insecure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var root map[string]any
-	json.Unmarshal(jsonBytes, &root)
+	if err := json.Unmarshal(jsonBytes, &root); err != nil {
+		t.Fatal(err)
+	}
 	outbounds, _ := root["outbounds"].([]any)
 	first, _ := outbounds[0].(map[string]any)
 	tls, _ := first["tls"].(map[string]any)
