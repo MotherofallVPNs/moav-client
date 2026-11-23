@@ -67,6 +67,13 @@ All notable changes to moav-client are documented here. Format loosely follows
   brings this change in is still run by the previous wrapper, so on an existing
   install run `moav-client update` once more afterwards (or `moav-client
   sync-pins`, then `moav-client up --build`).
+- **Saving settings from the dashboard no longer rewrites YAML merge keys.** A
+  `config.yaml` that uses anchors with `<<: *name` had each merge key written
+  back as `!!merge <<: *name` on every save. It is now left as written. A value
+  that starts with a newline is also written back intact (the newline was
+  dropped before), and a malformed merge key in `config.yaml` is reported as an
+  error instead of a panic in the request handler. All three come from the YAML
+  library change listed under Internal.
 
 ### Internal
 - **CI: golangci-lint runs again.** `golangci-lint-action@v6` with
@@ -87,6 +94,16 @@ All notable changes to moav-client are documented here. Format loosely follows
 - `.env.example` and `docs/CONFIGURATION.md` no longer claim the component pins
   track the MoaV server's; shared components stay wire-compatible but are
   bumped on the client's own schedule.
+- **Two unmaintained Go dependencies replaced.** `gopkg.in/yaml.v3` (archived
+  upstream in April 2025) becomes `go.yaml.in/yaml/v3` v3.0.6, the same code
+  base now maintained by the YAML organization, with an identical API.
+  `armon/go-socks5` (last commit 2016) becomes `things-go/go-socks5` v0.1.4, its
+  maintained descendant. The SOCKS5 listener behaves as before: CONNECT only,
+  optional username/password auth, the same reply codes, and BIND and UDP
+  ASSOCIATE still refused (the new library can relay UDP itself, which would
+  bypass the tunnel, so both commands are refused explicitly). New wire-level
+  SOCKS5 tests and config.yaml decoding and round-trip tests were written
+  against the old libraries first and pass unchanged on the new ones.
 
 ### Security
 - **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).
