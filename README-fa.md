@@ -6,7 +6,7 @@
 
 **یک پروکسی محلی، جلوی همه‌ی پروتکل‌هایی که سرور MoaV شما صحبت می‌کند.**
 
-[![Go](https://img.shields.io/badge/Go-1.25-06b6d4.svg?logo=go&logoColor=white)](https://go.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/moav-client?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/moav-client/releases/latest)
+[![Go](https://img.shields.io/badge/Go-1.27-06b6d4.svg?logo=go&logoColor=white)](https://go.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/moav-client?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/moav-client/releases/latest)
 
 [![MoaV server](https://img.shields.io/badge/server-MoaV-ef4444.svg?logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV) [![Protocols](https://img.shields.io/badge/protocols-13%2B-8b5cf6.svg)](#protocols) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
 
