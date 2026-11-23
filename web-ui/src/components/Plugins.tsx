@@ -77,10 +77,6 @@ export default function Plugins({ refreshTick }: Props) {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [draft, setDraft] = useState<Rule | null>(null);
 
-  useEffect(() => {
-    refresh();
-  }, [refreshTick]);
-
   const refresh = async () => {
     try {
       const r = await fetch(`${API_BASE}/api/plugins`);
@@ -96,6 +92,10 @@ export default function Plugins({ refreshTick }: Props) {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 2500);
   };
+
+  useEffect(() => {
+    refresh();
+  }, [refreshTick]);
 
   const persist = async (next: Rule[]) => {
     const prev = rules;

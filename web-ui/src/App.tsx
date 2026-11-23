@@ -114,7 +114,7 @@ export default function App() {
   const [healthy, setHealthy] = useState(0);
   const [total, setTotal] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
-  const [clock, setClock] = useState(new Date());
+  const [clock, setClock] = useState(() => new Date());
 
   useEffect(() => {
     const id = setInterval(() => setClock(new Date()), 1000);
