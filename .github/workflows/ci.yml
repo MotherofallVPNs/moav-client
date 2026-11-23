@@ -33,15 +33,14 @@ jobs:
           GOOS=windows GOARCH=amd64 go build ./...
           GOOS=darwin  GOARCH=arm64 go build ./...
 
-      - name: golangci-lint (findings warn-only)
-        # Findings don't fail the job yet (--issues-exit-code=0), but the linter
-        # failing to run does: no continue-on-error, which hid a dead linter.
+      - name: golangci-lint
+        # Blocking: any finding fails the job. Exceptions live in
+        # proxy-core/.golangci.yml, each with its reason.
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           # Pinned: must be built with a Go >= the go.mod version, or it exits 3.
           version: v2.15.0
           working-directory: proxy-core
-          args: --issues-exit-code=0
 
       - name: go test (race + coverage)
         run: go test -race -count=1 -covermode=atomic -coverprofile=cover.out ./...
@@ -78,6 +77,10 @@ jobs:
           cache-dependency-path: web-ui/package-lock.json
 
       - run: npm ci
+
+      - name: oxlint
+        # Blocking: errors and warnings both fail (--deny-warnings).
+        run: npm run lint
 
       - name: vitest (unit tests)
         run: npm test
