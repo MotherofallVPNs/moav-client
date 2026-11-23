@@ -43,6 +43,7 @@ export default function Debug({ refreshTick }: Props) {
   const pausedRef = useRef(paused);
   const tailRef = useRef<HTMLDivElement | null>(null);
 
+  // oxlint-disable-next-line react/refs -- latest-value ref read by the WebSocket handler
   pausedRef.current = paused;
 
   useEffect(() => {
