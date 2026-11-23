@@ -21,10 +21,10 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
-    "@vitest/coverage-v8": "^3.2.7",
+    "@vitest/coverage-v8": "^4.1.12",
     "jsdom": "^30.0.1",
     "typescript": "^5.5.3",
     "vite": "^8.2.2",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   }
 }

@@ -36,6 +36,27 @@ All notable changes to moav-client are documented here. Format loosely follows
   `link_preview_options.url` (Bot API 7.0) to the release/issue URL. Matches the
   same fix on the MoaV server.
 
+### Security
+- **Dashboard runtime image moves to `nginx:1.30-alpine`** (was
+  `nginx:1.27-alpine`). nginx 1.27 has been end of life since 2025-06 and that
+  tag was last built in 2025-04, so every dashboard image missed 19 months of
+  nginx and Alpine fixes (OpenSSL, busybox, and the `apache2-utils` that writes
+  the basic-auth file), including the resolver use-after-free CVE-2026-123634
+  on the `resolver` + variable `proxy_pass` path this config uses. The server
+  block and the entrypoint hooks are unchanged.
+- **web-ui dev toolchain: lockfile refreshed for the fixable advisories.** vite
+  8.2.2 to 8.3.8 (dev-server file disclosure and cross-origin script
+  execution), undici 8.10.0 to 8.13.1, brace-expansion and source-map-js, all
+  inside the existing `package.json` ranges. `npm audit` drops from 11 findings
+  to 7; the rest need the vitest major and are handled separately. None of
+  these packages ship in the dashboard bundle.
+- **web-ui test runner moves to vitest 4.1.12** (was 3.2.7), with
+  `@vitest/coverage-v8` to match. The vitest 3 line has no fix for the two
+  critical advisories in its tree (tinypool prototype pollution leading to code
+  execution, `@vitest/mocker` path traversal) or for the glob and minimatch
+  findings under the coverage provider. No test or config change was needed.
+  Together with the lockfile refresh above, `npm audit` is clean (0 findings).
+
 ## [1.4.0] — 2026-08-23
 
 ### Added
