@@ -185,6 +185,17 @@ All notable changes to moav-client are documented here. Format loosely follows
   `tsconfig.json` drops `DOM.Iterable`, an empty lib since TypeScript 6, and now
   also type-checks `vite.config.ts` and `vitest.config.ts`, so a config option
   removed by a tool major fails the build instead of being ignored.
+- **web-ui tests run on vitest 5.1.1 with `@testing-library/jest-dom` 8.0.0**
+  (were 4.1.12 and 6.9.1); jest-dom 8 only supports vitest 5, so they move
+  together. The test setup now imports `@testing-library/jest-dom/vitest`:
+  vitest 5 no longer reads `jest.Matchers`, so with the bare import the DOM
+  matchers ran but no longer type-checked. `@testing-library/dom`, a required
+  peer of jest-dom since 7, is declared explicitly, and `package.json` gains an
+  `engines.node` range matching vitest 5 (`^22.12 || ^24 || >=26`; the build
+  image and CI are on Node 24). Adds the first component test
+  (`BlockDirectToggle`, the kill-switch banner), so jsdom, Testing Library and
+  the jest-dom matchers are exercised by `npm test` instead of only being
+  installed: 13 tests, up from 8.
 
 ### Security
 - **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).
