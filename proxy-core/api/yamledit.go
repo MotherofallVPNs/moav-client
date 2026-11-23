@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // errSkipWrite lets an editYAMLFile callback bail out without writing the file
