@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"os"
 	"testing"
 )
@@ -40,5 +41,14 @@ func TestEnvPort(t *testing.T) {
 				t.Errorf("envPort=%d, want %d", got, c.want)
 			}
 		})
+	}
+}
+
+// go.mod pins `godebug multipathtcp=0`: the public exploit for kernel
+// CVE-2026-98432 needs an MPTCP listener, which Go 1.24+ creates by default.
+func TestListenersDoNotUseMPTCP(t *testing.T) {
+	var lc net.ListenConfig
+	if lc.MultipathTCP() {
+		t.Fatal("MPTCP is on for listeners; keep `godebug multipathtcp=0` in go.mod")
 	}
 }

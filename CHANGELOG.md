@@ -22,6 +22,25 @@ All notable changes to moav-client are documented here. Format loosely follows
   `link_preview_options.url` (Bot API 7.0) to the release/issue URL. Matches the
   same fix on the MoaV server.
 
+### Security
+- **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).
+  Under the Go 1.25 toolchain, govulncheck reported 11 standard-library
+  vulnerabilities reachable from proxy-core code, among them the HTTP CONNECT
+  desync (CVE-2026-94439), the `MaxBytesReader` header race (CVE-2026-97054)
+  and the `crypto/x509` distrust of compromised intermediates (CVE-2026-111943)
+  on the subscription fetch. `go.mod` now requires Go 1.27 with a `go1.27.4`
+  toolchain floor, the build image is `golang:1.27-alpine` (which also refreshes
+  the CA bundle copied into the scratch image), and `golang.org/x/net` moves to
+  v0.63.0. govulncheck finds no vulnerabilities in the new build.
+- **MPTCP is off on the Go listeners.** Go 1.24+ opens MPTCP listeners by
+  default, and the public exploit for Linux kernel CVE-2026-98432 needs one. It
+  matters most when the proxy ports are exposed to the LAN or publicly.
+  proxy-core pins `godebug multipathtcp=0` in `go.mod`, so it also holds when
+  the binary runs outside Docker (a test guards the directive), and compose sets
+  `GODEBUG=multipathtcp=0` for the xray, caddy, psiphon and sni-spoof
+  containers. A patched kernel is still the real fix; this removes the known
+  exploit path.
+
 ## [1.4.0] — 2026-08-23
 
 ### Added
