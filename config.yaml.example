@@ -23,24 +23,35 @@ load_balancing:
   probe_on_start: true
 
 plugins:
-  # Off by default — the only enabled rule out of the box is the Iran-direct
-  # one below. Enable torrent-blocking / ad-blocking / etc. from the dashboard
-  # Plugins tab (curated templates ship disabled).
+  # Off by default — the only enabled rules out of the box are the two
+  # Iran-direct ones below. Enable torrent-blocking / ad-blocking / etc. from
+  # the dashboard Plugins tab (curated templates ship disabled).
   torrent_block: false
   # Kill-switch: when true, the balancer's involuntary direct fallback (used
   # when every endpoint is down) is dropped instead of dialing direct, so the
   # host never leaks an unproxied connection. Explicit `direct` routing rules
   # below are ALWAYS honored — they take priority over the kill-switch.
   block_direct: false
-  # Only default-enabled rule: Iranian destinations bypass the proxy and go
-  # direct, so domestic traffic keeps your real (Iranian) IP — this avoids both
-  # breaking IR sites that block foreign IPs and signalling "this user is on a
-  # VPN". Matches destinations whose address is in geoip/ir.txt: IP literals
-  # as sent, hostnames via a local lookup made before any tunnel is dialled, so
-  # an Iranian site never reaches a MoaV endpoint (docs/PLUGINS.md#resolution-order).
-  # Everything else is proxied.
+  # Default rules: Iranian destinations bypass the proxy and go direct, so
+  # domestic traffic keeps your real (Iranian) IP. This avoids breaking IR
+  # sites that block foreign IPs and signalling "this user is on a VPN", and it
+  # keeps MoaV exit servers from connecting to servers inside Iran, which
+  # would reveal the exit IP to in-country infrastructure.
+  # Everything else is proxied. See docs/PLUGINS.md#resolution-order.
   routing_rules:
+    # Matches destinations whose address is in geoip/ir.txt: IP literals as
+    # sent, hostnames via a local lookup made before any tunnel is dialled.
     - match: {type: geoip, value: ir}
+      action: direct
+    # Anti-leak backstop for the rule above, which needs a working local DNS
+    # lookup. If that lookup fails (timeout, censored or broken resolver), the
+    # geoip rule cannot match and the name would fall through to the proxy,
+    # so the exit server would open a connection to an in-country server and
+    # expose its IP. This rule matches .ir names on the name alone, with no
+    # lookup, so they always stay direct and never reach a tunnel. Trade-off:
+    # a .ir site hosted abroad also goes direct. Remove it only if you accept
+    # that leak risk.
+    - match: {type: domain_suffix, value: ir}
       action: direct
 
 # sing-box performs the actual protocol cryptography (VLESS/Reality/Trojan/

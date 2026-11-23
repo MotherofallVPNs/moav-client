@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/MotherofallVPNs/moav-client/proxy-core/config"
 	"github.com/MotherofallVPNs/moav-client/proxy-core/plugins"
 )
 
@@ -123,6 +124,12 @@ func TestRouting_HybridResolutionOrder(t *testing.T) {
 		mixName: {netip.MustParseAddr(outIP), netip.MustParseAddr(irIP)},
 	}
 	geoDirect := rule("geoip", "ir", plugins.DecisionDirect)
+	shipped := shippedRules(t)
+	const (
+		irSuffixName = "shop.example.ir" // .ir, but the resolver knows nothing about it
+		irSuffixOut  = "abroad.example.ir"
+	)
+	answers[irSuffixOut] = []netip.Addr{netip.MustParseAddr(outIP)}
 
 	cases := []struct {
 		name        string
@@ -156,6 +163,19 @@ func TestRouting_HybridResolutionOrder(t *testing.T) {
 			rules: []plugins.Rule{geoDirect}, host: "unknown.example.test", wantLookups: 1},
 		{name: "IP literal is matched as is, no lookup",
 			rules: []plugins.Rule{geoDirect}, host: irIP, wantDirect: []string{irIP + ":443"}},
+		// The shipped config.yaml.example rules.
+		{name: "shipped: .ir name whose lookup fails stays direct, by name",
+			rules: shipped, host: irSuffixName, wantDirect: []string{irSuffixName + ":443"}},
+		{name: "shipped: .ir name with a trailing dot stays direct",
+			rules: shipped, host: irSuffixName + ".", wantDirect: []string{irSuffixName + ".:443"}},
+		{name: "shipped: .ir name hosted abroad goes direct, no lookup",
+			rules: shipped, host: irSuffixOut, wantDirect: []string{irSuffixOut + ":443"}},
+		{name: "shipped: non-.ir name with an IR address goes direct via geoip",
+			rules: shipped, host: irName, wantDirect: []string{irIP + ":443"}, wantLookups: 1},
+		{name: "shipped: non-.ir foreign name is proxied by name",
+			rules: shipped, host: outName, wantLookups: 1},
+		{name: "shipped: non-.ir name whose lookup fails is proxied",
+			rules: shipped, host: "unknown.example.test", wantLookups: 1},
 	}
 
 	for _, in := range inbounds {
@@ -209,6 +229,35 @@ func TestRouting_HybridResolutionOrder(t *testing.T) {
 			})
 		}
 	}
+}
+
+// shippedRules builds the engine rules from config.yaml.example the way
+// main.go does, so the tests cover what operators actually get by default.
+func shippedRules(t *testing.T) []plugins.Rule {
+	t.Helper()
+	cfg, err := config.Load("config.yaml.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rules []plugins.Rule
+	for _, rc := range cfg.Plugins.RoutingRules {
+		action := plugins.DecisionProxy
+		switch rc.Action {
+		case "direct":
+			action = plugins.DecisionDirect
+		case "block":
+			action = plugins.DecisionBlock
+		}
+		rules = append(rules, plugins.Rule{
+			Match:   plugins.MatchExpr{Type: rc.Match.Type, Value: rc.Match.Value},
+			Action:  action,
+			Enabled: rc.Enabled == nil || *rc.Enabled,
+		})
+	}
+	if len(rules) == 0 {
+		t.Fatal("config.yaml.example has no routing rules")
+	}
+	return rules
 }
 
 func expectEchoRW(t *testing.T, rw io.ReadWriter, payload []byte) {

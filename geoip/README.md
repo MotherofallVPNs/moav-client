@@ -11,8 +11,9 @@ Notes:
 - Matching is on IP addresses. A destination given as a hostname (the common
   `socks5h://` case) is resolved with proxy-core's local resolver when no
   domain rule matched it, and the rule is tested against that answer before
-  any connection is made. See
-  [docs/PLUGINS.md](../docs/PLUGINS.md#resolution-order).
+  any connection is made. If that lookup fails, the geoip rule cannot match;
+  the shipped `domain_suffix: ir → direct` rule keeps `.ir` names direct
+  anyway. See [docs/PLUGINS.md](../docs/PLUGINS.md#resolution-order).
 - If the list file for a referenced `cc` is missing, the rule is **inert** and
   proxy-core logs a one-time WARN. A `block` rule that references a missing
   list will NOT block — populate the file.

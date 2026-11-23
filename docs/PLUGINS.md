@@ -96,6 +96,41 @@ If no IP rules are enabled, no lookup is made for classification at all. If the
 local lookup fails, the connection takes the default `proxy` route and the log
 says so (`route: local lookup of … failed`).
 
+#### Why `.ir` names also have a name rule
+
+The shipped `config.yaml.example` enables two rules, both `direct`:
+
+```yaml
+routing_rules:
+  - match: {type: geoip, value: ir}
+    action: direct
+  - match: {type: domain_suffix, value: ir}
+    action: direct
+```
+
+The `geoip` rule does the real work, but for a hostname it depends on the
+local lookup in the address pass. When that lookup fails (it times out, the
+resolver is broken, or a censored resolver refuses the name), no IP rule can
+match, and the name takes the default `proxy` route. For a server inside Iran
+that is the leak the `geoip` rule exists to prevent: a MoaV exit server opens
+a connection to an in-country server, and that server sees the exit IP.
+Failing closed on every lookup error is not an option, because in Iran the
+local resolver refuses most blocked sites, which are exactly the names that
+need the tunnel.
+
+`domain_suffix: ir` is the backstop for the names where the answer is known
+without DNS. It matches in the name pass, so it decides with no lookup, and
+any `.ir` name (`divar.ir`, `www.shaparak.ir`, `example.ir.`) goes direct even
+when the local resolver is down. If the direct dial then cannot resolve the
+name either, the connection fails; it is never handed to the tunnel instead.
+
+What it does not cover: an Iranian server under a non-`.ir` name (for example
+`aparat.com`) still relies on the `geoip` lookup. The reverse trade-off is
+that a `.ir` site hosted outside Iran also goes direct. Keep the rule unless
+you accept the leak risk; to route a specific `.ir` name through the tunnel,
+add a `domain` or `domain_suffix` rule for it **above** this one with action
+`proxy`.
+
 If every endpoint is down and `block_direct` is off, the balancer's fallback
 dial resolves the name locally, like `direct`.
 
@@ -178,6 +213,8 @@ plugins:
       enabled: true          # absent = enabled (back-compat)
       note: Zoom off the VPN
     - match: { type: geoip, value: ir }
+      action: direct
+    - match: { type: domain_suffix, value: ir }   # backstop, see Resolution order
       action: direct
 ```
 
