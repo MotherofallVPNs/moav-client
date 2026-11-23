@@ -14,6 +14,39 @@ All notable changes to moav-client are documented here. Format loosely follows
   verbatim, so a server offering the new `gecko` obfuscation works with no client
   change. (Snell is intentionally not supported: sing-box's Snell *outbound* has
   no v5, so the sidecar cannot dial a Snell v5 server.)
+- **AmneziaWG daemon updated to `amneziawg-go v3.1.20261116`** (was
+  v3.1.20260814; the tools stay at v3.1.20260812, still the latest). Upstream
+  hardened the AWG 3.1 obfuscation parameters: `jmin > jmax` is rejected instead
+  of underflowing the junk packet size, negative lengths in the `<r>/<rc>/<rd>/<dz>`
+  tags are rejected, I1 to I5 can change safely while handshakes are in flight,
+  and a timer race is fixed. Same wire format.
+- **MasterDNS client updated to v2026.11.18** (was v2026.05.10): FastStart with
+  background resolver discovery and scoring, a fix for resolver probation
+  starvation, and data-race fixes in session init and the resolver health loop.
+  The build now verifies the download against the release's `SHA256SUMS.txt`,
+  as the MoaV server does, and fails on a mismatch.
+- **AmneziaWG and SNI-spoof builders move to `golang:1.27-bookworm`** (was
+  1.25, end of life), so both binaries pick up the Go security fixes released
+  since August.
+- **web-ui routine dependency bumps.** react and react-dom 19.3.1, `@types/react`
+  and `@types/react-dom` 19.3.0, `@vitejs/plugin-react` 6.3.0,
+  `@testing-library/react` 16.3.3 and jsdom 31.0.1, with the `package.json`
+  floors raised to match (vite's floor is now 8.3.8, the first release with the
+  dev-server fixes). The dashboard build image and the CI job move from Node 22
+  to Node 24 (active LTS).
+- **Nothing in the stack floats any more.** Psiphon tunnel-core and
+  SNI-Spoofing-Go were built from whatever their default branch held at build
+  time; they are now built from release tags (`PSIPHON_VERSION=v2.0.43`,
+  `SNI_SPOOF_VERSION=v0.7.2`). The Caddy image moves from `caddy:2` to
+  `caddy:${CADDY_VERSION}` (2.11), and the Tor image, which has no version tags
+  upstream, is pinned by digest instead of `:latest`. The three new variables
+  live in `.env.example` with the other component versions, and the drift gate
+  (`tests/version-sync-test.sh`) now also fails on an unpinned `git clone` or a
+  floating image default. `IMAGE_TOR` / `IMAGE_CADDY` still override the whole
+  image ref.
+- **The dashboard image is built with `npm ci`** (was `npm install`), so it
+  installs exactly the committed lockfile that CI tested instead of re-resolving
+  the version ranges at build time.
 
 ### Fixed
 - **Telegram release notification pins its link preview to the release page.**
@@ -106,6 +139,12 @@ All notable changes to moav-client are documented here. Format loosely follows
   inside the existing `package.json` ranges. `npm audit` drops from 11 findings
   to 7; the rest need the vitest major and are handled separately. None of
   these packages ship in the dashboard bundle.
+- **web-ui test runner moves to vitest 4.1.12** (was 3.2.7), with
+  `@vitest/coverage-v8` to match. The vitest 3 line has no fix for the two
+  critical advisories in its tree (tinypool prototype pollution leading to code
+  execution, `@vitest/mocker` path traversal) or for the glob and minimatch
+  findings under the coverage provider. No test or config change was needed.
+  Together with the lockfile refresh above, `npm audit` is clean (0 findings).
 
 ## [1.4.0] — 2026-08-23
 

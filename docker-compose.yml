@@ -92,7 +92,10 @@ services:
   # set (or sni_spoof.default_fake_sni applies one globally).
   # Requires NET_ADMIN (sets BPF / raw sockets for CH injection).
   sni-spoof:
-    build: ./sidecars/sni-spoof
+    build:
+      context: ./sidecars/sni-spoof
+      args:
+        SNI_SPOOF_VERSION: "${SNI_SPOOF_VERSION:-v0.7.2}"
     profiles: [sni-spoof, all-sidecars]
     mem_limit: 128m
     cpus: 0.5
@@ -176,7 +179,7 @@ services:
   # Enable with `docker compose --profile https up -d caddy`.
   # ---------------------------------------------------------------------------
   caddy:
-    image: ${IMAGE_CADDY:-caddy:2}
+    image: ${IMAGE_CADDY:-caddy:${CADDY_VERSION:-2.11}}
     profiles: [https, all-sidecars]
     mem_limit: 128m
     cpus: 0.5
@@ -208,7 +211,7 @@ services:
     build:
       context: ./sidecars/dns-tunnels
       args:
-        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.05.10.180256-27c7e11}"
+        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.11.18.210322-7198b45}"
     profiles: [masterdns, all-sidecars]
     mem_limit: 128m
     cpus: 0.5
@@ -221,7 +224,7 @@ services:
     build:
       context: ./sidecars/amneziawg
       args:
-        AMNEZIAWG_GO_VERSION: "${AMNEZIAWG_GO_VERSION:-v3.1.20260814}"
+        AMNEZIAWG_GO_VERSION: "${AMNEZIAWG_GO_VERSION:-v3.1.20261116}"
         AWGTOOLS_VERSION: "${AWGTOOLS_VERSION:-v3.1.20260812}"
     profiles: [amneziawg, all-sidecars]
     mem_limit: 256m
@@ -249,7 +252,10 @@ services:
     restart: unless-stopped
 
   psiphon:
-    build: ./sidecars/psiphon
+    build:
+      context: ./sidecars/psiphon
+      args:
+        PSIPHON_VERSION: "${PSIPHON_VERSION:-v2.0.43}"
     profiles: [psiphon, all-sidecars]
     mem_limit: 256m
     cpus: 0.5
@@ -265,7 +271,7 @@ services:
     build:
       context: ./sidecars/dns-tunnels
       args:
-        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.05.10.180256-27c7e11}"
+        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.11.18.210322-7198b45}"
     profiles: [dns-tunnels]
     mem_limit: 128m
     cpus: 0.5
@@ -273,7 +279,8 @@ services:
     restart: unless-stopped
 
   tor:
-    image: ${IMAGE_TOR:-peterdavehello/tor-socks-proxy:latest}
+    # No version tags upstream: pinned by digest (the 2026-06-08 multi-arch build).
+    image: ${IMAGE_TOR:-peterdavehello/tor-socks-proxy@sha256:0cc12d36d31265ce828c8422a7e163a0bf46755e90531f4c7d38a6149f071729}
     profiles: [tor, all-sidecars]
     mem_limit: 256m
     cpus: 0.5

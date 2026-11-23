@@ -22,7 +22,8 @@ in `config.yaml`.** Copy the templates before first run:
   fails if any drifts from `VERSION`.
 - **Component versions**: uncommented `_VERSION` vars in `.env` (`SINGBOX_VERSION`,
   `XRAY_VERSION`, `AMNEZIAWG_GO_VERSION`, `AWGTOOLS_VERSION`, `MASTERDNS_VERSION`,
-  `TRUSTTUNNEL_CLIENT_VERSION`). These are the single source; `docker-compose.yml`
+  `TRUSTTUNNEL_CLIENT_VERSION`, `PSIPHON_VERSION`, `SNI_SPOOF_VERSION`,
+  `CADDY_VERSION`). These are the single source; `docker-compose.yml`
   passes them as build args / image tags with matching `${VAR:-default}` fallbacks
   (kept in sync by the same test). Shared components stay wire-compatible with
   the MoaV server's `.env.example` but are bumped on the client's own schedule
