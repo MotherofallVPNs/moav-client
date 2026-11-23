@@ -34,6 +34,19 @@ All notable changes to moav-client are documented here. Format loosely follows
   floors raised to match (vite's floor is now 8.3.8, the first release with the
   dev-server fixes). The dashboard build image and the CI job move from Node 22
   to Node 24 (active LTS).
+- **Nothing in the stack floats any more.** Psiphon tunnel-core and
+  SNI-Spoofing-Go were built from whatever their default branch held at build
+  time; they are now built from release tags (`PSIPHON_VERSION=v2.0.43`,
+  `SNI_SPOOF_VERSION=v0.7.2`). The Caddy image moves from `caddy:2` to
+  `caddy:${CADDY_VERSION}` (2.11), and the Tor image, which has no version tags
+  upstream, is pinned by digest instead of `:latest`. The three new variables
+  live in `.env.example` with the other component versions, and the drift gate
+  (`tests/version-sync-test.sh`) now also fails on an unpinned `git clone` or a
+  floating image default. `IMAGE_TOR` / `IMAGE_CADDY` still override the whole
+  image ref.
+- **The dashboard image is built with `npm ci`** (was `npm install`), so it
+  installs exactly the committed lockfile that CI tested instead of re-resolving
+  the version ranges at build time.
 
 ### Fixed
 - **Telegram release notification pins its link preview to the release page.**
