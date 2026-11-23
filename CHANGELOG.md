@@ -140,6 +140,11 @@ All notable changes to moav-client are documented here. Format loosely follows
   dropped before), and a malformed merge key in `config.yaml` is reported as an
   error instead of a panic in the request handler. All three come from the YAML
   library change listed under Internal.
+- **`GET /api/snispoof` reports an unparsable `config.yaml`** (HTTP 500,
+  `parse config: ...`) instead of answering as if SNI-spoof were unconfigured.
+  The parse error was being discarded.
+- **`moav-client list`, `probe` and `fetch-sub` exit 1 when the result cannot
+  be written to stdout**, instead of exiting 0 with truncated or missing output.
 
 ### Internal
 - **TrustTunnel sidecar has a smoke test.** `tests/trusttunnel-sidecar-test.sh`
@@ -149,13 +154,6 @@ All notable changes to moav-client are documented here. Format loosely follows
   release tarball also ships `trusttunnel_client.sig`, which the old glob could
   match first) and runs `--version` so a wrong or unrunnable asset fails the
   build instead of the container.
-- **CI: golangci-lint runs again.** `golangci-lint-action@v6` with
-  `version: latest` installed a golangci-lint built with Go 1.24, which refuses
-  a Go 1.25 module and exits 3; `continue-on-error` kept the step green, so
-  nothing had been linted since the move to Go 1.25. The step now uses action
-  v9 with golangci-lint pinned to v2.15.0 (built with Go 1.27). Findings stay
-  non-blocking for now (`--issues-exit-code=0`), but a linter that cannot run
-  fails the job.
 - **CI actions updated and pinned by commit SHA:** checkout v7.0.1, setup-go
   v7.1.0, setup-node v7.1.0, upload-artifact v7.0.2, golangci-lint-action
   v9.3.0 (each was three majors behind on a floating major tag). They run on
@@ -196,6 +194,22 @@ All notable changes to moav-client are documented here. Format loosely follows
   (`BlockDirectToggle`, the kill-switch banner), so jsdom, Testing Library and
   the jest-dom matchers are exercised by `npm test` instead of only being
   installed: 13 tests, up from 8.
+- **CI: golangci-lint runs again.** `golangci-lint-action@v6` with
+  `version: latest` installed a golangci-lint built with Go 1.24, which refuses
+  a Go 1.25 module and exits 3; `continue-on-error` kept the step green, so
+  nothing had been linted since the move to Go 1.25. The step now uses action
+  v9 with golangci-lint pinned to v2.15.0 (built with Go 1.27), and a linter
+  that cannot run fails the job.
+- **CI: lint findings now fail the build.** golangci-lint no longer runs with
+  `--issues-exit-code=0`. Its 81 existing findings are resolved rather than
+  baselined (the 58 reported earlier was the linter's default cap of 50 per
+  linter and 3 per identical message, now lifted in `proxy-core/.golangci.yml`):
+  58 fixed in code, most of them unchecked errors in test setup, and 23
+  best-effort closes of connections, listeners and read-side handles excluded
+  by type in that config. Closes of anything written through stay checked.
+  The web-ui had no linter; it gains `npm run lint` (oxlint, warnings denied)
+  as a blocking CI step. ESLint was not an option: `typescript-eslint` needs
+  the TypeScript compiler API, which TypeScript 7 does not ship.
 
 ### Security
 - **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).

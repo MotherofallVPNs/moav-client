@@ -290,6 +290,10 @@ cd proxy-core && go test ./subscription/... -v
 
 # Web-UI TypeScript type-check + build
 cd web-ui && npm run build
+
+# Lint (both block CI): golangci-lint v2.15.0, oxlint
+cd proxy-core && golangci-lint run
+cd web-ui && npm run lint
 ```
 
 ---
