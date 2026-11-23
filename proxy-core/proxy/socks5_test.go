@@ -665,4 +665,11 @@ func TestSOCKS5_LoggerKeepsErrPrefix(t *testing.T) {
 	if got, want := buf.String(), "[ERR] socks: server: boom\n"; got != want {
 		t.Errorf("log line = %q, want %q", got, want)
 	}
+
+	// The library quotes the client's raw destination; it must stay one line.
+	buf.Reset()
+	socks5Logger{log.New(&buf, "", 0)}.Errorf("connect to %v failed", "a.test\nBLOCK b.test\x00:443")
+	if got, want := buf.String(), "[ERR] socks: connect to a.test?BLOCK b.test?:443 failed\n"; got != want {
+		t.Errorf("log line = %q, want %q", got, want)
+	}
 }
