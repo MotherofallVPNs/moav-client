@@ -2,6 +2,8 @@ package balancer
 
 import (
 	"errors"
+	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/MotherofallVPNs/moav-client/proxy-core/subscription"
@@ -240,5 +242,44 @@ func TestFlowsRingBufferCap(t *testing.T) {
 	// Oldest-first, and only the last 3 IDs (8,9,10) survive.
 	if snap[0].ID != 8 || snap[2].ID != 10 {
 		t.Fatalf("ring kept wrong entries: first=%d last=%d, want 8..10", snap[0].ID, snap[2].ID)
+	}
+}
+
+// /api/flows copies flows while connections close and count bytes; run with
+// -race. Before the fix, Snapshot read ClosedUnix/Result while End wrote them.
+func TestFlowsSnapshotConcurrentWithEnd(t *testing.T) {
+	f := NewFlows(50)
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				for _, fl := range f.Snapshot() {
+					_ = fl.Result + strconv.FormatInt(fl.ClosedUnix+fl.BytesUp+fl.BytesDown, 10)
+				}
+			}
+		}
+	}()
+	for i := 0; i < 200; i++ {
+		fl := f.Begin("c", "d", "e", "p")
+		fl.Add(1, 2)
+		if i%2 == 0 {
+			fl.End(nil)
+		} else {
+			fl.End(errors.New("reset"))
+		}
+	}
+	close(stop)
+	wg.Wait()
+
+	for _, fl := range f.Snapshot() {
+		if fl.Result == "open" || fl.ClosedUnix == 0 || fl.BytesUp != 1 || fl.BytesDown != 2 {
+			t.Fatalf("flow %d not settled: %+v", fl.ID, fl)
+		}
 	}
 }

@@ -19,6 +19,10 @@ type Flow struct {
 	BytesUp    int64  `json:"bytes_up"`
 	BytesDown  int64  `json:"bytes_down"`
 	Result     string `json:"result"` // "open" | "ok" | "error: ..."
+
+	// owner's mutex guards ClosedUnix and Result, which End writes while
+	// Snapshot (/api/flows) may be copying the flow.
+	owner *Flows
 }
 
 // Flows is a ring buffer of recent connections. Default cap 200.
@@ -47,6 +51,7 @@ func (f *Flows) Begin(client, dest, endpointID, protocol string) *Flow {
 		EndpointID: endpointID,
 		Protocol:   protocol,
 		Result:     "open",
+		owner:      f,
 	}
 	f.mu.Lock()
 	f.buf = append(f.buf, fl)
@@ -59,12 +64,14 @@ func (f *Flows) Begin(client, dest, endpointID, protocol string) *Flow {
 
 // End marks a flow as closed with an optional error.
 func (fl *Flow) End(err error) {
-	fl.ClosedUnix = time.Now().Unix()
+	result := "ok"
 	if err != nil {
-		fl.Result = "error: " + err.Error()
-	} else {
-		fl.Result = "ok"
+		result = "error: " + err.Error()
 	}
+	fl.owner.mu.Lock()
+	fl.ClosedUnix = time.Now().Unix()
+	fl.Result = result
+	fl.owner.mu.Unlock()
 }
 
 // Add is called per-direction during the io.Copy tunnel to tally bytes.
@@ -83,7 +90,18 @@ func (f *Flows) Snapshot() []Flow {
 	defer f.mu.RUnlock()
 	out := make([]Flow, len(f.buf))
 	for i, fl := range f.buf {
-		out[i] = *fl
+		out[i] = Flow{
+			ID:         fl.ID,
+			OpenedUnix: fl.OpenedUnix,
+			ClosedUnix: fl.ClosedUnix,
+			Client:     fl.Client,
+			Dest:       fl.Dest,
+			EndpointID: fl.EndpointID,
+			Protocol:   fl.Protocol,
+			BytesUp:    atomic.LoadInt64(&fl.BytesUp),
+			BytesDown:  atomic.LoadInt64(&fl.BytesDown),
+			Result:     fl.Result,
+		}
 	}
 	return out
 }
