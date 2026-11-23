@@ -61,7 +61,7 @@ services:
   singbox:
     # Tag is driven by SINGBOX_VERSION in .env (single source, matches the MoaV
     # server). IMAGE_SINGBOX overrides the whole ref to pin/swap registries.
-    image: ${IMAGE_SINGBOX:-ghcr.io/sagernet/sing-box:v${SINGBOX_VERSION:-1.14.0}}
+    image: ${IMAGE_SINGBOX:-ghcr.io/sagernet/sing-box:v${SINGBOX_VERSION:-1.14.4}}
     entrypoint:
       - /bin/sh
       - -c
@@ -102,6 +102,9 @@ services:
     cap_add: [NET_ADMIN, NET_RAW]
     volumes:
       - ./data:/etc/sni-spoof
+    environment:
+      # Go opens MPTCP listeners by default; keep it off (CVE-2026-98432 path).
+      - GODEBUG=multipathtcp=0
     networks: [moav-net]
     restart: unless-stopped
 
@@ -116,7 +119,7 @@ services:
     build:
       context: ./sidecars/xray
       args:
-        XRAY_VERSION: "${XRAY_VERSION:-v26.7.28}"
+        XRAY_VERSION: "${XRAY_VERSION:-v26.11.9}"
     entrypoint:
       - /bin/sh
       - -c
@@ -137,6 +140,8 @@ services:
       start_period: 15s
     volumes:
       - ./data:/etc/xray
+    environment:
+      - GODEBUG=multipathtcp=0
     networks:
       - moav-net
     restart: unless-stopped
@@ -192,6 +197,7 @@ services:
       - MOAV_DOMAIN=${MOAV_DOMAIN:-localhost}
       - MOAV_TLS_ISSUER=${MOAV_TLS_ISSUER:-internal}
       - MOAV_ACME_EMAIL=${MOAV_ACME_EMAIL:-admin@localhost}
+      - GODEBUG=multipathtcp=0
     networks: [moav-net]
     restart: unless-stopped
 
@@ -256,6 +262,8 @@ services:
     volumes:
       - ./data/sidecar-configs/psiphon:/etc/psiphon
       - psiphon-data:/var/lib/psiphon
+    environment:
+      - GODEBUG=multipathtcp=0
     networks: [moav-net]
     restart: unless-stopped
 

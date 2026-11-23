@@ -54,8 +54,78 @@ All notable changes to moav-client are documented here. Format loosely follows
   client's App Store page) instead of the release. It now sets
   `link_preview_options.url` (Bot API 7.0) to the release/issue URL. Matches the
   same fix on the MoaV server.
+- **`moav-client update` now carries component version bumps into an existing
+  install.** `.env` is seeded from `.env.example` once, at install, and nothing
+  refreshed its `*_VERSION` pins afterwards, so an updated install kept building
+  the sing-box, Xray and sidecar versions of the day it was installed, whatever
+  the release pinned. `update` now re-syncs those lines with the pulled
+  release (it lists each change and asks first, default yes, and proceeds on
+  its own without a terminal) before the rebuild, and leaves every other `.env`
+  line alone. `--keep-pins` skips it for a deliberately held version, the new
+  `moav-client sync-pins` runs only the re-sync, and re-running the installer
+  over an existing install does the same. **Upgrade note:** the update that
+  brings this change in is still run by the previous wrapper, so on an existing
+  install run `moav-client update` once more afterwards (or `moav-client
+  sync-pins`, then `moav-client up --build`).
+
+### Internal
+- **CI: golangci-lint runs again.** `golangci-lint-action@v6` with
+  `version: latest` installed a golangci-lint built with Go 1.24, which refuses
+  a Go 1.25 module and exits 3; `continue-on-error` kept the step green, so
+  nothing had been linted since the move to Go 1.25. The step now uses action
+  v9 with golangci-lint pinned to v2.15.0 (built with Go 1.27). Findings stay
+  non-blocking for now (`--issues-exit-code=0`), but a linter that cannot run
+  fails the job.
+- **CI actions updated and pinned by commit SHA:** checkout v7.0.1, setup-go
+  v7.1.0, setup-node v7.1.0, upload-artifact v7.0.2, golangci-lint-action
+  v9.3.0 (each was three majors behind on a floating major tag). They run on
+  Node 24, so a self-hosted runner must be v2.327.1 or newer.
+- **Live e2e no longer gives up before the engines are up.** The single probe
+  could land before sing-box and xray were listening, fail every endpoint in
+  milliseconds, and end the run as "0 ok". The probe is now re-triggered while
+  waiting.
+- `.env.example` and `docs/CONFIGURATION.md` no longer claim the component pins
+  track the MoaV server's; shared components stay wire-compatible but are
+  bumped on the client's own schedule.
 
 ### Security
+- **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).
+  Under the Go 1.25 toolchain, govulncheck reported 11 standard-library
+  vulnerabilities reachable from proxy-core code, among them the HTTP CONNECT
+  desync (CVE-2026-94439), the `MaxBytesReader` header race (CVE-2026-97054)
+  and the `crypto/x509` distrust of compromised intermediates (CVE-2026-111943)
+  on the subscription fetch. `go.mod` now requires Go 1.27 with a `go1.27.4`
+  toolchain floor, the build image is `golang:1.27-alpine` (which also refreshes
+  the CA bundle copied into the scratch image), and `golang.org/x/net` moves to
+  v0.63.0. govulncheck finds no vulnerabilities in the new build.
+- **MPTCP is off on the Go listeners.** Go 1.24+ opens MPTCP listeners by
+  default, and the public exploit for Linux kernel CVE-2026-98432 needs one. It
+  matters most when the proxy ports are exposed to the LAN or publicly.
+  proxy-core pins `godebug multipathtcp=0` in `go.mod`, so it also holds when
+  the binary runs outside Docker (a test guards the directive), and compose sets
+  `GODEBUG=multipathtcp=0` for the xray, caddy, psiphon and sni-spoof
+  containers. A patched kernel is still the real fix; this removes the known
+  exploit path.
+- **Xray-core sidecar updated to v26.11.9** (was v26.7.28, which upstream marks
+  as a pre-release). The range includes two emergency security releases: Xray
+  now verifies TLS against its own root CA set with the compromised roots
+  removed (v26.10.10, v26.10.21) and disables MPTCP on its listeners
+  (v26.10.31), plus XHTTP and mux race fixes. The default `chrome` uTLS
+  fingerprint becomes Chrome 155, which reaches every xhttp endpoint with no
+  config change because the generator already emits `fingerprint: chrome`. The
+  source-compile fallback moves to `golang:1.27-alpine` (Xray needs Go 1.27
+  since v26.9.8) and the runtime stage to `alpine:3.24` (3.21 went end of life
+  on 2026-11-01). The generated `xray.json` passes `xray run -test` on the new
+  binary unchanged.
+- **sing-box sidecar updated to 1.14.4** (was 1.13.19), matching the MoaV
+  server. 1.14.4 is built with Go 1.26.10, which carries the `crypto/x509`
+  distrust of compromised intermediates (CVE-2026-111943); 1.13.19 was built
+  with Go 1.25.12 and the 1.13 line is no longer released. No generator change
+  was needed: its output for every supported protocol passes the real 1.14.4
+  `sing-box check`. Note that since 1.14 Hysteria2 parrots Chrome's QUIC
+  handshake, and Chrome does not offer Ed25519, so a third-party Hysteria2
+  server with an Ed25519 certificate will fail to connect (MoaV servers use
+  ACME certificates and are not affected).
 - **Dashboard runtime image moves to `nginx:1.30-alpine`** (was
   `nginx:1.27-alpine`). nginx 1.27 has been end of life since 2025-06 and that
   tag was last built in 2025-04, so every dashboard image missed 19 months of

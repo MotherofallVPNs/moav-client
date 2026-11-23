@@ -600,6 +600,15 @@ if [[ ! -f "$ENVF" ]]; then
     touch "$ENVF"
     ok "created empty .env"
   fi
+elif [[ -f "$INSTALL_DIR/moav-client" ]]; then
+  # Existing install: .env keeps the pins it was seeded with, so re-sync them or
+  # this release's component bumps never reach it (same step `update` runs).
+  note "checking .env component pins against this release"
+  if [[ -n "$ASSUME_YES" || "$HEADLESS" == "1" || "$HEADLESS" == "auto" ]]; then
+    MOAV_DIR="$INSTALL_DIR" bash "$INSTALL_DIR/moav-client" sync-pins --yes || true
+  else
+    MOAV_DIR="$INSTALL_DIR" bash "$INSTALL_DIR/moav-client" sync-pins || true
+  fi
 fi
 
 if [[ -n "$SUBSCRIPTION" && -f "$SUBSCRIPTION" ]]; then
