@@ -13,15 +13,15 @@ on:
   workflow_dispatch:
     inputs:
       verbose:
-        description: "Dump client logs on completion"
+        description: "Keep client logs as an artifact even on success (always kept on failure)"
         type: boolean
         default: false
       bundle_b64:
-        description: "Base64 of a MoaV bundle .zip to test — overrides the secret. Make one on the server with: moav user base64 <user>  (or: base64 -w0 bundle.zip). NOTE: dispatch inputs are visible in the run metadata — use the secret for a long-lived server."
+        description: "Base64 of a MoaV bundle .zip — overrides the secrets. On the server: moav user base64 <user>. (NOT 'moav user sub' — that is a subscription, see sub_url.)"
         type: string
         default: ""
       sub_url:
-        description: "Subscription / moav:// URL to test — overrides the secret"
+        description: "Subscription to test — overrides the secrets. An http(s) subscription URL, a moav:// URI, or the output of: moav user sub <user>"
         type: string
         default: ""
       exit_ip:
@@ -29,7 +29,7 @@ on:
         type: string
         default: ""
       full_logs:
-        description: "Capture full per-container log snapshots as artifacts (even on success)"
+        description: "Same as verbose (kept for compatibility)"
         type: boolean
         default: false
   release:
@@ -46,51 +46,53 @@ jobs:
   e2e:
     runs-on: [self-hosted, moav-client-e2e]
     timeout-minutes: 40
-    env:
-      # A subscription/bundle for a fully-running MoaV test server, plus that
-      # server's egress IP. A dispatch input (for ad-hoc testing of a deployed
-      # server) overrides the secret (the standing test server); on push/release
-      # the inputs are empty so the secrets are used.
-      MOAV_TEST_SUB_URL: ${{ inputs.sub_url || secrets.MOAV_TEST_SUB_URL }}
-      MOAV_TEST_BUNDLE_B64: ${{ inputs.bundle_b64 || secrets.MOAV_TEST_BUNDLE_B64 }}
-      MOAV_TEST_EXIT_IP: ${{ inputs.exit_ip || secrets.MOAV_TEST_EXIT_IP }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Preflight
+      # Dispatch inputs are read from the event payload and masked here rather
+      # than mapped into `env:` — GitHub echoes unmasked inputs in every step
+      # header, which would publish the bundle's credentials in the run log.
+      - name: Resolve the test config (dispatch input overrides the secrets)
+        env:
+          SECRET_SUB_URL: ${{ secrets.MOAV_TEST_SUB_URL }}
+          SECRET_BUNDLE_B64: ${{ secrets.MOAV_TEST_BUNDLE_B64 }}
+          SECRET_EXIT_IP: ${{ secrets.MOAV_TEST_EXIT_IP }}
         run: |
           docker --version && docker compose version
-          test -n "$MOAV_TEST_SUB_URL" -o -n "$MOAV_TEST_BUNDLE_B64" \
-            || { echo "::error::provide a config: the bundle_b64 / sub_url dispatch input, or the MOAV_TEST_SUB_URL / MOAV_TEST_BUNDLE_B64 secret"; exit 1; }
+          input() { jq -r --arg k "$1" '.inputs[$k] // ""' "$GITHUB_EVENT_PATH"; }
+          sub=$(input sub_url); b64=$(input bundle_b64); ip=$(input exit_ip)
+          # add-mask is per line, and a pasted URI list has several.
+          printf '%s\n' "$sub" "$b64" "$ip" | while IFS= read -r l; do
+            if [ -n "$l" ]; then echo "::add-mask::$l"; fi
+          done
+          # A dispatched config replaces the standing secrets as a set, so a
+          # sub_url input is never shadowed by the bundle secret (or its exit IP).
+          if [ -z "$sub$b64" ]; then
+            sub=$SECRET_SUB_URL; b64=$SECRET_BUNDLE_B64; ip=${ip:-$SECRET_EXIT_IP}
+          fi
+          if [ -z "$sub$b64" ]; then
+            echo "::error::provide a config: the bundle_b64 / sub_url dispatch input, or the MOAV_TEST_SUB_URL / MOAV_TEST_BUNDLE_B64 secret"; exit 1
+          fi
+          if [ -n "$b64" ]; then
+            if printf '%s' "$b64" | base64 -d > /tmp/moav-e2e-bundle.zip 2>/dev/null \
+               && [ "$(head -c2 /tmp/moav-e2e-bundle.zip)" = "PK" ]; then
+              echo "MOAV_TEST_BUNDLE=/tmp/moav-e2e-bundle.zip" >> "$GITHUB_ENV"
+            else
+              # `moav user sub` output pasted into bundle_b64: valid base64, not a zip.
+              echo "::notice::bundle_b64 is not a zip — treating it as subscription content (a bundle zip comes from: moav user base64 <user>)"
+              rm -f /tmp/moav-e2e-bundle.zip
+              sub=$b64
+            fi
+          fi
+          { echo "MOAV_TEST_SUB_URL<<__E2E_EOF__"; printf '%s\n' "$sub"; echo "__E2E_EOF__"; } >> "$GITHUB_ENV"
+          echo "MOAV_TEST_EXIT_IP=$ip" >> "$GITHUB_ENV"
 
-      - name: Materialise the test bundle (if provided as base64)
-        if: env.MOAV_TEST_BUNDLE_B64 != ''
-        run: |
-          echo "$MOAV_TEST_BUNDLE_B64" | base64 -d > /tmp/moav-e2e-bundle.zip
-          echo "MOAV_TEST_BUNDLE=/tmp/moav-e2e-bundle.zip" >> "$GITHUB_ENV"
-
+      # The harness snapshots (redacted) compose logs into the artifact dir
+      # itself, before it tears the stack down.
       - name: Run the client e2e
+        env:
+          E2E_KEEP_LOGS: ${{ (inputs.verbose || inputs.full_logs) && '1' || '' }}
         run: ART_DIR="$PWD/e2e-artifacts" bash tests/e2e-client.sh
-
-      - name: Client logs (on failure, verbose, or full_logs)
-        if: failure() || inputs.verbose || inputs.full_logs
-        run: |
-          mkdir -p e2e-artifacts
-          docker compose logs --no-color > e2e-artifacts/compose-logs.txt 2>&1 || true
-          docker compose ps > e2e-artifacts/compose-ps.txt 2>&1 || true
-          if [ "${{ inputs.full_logs }}" = "true" ]; then
-            for c in $(docker compose ps --services 2>/dev/null); do
-              docker compose logs --no-color "$c" > "e2e-artifacts/log-$c.txt" 2>&1 || true
-            done
-          fi
-          # Best-effort: redact the known exit IP in the captured logs (first…last).
-          # The server DOMAIN can't be masked here (it isn't known to the workflow);
-          # e2e-client.sh masks it in the live console, and artifacts are repo-scoped.
-          if [ -n "$MOAV_TEST_EXIT_IP" ]; then
-            esc=$(printf '%s' "$MOAV_TEST_EXIT_IP" | sed 's/[.[\*^$]/\\&/g')
-            rep="$(printf '%s' "$MOAV_TEST_EXIT_IP" | cut -c1)…$(printf '%s' "$MOAV_TEST_EXIT_IP" | rev | cut -c1)"
-            sed -i "s/$esc/$rep/g" e2e-artifacts/*.txt 2>/dev/null || true
-          fi
 
       - name: Upload artifacts
         if: always()
@@ -103,8 +105,10 @@ jobs:
       - name: Teardown (reclaim workspace)
         if: always()
         run: |
-          docker compose down -v 2>/dev/null || true
-          rm -f config.yaml /tmp/moav-e2e-bundle.zip data/e2e-bundle.zip 2>/dev/null || true
+          docker compose --profile '*' down -v 2>/dev/null || true
+          rm -rf config.yaml /tmp/moav-e2e-bundle.zip data/e2e-bundle data/e2e-sub 2>/dev/null || true
           # MoaV/client containers can leave root-owned files in bind mounts;
           # hand the workspace back so the next checkout can clean it.
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE" 2>/dev/null || true
+          # Generated sing-box/xray/sidecar configs embed the bundle's credentials.
+          rm -rf data/*.json data/sidecar-configs 2>/dev/null || true
