@@ -72,6 +72,15 @@ All notable changes to moav-client are documented here. Format loosely follows
   the version ranges at build time.
 
 ### Fixed
+- **Live e2e tested the wrong server and leaked credentials** (`.github/workflows/e2e.yml`,
+  `tests/e2e-client.sh`). A `sub_url` dispatch input was shadowed by the standing
+  bundle secret, and inputs were echoed unmasked in the public run log. Inputs
+  are now masked and replace the secrets as a set. The harness accepts a
+  `moav://` URI or `moav user sub` output, finds v2 bundle WireGuard/AmneziaWG
+  confs (`moav-<server>-wg.conf` / `-awg.conf`) and dials AmneziaWG through its
+  sidecar, uploads a credential-free endpoint summary instead of raw
+  `/api/endpoints`, and captures (redacted) compose logs before teardown. See
+  [docs/devdocs/E2E-TESTING.md](docs/devdocs/E2E-TESTING.md).
 - **TrustTunnel starts on its own after a cold `compose up`.** The sidecar
   looked for its `client.toml` once at start and idled forever when proxy-core
   had not written it yet, so TrustTunnel stayed down until a manual restart. It
