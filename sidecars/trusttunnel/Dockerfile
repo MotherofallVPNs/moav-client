@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 WORKDIR /dl
 # Match the binary by exact name: the tarball also ships trusttunnel_client.sig,
 # which a 'trusttunnel_client*' glob can pick first. --version proves it runs here.
+# SHA256s are the release's per-asset digests; a version bump must add its own.
 RUN arch="$(uname -m)"; \
     case "$arch" in \
       x86_64)  A=linux-x86_64 ;; \
@@ -23,7 +24,16 @@ RUN arch="$(uname -m)"; \
       armv7l)  A=linux-armv7 ;; \
       *) echo "unsupported arch $arch"; exit 1 ;; \
     esac; \
+    case "${TRUSTTUNNEL_CLIENT_VERSION}/${A}" in \
+      v1.3.0/linux-x86_64)  EXPECTED=99e764bb2c080f7a60c441b51ad75fa7ec00e6c8a80afe36030af37201ba32f7 ;; \
+      v1.3.0/linux-aarch64) EXPECTED=837ec64520d546cdf8e7a327614589f64dc6c4f30e408e3788de7bfaef05b52b ;; \
+      v1.3.0/linux-armv7)   EXPECTED=19a0c479df4b2bce0ea3ea09777fc78be2918d0f7e8360279e1eee543284ac01 ;; \
+      *) echo "no pinned SHA256 for TrustTunnel client ${TRUSTTUNNEL_CLIENT_VERSION} ${A}; add it to sidecars/trusttunnel/Dockerfile" >&2; exit 1 ;; \
+    esac; \
     curl -fL "https://github.com/TrustTunnel/TrustTunnelClient/releases/download/${TRUSTTUNNEL_CLIENT_VERSION}/trusttunnel_client-${TRUSTTUNNEL_CLIENT_VERSION}-${A}.tar.gz" -o tt.tar.gz \
+    && ACTUAL="$(sha256sum tt.tar.gz | cut -d' ' -f1)" \
+    && { [ "$EXPECTED" = "$ACTUAL" ] || { echo "SHA256 mismatch for trusttunnel_client-${TRUSTTUNNEL_CLIENT_VERSION}-${A}.tar.gz: expected $EXPECTED, got $ACTUAL" >&2; exit 1; }; } \
+    && echo "SHA256 OK ($ACTUAL)" \
     && tar xzf tt.tar.gz \
     && bin="$(find . -type f -name trusttunnel_client | head -1)" \
     && test -n "$bin" \
