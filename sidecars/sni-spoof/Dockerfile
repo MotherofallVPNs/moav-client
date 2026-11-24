@@ -9,15 +9,16 @@
 # Capabilities: NET_ADMIN — the upstream tool sets BPF / raw sockets
 #                          for low-level CH injection.
 #
-FROM golang:1.25-bookworm AS build
+FROM golang:1.27-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 # Go-module fetch resilience — fall through proxies on a 403 (CDN rate-limit).
 ARG GOPROXY="https://proxy.golang.org|https://goproxy.cn|direct"
 ARG GOSUMDB=off
 ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
+ARG SNI_SPOOF_VERSION=v0.7.2
 WORKDIR /src
-RUN git clone --depth=1 https://github.com/aleskxyz/SNI-Spoofing-Go.git \
+RUN git clone --branch ${SNI_SPOOF_VERSION} --depth=1 https://github.com/aleskxyz/SNI-Spoofing-Go.git \
     && cd SNI-Spoofing-Go \
     && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/sni-spoofing .
 

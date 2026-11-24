@@ -1,7 +1,7 @@
 package main
 
 import (
-	"os"
+	"net"
 	"testing"
 )
 
@@ -9,9 +9,6 @@ import (
 // config.yaml fallback; malformed/out-of-range values are ignored.
 func TestEnvPort(t *testing.T) {
 	const key = "SOCKS5_PORT"
-	os.Unsetenv(key)
-	t.Cleanup(func() { os.Unsetenv(key) })
-
 	cases := []struct {
 		name string
 		env  string // process env ("" = unset)
@@ -27,11 +24,7 @@ func TestEnvPort(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if c.env == "" {
-				os.Unsetenv(key)
-			} else {
-				os.Setenv(key, c.env)
-			}
+			t.Setenv(key, c.env) // envPort treats "" as unset
 			envFile := map[string]string{}
 			if c.file != "" {
 				envFile[key] = c.file
@@ -40,5 +33,14 @@ func TestEnvPort(t *testing.T) {
 				t.Errorf("envPort=%d, want %d", got, c.want)
 			}
 		})
+	}
+}
+
+// go.mod pins `godebug multipathtcp=0`: the public exploit for kernel
+// CVE-2026-98432 needs an MPTCP listener, which Go 1.24+ creates by default.
+func TestListenersDoNotUseMPTCP(t *testing.T) {
+	var lc net.ListenConfig
+	if lc.MultipathTCP() {
+		t.Fatal("MPTCP is on for listeners; keep `godebug multipathtcp=0` in go.mod")
 	}
 }

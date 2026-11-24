@@ -26,7 +26,9 @@ func TestApplySpoof_RewritesVnext_VLESS_XHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	var root map[string]any
-	json.Unmarshal(jsonBytes, &root)
+	if err := json.Unmarshal(jsonBytes, &root); err != nil {
+		t.Fatal(err)
+	}
 	outbounds, _ := root["outbounds"].([]any)
 	first, _ := outbounds[0].(map[string]any)
 	settings, _ := first["settings"].(map[string]any)
@@ -59,7 +61,9 @@ func TestApplySpoof_SkipsReality(t *testing.T) {
 		t.Fatal(err)
 	}
 	var root map[string]any
-	json.Unmarshal(jsonBytes, &root)
+	if err := json.Unmarshal(jsonBytes, &root); err != nil {
+		t.Fatal(err)
+	}
 	outbounds, _ := root["outbounds"].([]any)
 	first, _ := outbounds[0].(map[string]any)
 	settings, _ := first["settings"].(map[string]any)

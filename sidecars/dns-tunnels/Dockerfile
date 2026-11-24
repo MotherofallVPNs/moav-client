@@ -9,7 +9,7 @@
 #
 FROM debian:bookworm-slim AS fetch
 
-ARG MASTERDNS_VERSION=v2026.05.10.180256-27c7e11
+ARG MASTERDNS_VERSION=v2026.11.18.210322-7198b45
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl tar ca-certificates \
@@ -23,9 +23,17 @@ RUN set -eux; \
       aarch64) PKG="MasterDnsVPN_Client_Linux_ARM64" ;; \
       *) echo "unsupported arch $ARCH"; exit 1 ;; \
     esac; \
-    URL="https://github.com/masterking32/MasterDnsVPN/releases/download/${MASTERDNS_VERSION}/${PKG}.tar.gz"; \
-    echo "fetching $URL"; \
-    curl -fL "$URL" -o pkg.tar.gz; \
+    BASE="https://github.com/masterking32/MasterDnsVPN/releases/download/${MASTERDNS_VERSION}"; \
+    echo "fetching $BASE/${PKG}.tar.gz"; \
+    curl -fL --retry 3 --retry-delay 2 "$BASE/${PKG}.tar.gz" -o pkg.tar.gz; \
+    # Verify against the SHA256SUMS.txt of the same release (as the MoaV server does).
+    curl -fsSL --retry 3 --retry-delay 2 "$BASE/SHA256SUMS.txt" -o SHA256SUMS.txt; \
+    EXPECTED=$(awk -v f="${PKG}.tar.gz" '{n=split($2,a,"/"); if (a[n]==f) {print $1; exit}}' SHA256SUMS.txt); \
+    [ -n "$EXPECTED" ] || { echo "no checksum for ${PKG}.tar.gz in SHA256SUMS.txt" >&2; exit 1; }; \
+    ACTUAL=$(sha256sum pkg.tar.gz | cut -d' ' -f1); \
+    [ "$EXPECTED" = "$ACTUAL" ] || { echo "SHA256 mismatch for ${PKG}.tar.gz: expected $EXPECTED, got $ACTUAL" >&2; exit 1; }; \
+    echo "SHA256 OK ($ACTUAL)"; \
+    rm -f SHA256SUMS.txt; \
     tar xzf pkg.tar.gz; \
     ls -la; \
     # the upstream archive contains either a single binary or a folder; flatten.

@@ -8,13 +8,19 @@ persist back to `config.yaml`.
 
 ## How a decision is made
 
-For each connection (`host`, `port`, `protocol`):
+For each connection (`host`, `port`, `protocol`), where `host` is the
+destination exactly as the client sent it (see
+[What the rules see](#what-the-rules-see)):
 
 1. **TorrentBlocker** (if `plugins.torrent_block: true`) runs first — known
    BitTorrent ports / tracker domains / torrent keywords → **block**.
 2. **Rule chain** — rules are evaluated top-to-bottom; the **first** enabled
    rule whose match expression matches wins.
-3. **No match → `proxy`** (route through the balancer).
+3. **Hostname, no rule matched, IP rules present** — the name is resolved with
+   proxy-core's local resolver and the rule chain runs again on its addresses,
+   so `ip_cidr` / `geoip` / `ip_list` can still decide. See
+   [Resolution order](#resolution-order).
+4. **No match → `proxy`** (route through the balancer).
 
 Decisions:
 
@@ -28,18 +34,108 @@ Match types:
 
 | Type | Matches |
 |---|---|
-| `domain` | exact host (case-insensitive) |
-| `domain_suffix` | host == value **or** host ends with `.value` (covers subdomains) |
+| `domain` | exact host (case-insensitive; one trailing dot ignored) |
+| `domain_suffix` | host == value **or** host ends with `.value` (covers subdomains; one trailing dot ignored) |
 | `domain_keyword` | value appears anywhere in the host |
-| `ip_cidr` | destination is an IP literal inside the CIDR |
-| `geoip` | destination IP is in `geoip/<cc>.txt` (IP-literals only — see below) |
+| `ip_cidr` | destination IP inside the CIDR (an IP literal, or a hostname's local answer — see below) |
+| `geoip` | destination IP is in `geoip/<cc>.txt` (same as `ip_cidr`) |
 | `port` | exact port (`443`) or inclusive range (`1000-2000`) |
 | `protocol` | `tcp` / `udp` |
 
-> **Hostname vs IP.** `ip_cidr` and `geoip` only match when the destination is
-> an **IP literal**. With SOCKS5 remote DNS (`socks5h`), the proxy usually
-> receives a hostname for domain targets, so use `domain_suffix` for those and
-> reserve `ip_cidr`/`geoip` for IP-addressed traffic (LAN, geo CIDRs).
+## What the rules see
+
+Both listeners (SOCKS5 and HTTP CONNECT) pass the destination to the rules
+exactly as the client sent it, and both use the same resolution order:
+
+| Client | proxy-core receives | Rules that can match |
+|---|---|---|
+| SOCKS5 with remote DNS (`socks5h://`, the recommended setting) | the hostname | `domain*`, `port`, `protocol`; then `ip_cidr` / `geoip` on the local answer if none of those matched |
+| SOCKS5 with client-side DNS (`socks5://`) | the IP the client resolved | `ip_cidr`, `geoip`, `port`, `protocol` |
+| HTTP CONNECT | the host in the request, normally a hostname | same as the row that fits what was sent |
+| Any client, destination typed as an IP | the IP literal | `ip_cidr`, `geoip`, `port`, `protocol` |
+
+A hostname with a trailing dot (`example.com.`, the fully qualified form)
+matches `domain`, `domain_suffix` and `domain_list` rules written without it.
+
+### Resolution order
+
+For a hostname, proxy-core decides in two passes, like Xray's
+`IPIfNonMatch`:
+
+1. **Name pass.** The rule chain runs on the hostname itself. `domain*`,
+   `port` and `protocol` rules can match here; IP rules cannot. If a rule
+   matches, that is the decision and **no lookup is made**.
+2. **Address pass.** Only if no rule matched, *and* at least one enabled
+   `ip_cidr`, `geoip` or `ip_list` rule exists, proxy-core resolves the name
+   with its **local** resolver (the host's or container's DNS; never through a
+   tunnel, 5 s limit) and runs the rule chain again on the addresses. The
+   first rule, in list order, that matches any of them decides.
+3. **Default.** No match in either pass (or the lookup failed) → `proxy`.
+
+This happens before any connection is opened. It is what keeps in-country
+traffic off the tunnel: with `geoip: ir → direct`, a `socks5h://` request for
+a name that resolves to an Iranian address goes direct, and no MoaV endpoint
+is ever asked to connect to it. Without the address pass, that name would go
+through the tunnel, and the exit server would connect to a server inside Iran
+from its own IP, revealing it.
+
+Rule order still matters across the passes: a name rule anywhere in the list
+beats an IP rule, because the name pass runs first. Put a `domain_suffix` rule
+in only when you want it to win regardless of where the name resolves.
+
+The local answer is used to classify and, for `direct`, to connect:
+
+| Decision | What gets dialled |
+|---|---|
+| `proxy` | The endpoint gets the **hostname**, never the local answer, and resolves it itself (sing-box and Xray send it on to the server; a SOCKS5 sidecar resolves it its own way, e.g. AmneziaWG inside its container). A censored local resolver therefore cannot redirect proxied traffic. |
+| `direct` from the name pass | proxy-core resolves the name and dials it. |
+| `direct` from the address pass | proxy-core dials the addresses the deciding rule matched, reusing the lookup (no second query). If a name resolves to an Iranian and a foreign address, only the Iranian one is dialled direct. |
+| `block` | Nothing. |
+
+If no IP rules are enabled, no lookup is made for classification at all. If the
+local lookup fails, the connection takes the default `proxy` route and the log
+says so (`route: local lookup of … failed`).
+
+#### Why `.ir` names also have a name rule
+
+The shipped `config.yaml.example` enables two rules, both `direct`:
+
+```yaml
+routing_rules:
+  - match: {type: geoip, value: ir}
+    action: direct
+  - match: {type: domain_suffix, value: ir}
+    action: direct
+```
+
+The `geoip` rule does the real work, but for a hostname it depends on the
+local lookup in the address pass. When that lookup fails (it times out, the
+resolver is broken, or a censored resolver refuses the name), no IP rule can
+match, and the name takes the default `proxy` route. For a server inside Iran
+that is the leak the `geoip` rule exists to prevent: a MoaV exit server opens
+a connection to an in-country server, and that server sees the exit IP.
+Failing closed on every lookup error is not an option, because in Iran the
+local resolver refuses most blocked sites, which are exactly the names that
+need the tunnel.
+
+`domain_suffix: ir` is the backstop for the names where the answer is known
+without DNS. It matches in the name pass, so it decides with no lookup, and
+any `.ir` name (`divar.ir`, `www.shaparak.ir`, `example.ir.`) goes direct even
+when the local resolver is down. If the direct dial then cannot resolve the
+name either, the connection fails; it is never handed to the tunnel instead.
+
+What it does not cover: an Iranian server under a non-`.ir` name (for example
+`aparat.com`) still relies on the `geoip` lookup. The reverse trade-off is
+that a `.ir` site hosted outside Iran also goes direct. Keep the rule unless
+you accept the leak risk; to route a specific `.ir` name through the tunnel,
+add a `domain` or `domain_suffix` rule for it **above** this one with action
+`proxy`.
+
+If every endpoint is down and `block_direct` is off, the balancer's fallback
+dial resolves the name locally, like `direct`.
+
+The TorrentBlocker gets the same unresolved `host`, so its tracker-domain and
+keyword checks apply on both listeners.
 
 ## Block-direct (kill-switch)
 
@@ -58,7 +154,8 @@ your `direct` rules.
 ## GeoIP
 
 `geoip:<cc>` matches a destination IP against `geoip/<cc>.txt` (Iran ships
-in-repo, refreshed weekly by CI). IP-only, as noted above. See
+in-repo, refreshed weekly by CI). For a hostname it matches the local answer,
+in the address pass of the [resolution order](#resolution-order). See
 [../geoip/README.md](../geoip/README.md) for sources and adding countries.
 
 ## Templates
@@ -116,6 +213,8 @@ plugins:
       enabled: true          # absent = enabled (back-compat)
       note: Zoom off the VPN
     - match: { type: geoip, value: ir }
+      action: direct
+    - match: { type: domain_suffix, value: ir }   # backstop, see Resolution order
       action: direct
 ```
 

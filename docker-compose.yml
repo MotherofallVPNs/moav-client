@@ -11,7 +11,7 @@ services:
         # footer / `moav-client version`. The `moav-client` wrapper exports this
         # from the VERSION file; the fallback here mirrors it for a bare
         # `docker compose build` (kept in sync by tests/version-sync-test.sh).
-        MOAV_VERSION: "${MOAV_VERSION:-1.4.0}"
+        MOAV_VERSION: "${MOAV_VERSION:-1.5.0}"
     env_file:
       # Picks up SOCKS5_USERNAME / SOCKS5_PASSWORD / MOAV_DASHBOARD_USER /
       # MOAV_DASHBOARD_PASS for the listener and API basic-auth.
@@ -61,7 +61,7 @@ services:
   singbox:
     # Tag is driven by SINGBOX_VERSION in .env (single source, matches the MoaV
     # server). IMAGE_SINGBOX overrides the whole ref to pin/swap registries.
-    image: ${IMAGE_SINGBOX:-ghcr.io/sagernet/sing-box:v${SINGBOX_VERSION:-1.13.19}}
+    image: ${IMAGE_SINGBOX:-ghcr.io/sagernet/sing-box:v${SINGBOX_VERSION:-1.14.4}}
     entrypoint:
       - /bin/sh
       - -c
@@ -92,13 +92,19 @@ services:
   # set (or sni_spoof.default_fake_sni applies one globally).
   # Requires NET_ADMIN (sets BPF / raw sockets for CH injection).
   sni-spoof:
-    build: ./sidecars/sni-spoof
+    build:
+      context: ./sidecars/sni-spoof
+      args:
+        SNI_SPOOF_VERSION: "${SNI_SPOOF_VERSION:-v0.7.2}"
     profiles: [sni-spoof, all-sidecars]
     mem_limit: 128m
     cpus: 0.5
     cap_add: [NET_ADMIN, NET_RAW]
     volumes:
       - ./data:/etc/sni-spoof
+    environment:
+      # Go opens MPTCP listeners by default; keep it off (CVE-2026-98432 path).
+      - GODEBUG=multipathtcp=0
     networks: [moav-net]
     restart: unless-stopped
 
@@ -113,7 +119,7 @@ services:
     build:
       context: ./sidecars/xray
       args:
-        XRAY_VERSION: "${XRAY_VERSION:-v26.7.28}"
+        XRAY_VERSION: "${XRAY_VERSION:-v26.11.9}"
     entrypoint:
       - /bin/sh
       - -c
@@ -134,6 +140,8 @@ services:
       start_period: 15s
     volumes:
       - ./data:/etc/xray
+    environment:
+      - GODEBUG=multipathtcp=0
     networks:
       - moav-net
     restart: unless-stopped
@@ -171,7 +179,7 @@ services:
   # Enable with `docker compose --profile https up -d caddy`.
   # ---------------------------------------------------------------------------
   caddy:
-    image: ${IMAGE_CADDY:-caddy:2}
+    image: ${IMAGE_CADDY:-caddy:${CADDY_VERSION:-2.11}}
     profiles: [https, all-sidecars]
     mem_limit: 128m
     cpus: 0.5
@@ -189,6 +197,7 @@ services:
       - MOAV_DOMAIN=${MOAV_DOMAIN:-localhost}
       - MOAV_TLS_ISSUER=${MOAV_TLS_ISSUER:-internal}
       - MOAV_ACME_EMAIL=${MOAV_ACME_EMAIL:-admin@localhost}
+      - GODEBUG=multipathtcp=0
     networks: [moav-net]
     restart: unless-stopped
 
@@ -202,7 +211,7 @@ services:
     build:
       context: ./sidecars/dns-tunnels
       args:
-        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.05.10.180256-27c7e11}"
+        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.11.18.210322-7198b45}"
     profiles: [masterdns, all-sidecars]
     mem_limit: 128m
     cpus: 0.5
@@ -215,7 +224,7 @@ services:
     build:
       context: ./sidecars/amneziawg
       args:
-        AMNEZIAWG_GO_VERSION: "${AMNEZIAWG_GO_VERSION:-v3.1.20260814}"
+        AMNEZIAWG_GO_VERSION: "${AMNEZIAWG_GO_VERSION:-v3.1.20261116}"
         AWGTOOLS_VERSION: "${AWGTOOLS_VERSION:-v3.1.20260812}"
     profiles: [amneziawg, all-sidecars]
     mem_limit: 256m
@@ -233,7 +242,7 @@ services:
     build:
       context: ./sidecars/trusttunnel
       args:
-        TRUSTTUNNEL_CLIENT_VERSION: "${TRUSTTUNNEL_CLIENT_VERSION:-v1.0.49}"
+        TRUSTTUNNEL_CLIENT_VERSION: "${TRUSTTUNNEL_CLIENT_VERSION:-v1.3.0}"
     profiles: [trusttunnel, all-sidecars]
     mem_limit: 256m
     cpus: 0.5
@@ -243,13 +252,18 @@ services:
     restart: unless-stopped
 
   psiphon:
-    build: ./sidecars/psiphon
+    build:
+      context: ./sidecars/psiphon
+      args:
+        PSIPHON_VERSION: "${PSIPHON_VERSION:-v2.0.43}"
     profiles: [psiphon, all-sidecars]
     mem_limit: 256m
     cpus: 0.5
     volumes:
       - ./data/sidecar-configs/psiphon:/etc/psiphon
       - psiphon-data:/var/lib/psiphon
+    environment:
+      - GODEBUG=multipathtcp=0
     networks: [moav-net]
     restart: unless-stopped
 
@@ -257,7 +271,7 @@ services:
     build:
       context: ./sidecars/dns-tunnels
       args:
-        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.05.10.180256-27c7e11}"
+        MASTERDNS_VERSION: "${MASTERDNS_VERSION:-v2026.11.18.210322-7198b45}"
     profiles: [dns-tunnels]
     mem_limit: 128m
     cpus: 0.5
@@ -265,7 +279,8 @@ services:
     restart: unless-stopped
 
   tor:
-    image: ${IMAGE_TOR:-peterdavehello/tor-socks-proxy:latest}
+    # No version tags upstream: pinned by digest (the 2026-06-08 multi-arch build).
+    image: ${IMAGE_TOR:-peterdavehello/tor-socks-proxy@sha256:0cc12d36d31265ce828c8422a7e163a0bf46755e90531f4c7d38a6149f071729}
     profiles: [tor, all-sidecars]
     mem_limit: 256m
     cpus: 0.5

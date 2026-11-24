@@ -5,6 +5,294 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-11-23
+
+Security and correctness release, paired with MoaV 2.5.0. proxy-core moves to Go 1.27 with MPTCP turned off on every Go listener (CVE-2026-98432), the Xray and sing-box sidecars pick up their upstream security releases, and routing now classifies hostnames before dialling, so in-country names go direct and never expose a MoaV exit server's IP. The TrustTunnel sidecar moves to client 1.3.0 to pair with endpoint 1.3.1, nothing in the stack floats any more, and Renovate tracks dependencies. Some existing installs have to act: read the section below before updating.
+
+### Breaking / action required
+- **Existing installs: add the `.ir -> direct` anti-leak rule by hand** ([#53](https://github.com/MotherofallVPNs/moav-client/pull/53)). The shipped `config.yaml.example` now carries it, but an update never rewrites your own `config.yaml`. Without it, an `.ir` name whose local DNS lookup fails falls through to the proxy, and the exit server connects to an in-country server from its own IP. Add it under `routing_rules`, next to the `geoip: ir` rule, or from the dashboard Plugins tab:
+  ```yaml
+      - match: {type: domain_suffix, value: ir}
+        action: direct
+  ```
+- **An unknown `tls_profile` is now a hard error** ([#50](https://github.com/MotherofallVPNs/moav-client/pull/50)). TrustTunnel client 1.3.0 refuses a `client.toml` with an unrecognised `tls_profile` value, where older clients ignored the key. Bundles from MoaV servers do not set it today; if a hand-edited or third-party bundle does, fix or remove the value, or the TrustTunnel sidecar will not start.
+- **Go 1.27 + MPTCP off (CVE-2026-98432): rebuild, and patch the host kernel.** proxy-core and the Go sidecars only pick this up when rebuilt. It matters most when the proxy ports are exposed to the LAN or publicly. The real fix is a patched kernel; this release removes the known exploit path.
+- **TrustTunnel client 1.3.0** (was 1.0.49) pairs with TrustTunnel endpoint 1.3.1 on MoaV 2.5.0. No config change is needed; the generated `client.toml` is validated against the real 1.3.0 binary.
+- **Run `moav-client update` twice on an existing install.** The update that brings in the `.env` pin re-sync is itself run by the previous wrapper, so the first run does not move the component versions (Xray, sing-box, TrustTunnel and the rest). Run `moav-client update` once more afterwards, or `moav-client sync-pins` and then `moav-client up --build`.
+
+### Security
+- **TrustTunnel client download is SHA256-pinned.** The sidecar build
+  fetched the client tarball from the GitHub release with no integrity check.
+  The per-arch SHA256s of the 1.3.0 linux-x86_64, linux-aarch64 and
+  linux-armv7 tarballs are now pinned in `sidecars/trusttunnel/Dockerfile`, and
+  a mismatch, or a version without pinned digests, fails the build.
+- **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).
+  Under the Go 1.25 toolchain, govulncheck reported 11 standard-library
+  vulnerabilities reachable from proxy-core code, among them the HTTP CONNECT
+  desync (CVE-2026-94439), the `MaxBytesReader` header race (CVE-2026-97054)
+  and the `crypto/x509` distrust of compromised intermediates (CVE-2026-111943)
+  on the subscription fetch. `go.mod` now requires Go 1.27 with a `go1.27.4`
+  toolchain floor, the build image is `golang:1.27-alpine` (which also refreshes
+  the CA bundle copied into the scratch image), and `golang.org/x/net` moves to
+  v0.63.0. govulncheck finds no vulnerabilities in the new build.
+- **MPTCP is off on the Go listeners.** Go 1.24+ opens MPTCP listeners by
+  default, and the public exploit for Linux kernel CVE-2026-98432 needs one. It
+  matters most when the proxy ports are exposed to the LAN or publicly.
+  proxy-core pins `godebug multipathtcp=0` in `go.mod`, so it also holds when
+  the binary runs outside Docker (a test guards the directive), and compose sets
+  `GODEBUG=multipathtcp=0` for the xray, caddy, psiphon and sni-spoof
+  containers. A patched kernel is still the real fix; this removes the known
+  exploit path.
+- **Xray-core sidecar updated to v26.11.9** (was v26.7.28, which upstream marks
+  as a pre-release). The range includes two emergency security releases: Xray
+  now verifies TLS against its own root CA set with the compromised roots
+  removed (v26.10.10, v26.10.21) and disables MPTCP on its listeners
+  (v26.10.31), plus XHTTP and mux race fixes. The default `chrome` uTLS
+  fingerprint becomes Chrome 155, which reaches every xhttp endpoint with no
+  config change because the generator already emits `fingerprint: chrome`. The
+  source-compile fallback moves to `golang:1.27-alpine` (Xray needs Go 1.27
+  since v26.9.8) and the runtime stage to `alpine:3.24` (3.21 went end of life
+  on 2026-11-01). The generated `xray.json` passes `xray run -test` on the new
+  binary unchanged.
+- **sing-box sidecar updated to 1.14.4** (was 1.13.19), matching the MoaV
+  server. 1.14.4 is built with Go 1.26.10, which carries the `crypto/x509`
+  distrust of compromised intermediates (CVE-2026-111943); 1.13.19 was built
+  with Go 1.25.12 and the 1.13 line is no longer released. No generator change
+  was needed: its output for every supported protocol passes the real 1.14.4
+  `sing-box check`. Note that since 1.14 Hysteria2 parrots Chrome's QUIC
+  handshake, and Chrome does not offer Ed25519, so a third-party Hysteria2
+  server with an Ed25519 certificate will fail to connect (MoaV servers use
+  ACME certificates and are not affected).
+  The 1.14 line needed no generator change either: it already emits the modern
+  WireGuard `endpoints[]` form (not the outbound removed in 1.14) and no legacy
+  DNS/`block`/`dns`/`sniff` constructs. Hysteria2 `obfs` is passed through
+  verbatim, so a server offering the new `gecko` obfuscation works with no
+  client change. Snell is intentionally not supported: sing-box's Snell
+  *outbound* has no v5, so the sidecar cannot dial a Snell v5 server.
+- **Dashboard runtime image moves to `nginx:1.30-alpine`** (was
+  `nginx:1.27-alpine`). nginx 1.27 has been end of life since 2025-06 and that
+  tag was last built in 2025-04, so every dashboard image missed 19 months of
+  nginx and Alpine fixes (OpenSSL, busybox, and the `apache2-utils` that writes
+  the basic-auth file), including the resolver use-after-free CVE-2026-123634
+  on the `resolver` + variable `proxy_pass` path this config uses. The server
+  block and the entrypoint hooks are unchanged.
+- **web-ui dev toolchain: lockfile refreshed for the fixable advisories.** vite
+  8.2.2 to 8.3.8 (dev-server file disclosure and cross-origin script
+  execution), undici 8.10.0 to 8.13.1, brace-expansion and source-map-js, all
+  inside the existing `package.json` ranges. `npm audit` drops from 11 findings
+  to 7; the rest need the vitest major and are handled separately. None of
+  these packages ship in the dashboard bundle.
+- **web-ui test runner moves off vitest 3** (was 3.2.7; now 5.1.1, see
+  Internal), with `@vitest/coverage-v8` to match. The vitest 3 line has no fix for the two
+  critical advisories in its tree (tinypool prototype pollution leading to code
+  execution, `@vitest/mocker` path traversal) or for the glob and minimatch
+  findings under the coverage provider. No test or config change was needed.
+  Together with the lockfile refresh above, `npm audit` is clean (0 findings,
+  re-checked on the release lockfile).
+
+### Added
+- **Renovate for dependency updates** (`.github/renovate.json`), matching the
+  MoaV server's setup: grouped PRs against `dev` for the component pins in
+  `.env.example` (moved together with their compose and Dockerfile `ARG`
+  fallbacks so the version-sync gate stays green), Dockerfile base images,
+  Caddy and the digest-pinned Tor image, web-ui npm dependencies and the
+  SHA-pinned GitHub Actions. Weekly on Monday, actions and digest refreshes
+  monthly, majors always in their own PR, no automerge, no dependency
+  dashboard issue. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#automated-update-prs-renovate).
+
+### Changed
+- **TrustTunnel sidecar client updated to 1.3.0** ([#50](https://github.com/MotherofallVPNs/moav-client/pull/50)) (was 1.0.49), pairing with
+  TrustTunnel endpoint 1.3.1 on the MoaV server. No config-generation changes
+  were needed: the client's TOML format is backward compatible, and the generated
+  `client.toml` was validated against the real 1.3.0 binary (it parses and serves
+  SOCKS5). Everything outside the bundle's `[listener.*]` sections is passed
+  through verbatim, so the new per-endpoint `tls_profile` and
+  `client_random_auth_key` keys work as soon as a server bundle carries them.
+  Upstream changes that reach this sidecar: the QUIC/HTTP3 stack moved from
+  quiche to ngtcp2/nghttp3 (1.1.5), several HTTP/3 crash fixes, a Chrome
+  ClientHello refreshed to November 2026, and idle SOCKS5 connections now see
+  the destination's close immediately instead of being reused as zombies. An
+  unknown `tls_profile` value is a hard config error in 1.3.0 (older clients
+  ignored the key).
+- **AmneziaWG daemon updated to `amneziawg-go v3.1.20261116`** (was
+  v3.1.20260814; the tools stay at v3.1.20260812, still the latest). Upstream
+  hardened the AWG 3.1 obfuscation parameters: `jmin > jmax` is rejected instead
+  of underflowing the junk packet size, negative lengths in the `<r>/<rc>/<rd>/<dz>`
+  tags are rejected, I1 to I5 can change safely while handshakes are in flight,
+  and a timer race is fixed. Same wire format.
+- **MasterDNS client updated to v2026.11.18** (was v2026.05.10): FastStart with
+  background resolver discovery and scoring, a fix for resolver probation
+  starvation, and data-race fixes in session init and the resolver health loop.
+  The build now verifies the download against the release's `SHA256SUMS.txt`,
+  as the MoaV server does, and fails on a mismatch.
+- **AmneziaWG and SNI-spoof builders move to `golang:1.27-bookworm`** (was
+  1.25, end of life), so both binaries pick up the Go security fixes released
+  since August.
+- **web-ui routine dependency bumps.** react and react-dom 19.3.1, `@types/react`
+  and `@types/react-dom` 19.3.0, `@vitejs/plugin-react` 6.3.0,
+  `@testing-library/react` 16.3.3 and jsdom 31.0.1, with the `package.json`
+  floors raised to match (vite's floor is now 8.3.8, the first release with the
+  dev-server fixes). The dashboard build image and the CI job move from Node 22
+  to Node 24 (active LTS).
+- **Nothing in the stack floats any more.** Psiphon tunnel-core and
+  SNI-Spoofing-Go were built from whatever their default branch held at build
+  time; they are now built from release tags (`PSIPHON_VERSION=v2.0.43`,
+  `SNI_SPOOF_VERSION=v0.7.2`). The Caddy image moves from `caddy:2` to
+  `caddy:${CADDY_VERSION}` (2.11), and the Tor image, which has no version tags
+  upstream, is pinned by digest instead of `:latest`. The three new variables
+  live in `.env.example` with the other component versions, and the drift gate
+  (`tests/version-sync-test.sh`) now also fails on an unpinned `git clone` or a
+  floating image default. `IMAGE_TOR` / `IMAGE_CADDY` still override the whole
+  image ref.
+- **The dashboard image is built with `npm ci`** (was `npm install`), so it
+  installs exactly the committed lockfile that CI tested instead of re-resolving
+  the version ranges at build time.
+
+### Fixed
+- **TrustTunnel starts on its own after a cold `compose up`.** The sidecar
+  looked for its `client.toml` once at start and idled forever when proxy-core
+  had not written it yet, so TrustTunnel stayed down until a manual restart. It
+  now waits for the file and then launches, like the sing-box, Xray and
+  AmneziaWG sidecars. The sidecar smoke test covers it.
+- **Domain rules now match on the SOCKS5 port.** ([#53](https://github.com/MotherofallVPNs/moav-client/pull/53)) The SOCKS5 listener resolved a
+  hostname on the proxy-core host before the rules ran, so the rule engine and
+  the torrent blocker only ever saw an IP: `domain`, `domain_suffix` and
+  `domain_keyword` rules never matched SOCKS5 traffic, although they did on the
+  HTTP CONNECT port. The hostname now reaches the rules as the client sent it
+  (`socks5h://`). A SOCKS5 destination name that is empty or contains spaces or
+  control characters is refused.
+- **`geoip` / `ip_cidr` rules now classify hostnames on both ports, before any
+  dial.** ([#53](https://github.com/MotherofallVPNs/moav-client/pull/53)) Routing is two-pass, like Xray's `IPIfNonMatch`: rules run on the
+  hostname first; if none matched and IP rules are enabled, the name is
+  resolved with the local resolver (never through a tunnel) and the rules run
+  again on its addresses. With `geoip: ir → direct`, a `socks5h://` or HTTP
+  CONNECT request for a name that resolves to an Iranian address now goes
+  direct and never reaches a MoaV endpoint, so the exit server's IP is not
+  exposed to servers inside Iran. Before, this only worked on the SOCKS5 port
+  as a side effect of resolving every name first, and never on HTTP CONNECT.
+  Proxied names are still forwarded to the endpoint unresolved, and a direct
+  dial reuses the classification lookup. No lookup is made when a name rule
+  matches or no IP rule is enabled. See
+  [docs/PLUGINS.md](docs/PLUGINS.md#resolution-order).
+- **`.ir` names stay direct even when the local lookup fails.** ([#53](https://github.com/MotherofallVPNs/moav-client/pull/53)) The shipped
+  `config.yaml.example` now enables `domain_suffix: ir → direct` next to
+  `geoip: ir → direct`. The `geoip` rule needs a local DNS answer to classify a
+  name; without one the name took the proxy route, and the exit server would
+  connect to an in-country server from its own IP. The suffix rule matches on
+  the name, with no lookup, so `.ir` names never reach a tunnel. Existing
+  installs keep their own `config.yaml`; add the rule by hand or from the
+  dashboard Plugins tab. See
+  [docs/PLUGINS.md](docs/PLUGINS.md#why-ir-names-also-have-a-name-rule).
+- **A trailing dot no longer defeats domain rules.** `example.com.` now matches
+  `domain`, `domain_suffix`, `domain_list` and the torrent tracker list, on
+  both ports.
+- **HTTP CONNECT no longer drops the first byte a client sends.** ([#53](https://github.com/MotherofallVPNs/moav-client/pull/53)) The handler
+  wrote the `200` and then hijacked the connection, and `net/http` flushes that
+  `200` before it stops its one-byte background read. A client that answered
+  quickly (a TLS ClientHello right after the `200`) could have its first byte
+  parked in the server's read buffer, which the handler discarded, breaking
+  the handshake intermittently. Bytes sent along with the CONNECT request were
+  always lost. The handler now hijacks first, writes the `200` itself and
+  forwards anything already buffered before the copy starts.
+- **Data race in `/api/flows`.** Reading the flow list while a connection
+  closed raced on the flow's result and byte counters. They are now read and
+  written under the ring's lock (and atomically for the counters).
+- **Telegram release notification pins its link preview to the release page.**
+  The preview showed whatever link appeared first in the notes body (e.g. a
+  client's App Store page) instead of the release. It now sets
+  `link_preview_options.url` (Bot API 7.0) to the release/issue URL. Matches the
+  same fix on the MoaV server.
+- **`moav-client update` now carries component version bumps into an existing
+  install.** `.env` is seeded from `.env.example` once, at install, and nothing
+  refreshed its `*_VERSION` pins afterwards, so an updated install kept building
+  the sing-box, Xray and sidecar versions of the day it was installed, whatever
+  the release pinned. `update` now re-syncs those lines with the pulled
+  release (it lists each change and asks first, default yes, and proceeds on
+  its own without a terminal) before the rebuild, and leaves every other `.env`
+  line alone. `--keep-pins` skips it for a deliberately held version, the new
+  `moav-client sync-pins` runs only the re-sync, and re-running the installer
+  over an existing install does the same. **Upgrade note:** the update that
+  brings this change in is still run by the previous wrapper, so on an existing
+  install run `moav-client update` once more afterwards (or `moav-client
+  sync-pins`, then `moav-client up --build`).
+- **Saving settings from the dashboard no longer rewrites YAML merge keys.** A
+  `config.yaml` that uses anchors with `<<: *name` had each merge key written
+  back as `!!merge <<: *name` on every save. It is now left as written. A value
+  that starts with a newline is also written back intact (the newline was
+  dropped before), and a malformed merge key in `config.yaml` is reported as an
+  error instead of a panic in the request handler. All three come from the YAML
+  library change listed under Internal.
+- **`GET /api/snispoof` reports an unparsable `config.yaml`** (HTTP 500,
+  `parse config: ...`) instead of answering as if SNI-spoof were unconfigured.
+  The parse error was being discarded.
+- **`moav-client list`, `probe` and `fetch-sub` exit 1 when the result cannot
+  be written to stdout**, instead of exiting 0 with truncated or missing output.
+
+### Internal
+- **TrustTunnel sidecar has a smoke test.** `tests/trusttunnel-sidecar-test.sh`
+  (run in CI) builds the image at the pinned version and checks that the real
+  client accepts the `client.toml` proxy-core generates and answers SOCKS5 on
+  `:5600`. The image build now picks the client binary by exact name (the
+  release tarball also ships `trusttunnel_client.sig`, which the old glob could
+  match first) and runs `--version` so a wrong or unrunnable asset fails the
+  build instead of the container.
+- **CI actions updated and pinned by commit SHA:** checkout v7.0.1, setup-go
+  v7.1.0, setup-node v7.1.0, upload-artifact v7.0.2, golangci-lint-action
+  v9.3.0 (each was three majors behind on a floating major tag). They run on
+  Node 24, so a self-hosted runner must be v2.327.1 or newer.
+- **Live e2e no longer gives up before the engines are up.** The single probe
+  could land before sing-box and xray were listening, fail every endpoint in
+  milliseconds, and end the run as "0 ok". The probe is now re-triggered while
+  waiting.
+- `.env.example` and `docs/CONFIGURATION.md` no longer claim the component pins
+  track the MoaV server's; shared components stay wire-compatible but are
+  bumped on the client's own schedule.
+- **Two unmaintained Go dependencies replaced.** `gopkg.in/yaml.v3` (archived
+  upstream in April 2025) becomes `go.yaml.in/yaml/v3` v3.0.6, the same code
+  base now maintained by the YAML organization, with an identical API.
+  `armon/go-socks5` (last commit 2016) becomes `things-go/go-socks5` v0.1.4, its
+  maintained descendant. The SOCKS5 listener behaves as before: CONNECT only,
+  optional username/password auth, the same reply codes, and BIND and UDP
+  ASSOCIATE still refused (the new library can relay UDP itself, which would
+  bypass the tunnel, so both commands are refused explicitly). New wire-level
+  SOCKS5 tests and config.yaml decoding and round-trip tests were written
+  against the old libraries first and pass unchanged on the new ones.
+- **web-ui type-checks with TypeScript 7.0.2** (was 5.9.3), the native
+  compiler. `tsc` is only the type-check half of `npm run build`; vite produces
+  the bundle, and the built dashboard is byte-identical. The source needed no
+  change (it was already clean under the TypeScript 6 defaults that 7 enforces:
+  `types: []`, checked side-effect imports, stable type ordering).
+  `tsconfig.json` drops `DOM.Iterable`, an empty lib since TypeScript 6, and now
+  also type-checks `vite.config.ts` and `vitest.config.ts`, so a config option
+  removed by a tool major fails the build instead of being ignored.
+- **web-ui tests run on vitest 5.1.1 with `@testing-library/jest-dom` 8.0.0**
+  (were 4.1.12 and 6.9.1); jest-dom 8 only supports vitest 5, so they move
+  together. The test setup now imports `@testing-library/jest-dom/vitest`:
+  vitest 5 no longer reads `jest.Matchers`, so with the bare import the DOM
+  matchers ran but no longer type-checked. `@testing-library/dom`, a required
+  peer of jest-dom since 7, is declared explicitly, and `package.json` gains an
+  `engines.node` range matching vitest 5 (`^22.12 || ^24 || >=26`; the build
+  image and CI are on Node 24). Adds the first component test
+  (`BlockDirectToggle`, the kill-switch banner), so jsdom, Testing Library and
+  the jest-dom matchers are exercised by `npm test` instead of only being
+  installed: 13 tests, up from 8.
+- **CI: golangci-lint runs again.** `golangci-lint-action@v6` with
+  `version: latest` installed a golangci-lint built with Go 1.24, which refuses
+  a Go 1.25 module and exits 3; `continue-on-error` kept the step green, so
+  nothing had been linted since the move to Go 1.25. The step now uses action
+  v9 with golangci-lint pinned to v2.15.0 (built with Go 1.27), and a linter
+  that cannot run fails the job.
+- **CI: lint findings now fail the build.** golangci-lint no longer runs with
+  `--issues-exit-code=0`. Its 81 existing findings are resolved rather than
+  baselined (the 58 reported earlier was the linter's default cap of 50 per
+  linter and 3 per identical message, now lifted in `proxy-core/.golangci.yml`):
+  58 fixed in code, most of them unchecked errors in test setup, and 23
+  best-effort closes of connections, listeners and read-side handles excluded
+  by type in that config. Closes of anything written through stay checked.
+  The web-ui had no linter; it gains `npm run lint` (oxlint, warnings denied)
+  as a blocking CI step. ESLint was not an option: `typescript-eslint` needs
+  the TypeScript compiler API, which TypeScript 7 does not ship.
+
 ## [1.4.0] — 2026-08-23
 
 ### Added

@@ -112,7 +112,7 @@ the secrets / paths needed:
   are required (set in docker-compose).
 - **trusttunnel**: copies the file at `config.source_path` to
   `trusttunnel/client.toml`. The sidecar builds the upstream
-  `TrustTunnel/TrustTunnelClient` (pinned via `TT_VERSION`), rewrites the
+  `TrustTunnel/TrustTunnelClient` (pinned via `TRUSTTUNNEL_CLIENT_VERSION`), rewrites the
   bundle's `[listener.tun]` to a loopback `[listener.socks]`, and republishes
   it on `:5600` — no TUN device or `NET_ADMIN` needed.
 - **psiphon**: writes either the verbatim `config_json` blob or a minimal

@@ -6,7 +6,7 @@
 
 **یک پروکسی محلی، جلوی همه‌ی پروتکل‌هایی که سرور MoaV شما صحبت می‌کند.**
 
-[![Go](https://img.shields.io/badge/Go-1.25-06b6d4.svg?logo=go&logoColor=white)](https://go.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/moav-client?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/moav-client/releases/latest)
+[![Go](https://img.shields.io/badge/Go-1.27-06b6d4.svg?logo=go&logoColor=white)](https://go.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/moav-client?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/moav-client/releases/latest)
 
 [![MoaV server](https://img.shields.io/badge/server-MoaV-ef4444.svg?logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV) [![Protocols](https://img.shields.io/badge/protocols-13%2B-8b5cf6.svg)](#protocols) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
 
@@ -234,7 +234,7 @@ moav://<name>@<host>?uuid=…&pw=…&pbk=…&sni_default=…&fp=chrome\
 
 ### GeoIP
 
-قوانین `geoip:<cc>` یک IP مقصد را با لیست CIDR در `geoip/<cc>.txt` تطبیق می‌دهند (لیست ایران در مخزن هست و هفتگی توسط CI به‌روز می‌شود). تطابق فقط روی **IP** است — میزبان‌های نام‌دار resolve نمی‌شوند. به [geoip/README.md](geoip/README.md) نگاه کنید.
+قوانین `geoip:<cc>` یک IP مقصد را با لیست CIDR در `geoip/<cc>.txt` تطبیق می‌دهند (لیست ایران در مخزن هست و هفتگی توسط CI به‌روز می‌شود). تطابق روی **IP** انجام می‌شود. اگر مقصد یک نام میزبان باشد و هیچ قانون دامنه‌ای با آن تطبیق نکند، proxy-core نام را با DNS محلی resolve می‌کند و پیش از باز کردن هر اتصالی، قانون را روی همان IP می‌سنجد؛ به این ترتیب با `geoip: ir → direct` سایت‌های داخل ایران مستقیم وصل می‌شوند و از تونل نمی‌گذرند. پیکربندی پیش‌فرض قانون `domain_suffix: ir → direct` را هم فعال می‌کند تا دامنه‌های `.ir` حتی وقتی DNS محلی جواب نمی‌دهد مستقیم وصل شوند و هیچ‌وقت به سرور خروجی نرسند. به [docs/PLUGINS.md](docs/PLUGINS.md#resolution-order) و [geoip/README.md](geoip/README.md) نگاه کنید.
 
 ---
 
@@ -256,6 +256,7 @@ moavc <command>
   install                    اجرای دوباره‌ی ویزارد نصب
   expose <loopback|lan|public>   تغییر سطح دسترسی شبکه
   update [-b <branch>]       pull (و در صورت نیاز تعویض شاخه) + rebuild
+  sync-pins                  همگام‌سازی نسخه‌ی اجزا در .env با این نسخه
   uninstall [--wipe]         حذف استک (--wipe کانفیگ/داده را پاک می‌کند)
   open | version
 ```

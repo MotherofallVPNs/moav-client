@@ -40,11 +40,18 @@ func newTestMux(t *testing.T, cfgPath, statePath string, endpoints []subscriptio
 	return s, withCORS(withBasicAuth(mux))
 }
 
+func mustWriteFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEndpointPatch_RoundTrips(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	statePath := filepath.Join(dir, "state.json")
-	os.WriteFile(cfgPath, []byte("proxy: {socks5_port: 1080}\n"), 0o644)
+	mustWriteFile(t, cfgPath, "proxy: {socks5_port: 1080}\n")
 
 	endpoints := []subscription.Endpoint{
 		{ID: "vless:1.2.3.4:443", Protocol: "vless", Address: "1.2.3.4:443", Enabled: true, Priority: 5},
@@ -79,7 +86,7 @@ func TestEndpointPatch_RoundTrips(t *testing.T) {
 
 func TestStrategySwitch(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("proxy: {}\n"), 0o644)
+	mustWriteFile(t, filepath.Join(dir, "config.yaml"), "proxy: {}\n")
 	_, mux := newTestMux(t, filepath.Join(dir, "config.yaml"), filepath.Join(dir, "state.json"), nil)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
@@ -107,13 +114,11 @@ func TestStrategySwitch(t *testing.T) {
 func TestExposure_RoundTrips(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	os.WriteFile(cfgPath, []byte("proxy: {}\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, ".env"), []byte(""), 0o644)
+	mustWriteFile(t, cfgPath, "proxy: {}\n")
+	mustWriteFile(t, filepath.Join(dir, ".env"), "")
 
 	// The handler reads/writes .env from the current working directory.
-	old, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(old)
+	t.Chdir(dir)
 
 	_, mux := newTestMux(t, cfgPath, filepath.Join(dir, "state.json"), nil)
 	ts := httptest.NewServer(mux)
@@ -146,7 +151,9 @@ func TestExposure_RoundTrips(t *testing.T) {
 	// recover/eye); they are masked only when the dashboard is open.
 	resp, _ = http.Get(ts.URL + "/api/exposure")
 	var got map[string]any
-	json.NewDecoder(resp.Body).Decode(&got)
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
 	if got["exposure"] != "lan" {
 		t.Errorf("GET exposure: want lan, got %v", got["exposure"])
 	}
@@ -164,11 +171,9 @@ func TestExposure_RoundTrips(t *testing.T) {
 func TestExposure_MasksWhenDashboardOpen(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	os.WriteFile(cfgPath, []byte("proxy: {}\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, ".env"), []byte(""), 0o644)
-	old, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(old)
+	mustWriteFile(t, cfgPath, "proxy: {}\n")
+	mustWriteFile(t, filepath.Join(dir, ".env"), "")
+	t.Chdir(dir)
 
 	_, mux := newTestMux(t, cfgPath, filepath.Join(dir, "state.json"), nil)
 	ts := httptest.NewServer(mux)
@@ -179,11 +184,15 @@ func TestExposure_MasksWhenDashboardOpen(t *testing.T) {
 	payload := `{"exposure":"lan","auth":{"username":"u","password":"p"}}`
 	req, _ := http.NewRequest("PUT", ts.URL+"/api/exposure", bytes.NewBufferString(payload))
 	req.Header.Set("Content-Type", "application/json")
-	http.DefaultClient.Do(req)
+	if _, err := http.DefaultClient.Do(req); err != nil {
+		t.Fatal(err)
+	}
 
 	resp, _ := http.Get(ts.URL + "/api/exposure")
 	var got map[string]any
-	json.NewDecoder(resp.Body).Decode(&got)
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
 	if got["auth_set"] != true {
 		t.Errorf("expected auth_set true, got %v", got["auth_set"])
 	}
@@ -198,7 +207,7 @@ func TestExposure_MasksWhenDashboardOpen(t *testing.T) {
 func TestBasicAuth_OnlyWhenEnvSet(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	os.WriteFile(cfgPath, []byte("proxy: {}\n"), 0o644)
+	mustWriteFile(t, cfgPath, "proxy: {}\n")
 
 	// No env → 200.
 	_, mux := newTestMux(t, cfgPath, filepath.Join(dir, "state.json"), nil)
@@ -210,10 +219,8 @@ func TestBasicAuth_OnlyWhenEnvSet(t *testing.T) {
 	}
 
 	// With env → 401 without auth.
-	os.Setenv("MOAV_DASHBOARD_USER", "admin")
-	os.Setenv("MOAV_DASHBOARD_PASS", "secret")
-	defer os.Unsetenv("MOAV_DASHBOARD_USER")
-	defer os.Unsetenv("MOAV_DASHBOARD_PASS")
+	t.Setenv("MOAV_DASHBOARD_USER", "admin")
+	t.Setenv("MOAV_DASHBOARD_PASS", "secret")
 
 	_, mux2 := newTestMux(t, cfgPath, filepath.Join(dir, "state.json"), nil)
 	ts2 := httptest.NewServer(mux2)

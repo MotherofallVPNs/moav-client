@@ -231,3 +231,57 @@ func TestEngine_TorrentBlockIntegration(t *testing.T) {
 		t.Errorf("expected DecisionBlock, got %d", decision)
 	}
 }
+
+func TestMatchExpr_TrailingDot(t *testing.T) {
+	dir := t.TempDir()
+	list := filepath.Join(dir, "names.txt")
+	if err := os.WriteFile(list, []byte("example.com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		m    MatchExpr
+		host string
+		want bool
+	}{
+		{MatchExpr{Type: "domain", Value: "example.com"}, "example.com.", true},
+		{MatchExpr{Type: "domain", Value: "example.com."}, "example.com", true},
+		{MatchExpr{Type: "domain_suffix", Value: "example.com"}, "www.Example.com.", true},
+		{MatchExpr{Type: "domain_suffix", Value: "example.com"}, "example.com.", true},
+		{MatchExpr{Type: "domain_suffix", Value: "example.com."}, "www.example.com", true},
+		{MatchExpr{Type: "domain_list", Value: list}, "www.example.com.", true},
+		{MatchExpr{Type: "domain_suffix", Value: "example.com"}, "example.com..", false}, // only one dot is the root
+		{MatchExpr{Type: "domain_suffix", Value: "example.com"}, "notexample.com.", false},
+	} {
+		if got := matchExpr(tc.m, tc.host, 443, "tcp"); got != tc.want {
+			t.Errorf("%s %q vs %q = %v, want %v", tc.m.Type, tc.m.Value, tc.host, got, tc.want)
+		}
+	}
+	if !(&TorrentBlocker{Enabled: true}).Match("tracker.opentrackr.org.", 1337, "tcp") {
+		t.Error("torrent tracker check missed a name with a trailing dot")
+	}
+}
+
+func TestEngine_MatchFirstAndHasIPRules(t *testing.T) {
+	eng := NewEngine([]Rule{
+		{Match: MatchExpr{Type: "domain_suffix", Value: "example.com"}, Action: DecisionBlock, Enabled: true},
+		{Match: MatchExpr{Type: "ip_cidr", Value: "10.0.0.0/8"}, Action: DecisionDirect, Enabled: true},
+	})
+	if !eng.HasIPRules() {
+		t.Error("HasIPRules = false with an enabled ip_cidr rule")
+	}
+	if d, _, ok := eng.MatchFirst([]string{"other.test"}, 443, "tcp"); ok || d != DecisionProxy {
+		t.Errorf("no match = (%v, %v), want (proxy, false)", d, ok)
+	}
+	d, matched, ok := eng.MatchFirst([]string{"192.0.2.1", "10.1.2.3", "10.9.9.9"}, 443, "tcp")
+	if !ok || d != DecisionDirect || len(matched) != 2 || matched[0] != "10.1.2.3" || matched[1] != "10.9.9.9" {
+		t.Errorf("MatchFirst = (%v, %v, %v), want direct on the two 10/8 addresses", d, matched, ok)
+	}
+
+	names := NewEngine([]Rule{
+		{Match: MatchExpr{Type: "domain", Value: "a.test"}, Action: DecisionBlock, Enabled: true},
+		{Match: MatchExpr{Type: "geoip", Value: "ir"}, Action: DecisionDirect, Enabled: false},
+	})
+	if names.HasIPRules() {
+		t.Error("HasIPRules = true with only a disabled geoip rule")
+	}
+}

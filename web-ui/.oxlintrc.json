@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    // The dashboard loads its data in effects (fetch on mount / refresh tick).
+    "react/set-state-in-effect": "off"
+  },
+  "ignorePatterns": ["dist", "coverage"]
+}

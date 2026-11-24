@@ -10,11 +10,13 @@ import (
 func TestMatchDomainList(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "domains.txt")
-	os.WriteFile(path, []byte(`# a comment
+	if err := os.WriteFile(path, []byte(`# a comment
 example.com
 .tracker.example.org
 gov.uk
-`), 0o644)
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cases := []struct {
 		host string
@@ -39,11 +41,13 @@ gov.uk
 func TestMatchIPList(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ips.txt")
-	os.WriteFile(path, []byte(`# CIDR + bare IPs
+	if err := os.WriteFile(path, []byte(`# CIDR + bare IPs
 192.168.0.0/16
 8.8.8.8
 2606:4700::/32
-`), 0o644)
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cases := []struct {
 		ip   string
@@ -68,13 +72,19 @@ func TestMatchIPList(t *testing.T) {
 func TestListCache_RefreshesOnMtime(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "d.txt")
-	os.WriteFile(path, []byte("first.com\n"), 0o644)
+	if err := os.WriteFile(path, []byte("first.com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if !matchDomainList("first.com", path) {
 		t.Fatal("first.com should match on initial load")
 	}
 	// Force a different mtime by sleeping briefly and rewriting.
-	os.Chtimes(path, time.Time{}, time.Time{}) // touch
-	os.WriteFile(path, []byte("second.com\n"), 0o644)
+	if err := os.Chtimes(path, time.Time{}, time.Time{}); err != nil { // touch
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("second.com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if !matchDomainList("second.com", path) {
 		t.Error("cache should have refreshed after file change")
 	}

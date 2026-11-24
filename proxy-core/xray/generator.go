@@ -246,8 +246,8 @@ func vlessOutbound(ep subscription.Endpoint, host string, port int) map[string]a
 	}
 
 	// Reality / TLS.
-	security := c["security"]
-	if security == "reality" {
+	switch c["security"] {
+	case "reality":
 		streamSettings["security"] = "reality"
 		streamSettings["realitySettings"] = map[string]any{
 			"serverName":  c["sni"],
@@ -256,7 +256,7 @@ func vlessOutbound(ep subscription.Endpoint, host string, port int) map[string]a
 			"shortId":     c["sid"],
 			"spiderX":     "/",
 		}
-	} else if security == "tls" {
+	case "tls":
 		streamSettings["security"] = "tls"
 		tlsCfg := map[string]any{
 			"serverName":  c["sni"],

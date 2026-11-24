@@ -80,6 +80,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
       .then((r) => r.json())
       .then((data) => apply((data.endpoints ?? []) as Endpoint[]))
       .catch(() => {});
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `apply` is recreated every render; refetch only on refreshTick
   }, [refreshTick]);
 
   // Persistent WS stream (ticket-authenticated — see openWS).
@@ -106,6 +107,7 @@ export default function EndpointTable({ onHealthChange, refreshTick }: Props) {
       closed = true;
       ws?.close();
     };
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- one socket for the component's lifetime; depending on `apply` would reconnect every render
   }, []);
 
   const flash = (msg: string, ok: boolean, ms = 2500) => {

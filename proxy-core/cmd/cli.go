@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -17,7 +19,7 @@ import (
 // Version is set at build time via -ldflags "-X .../cmd.Version=…" (see
 // proxy-core/Dockerfile, fed by the VERSION file). The literal here is the
 // fallback for a plain `go build`.
-var Version = "1.4.0"
+var Version = "1.5.0"
 
 // ParseAndRun parses os.Args and dispatches to the appropriate subcommand.
 // Returns the subcommand name so main can decide whether to run the server.
@@ -107,25 +109,6 @@ fetch-sub positional argument:
 `)
 }
 
-func loadEndpointsFromConfig(cfgPath string) ([]subscription.Endpoint, error) {
-	// Inline the minimal logic needed (avoids importing the whole server stack).
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return nil, fmt.Errorf("config: read %s: %w", cfgPath, err)
-	}
-
-	// Simple YAML extraction using the config package is not available here
-	// without a circular dep risk, so we parse the subscription fields manually
-	// by shelling out to the real config loader via the shared package.
-	// Instead, re-use the subscription helpers directly.
-	_ = data
-
-	// Attempt to use the config package via the parent binary's init path.
-	// For the CLI subcommands we accept the config path and re-use the same
-	// logic as main.go but without starting network listeners.
-	return nil, fmt.Errorf("use loadEndpointsViaConfig instead")
-}
-
 // endpointSource is passed in from main after config is loaded.
 type EndpointSource struct {
 	Endpoints []subscription.Endpoint
@@ -137,9 +120,7 @@ func RunProbeWithEndpoints(endpoints []subscription.Endpoint, timeoutSec int, as
 	p.Timeout = time.Duration(timeoutSec) * time.Second
 	updated := p.ProbeAll(endpoints)
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		enc.Encode(updated)
+		printEndpointJSON(updated)
 		return
 	}
 	printEndpointTable(updated)
@@ -148,27 +129,45 @@ func RunProbeWithEndpoints(endpoints []subscription.Endpoint, timeoutSec int, as
 // RunListWithEndpoints prints already-loaded endpoints without probing.
 func RunListWithEndpoints(endpoints []subscription.Endpoint, asJSON bool) {
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		enc.Encode(endpoints)
+		printEndpointJSON(endpoints)
 		return
 	}
 	printEndpointTable(endpoints)
 }
 
+func printEndpointJSON(eps []subscription.Endpoint) {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(eps); err != nil {
+		exitOutputErr(err)
+	}
+}
+
 func printEndpointTable(eps []subscription.Endpoint) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tPROTOCOL\tADDRESS\tSTATUS\tLATENCY(ms)")
-	fmt.Fprintln(w, "----\t--------\t-------\t------\t-----------")
+	var rows strings.Builder
+	rows.WriteString("NAME\tPROTOCOL\tADDRESS\tSTATUS\tLATENCY(ms)\n")
+	rows.WriteString("----\t--------\t-------\t------\t-----------\n")
 	for _, ep := range eps {
 		latency := fmt.Sprintf("%d", ep.LatencyMs)
 		if ep.LatencyMs < 0 {
 			latency = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(&rows, "%s\t%s\t%s\t%s\t%s\n",
 			ep.Name, ep.Protocol, ep.Address, ep.Status, latency)
 	}
-	w.Flush()
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	_, err := io.WriteString(w, rows.String())
+	if err == nil {
+		err = w.Flush()
+	}
+	if err != nil {
+		exitOutputErr(err)
+	}
+}
+
+func exitOutputErr(err error) {
+	fmt.Fprintln(os.Stderr, "write output:", err)
+	os.Exit(1)
 }
 
 // runProbe is called when os.Args[1] == "probe". globalConfig is the --config flag value.
@@ -176,7 +175,7 @@ func runProbe(globalConfig *string) {
 	fs := flag.NewFlagSet("probe", flag.ExitOnError)
 	timeoutSec := fs.Int("timeout", 10, "probe timeout in seconds")
 	asJSON := fs.Bool("json", false, "output as JSON")
-	fs.Parse(os.Args[2:])
+	_ = fs.Parse(os.Args[2:]) // ExitOnError: Parse exits instead of returning
 
 	eps := mustLoadEndpoints(*globalConfig)
 	RunProbeWithEndpoints(eps, *timeoutSec, *asJSON)
@@ -186,7 +185,7 @@ func runProbe(globalConfig *string) {
 func runList(globalConfig *string) {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "output as JSON")
-	fs.Parse(os.Args[2:])
+	_ = fs.Parse(os.Args[2:]) // ExitOnError: Parse exits instead of returning
 
 	eps := mustLoadEndpoints(*globalConfig)
 	RunListWithEndpoints(eps, *asJSON)
@@ -195,7 +194,7 @@ func runList(globalConfig *string) {
 // runFetchSub is called when os.Args[1] == "fetch-sub".
 func runFetchSub() {
 	fs := flag.NewFlagSet("fetch-sub", flag.ExitOnError)
-	fs.Parse(os.Args[2:])
+	_ = fs.Parse(os.Args[2:]) // ExitOnError: Parse exits instead of returning
 
 	args := fs.Args()
 	if len(args) == 0 {

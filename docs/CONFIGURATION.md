@@ -22,14 +22,43 @@ in `config.yaml`.** Copy the templates before first run:
   fails if any drifts from `VERSION`.
 - **Component versions**: uncommented `_VERSION` vars in `.env` (`SINGBOX_VERSION`,
   `XRAY_VERSION`, `AMNEZIAWG_GO_VERSION`, `AWGTOOLS_VERSION`, `MASTERDNS_VERSION`,
-  `TRUSTTUNNEL_CLIENT_VERSION`). These are the single source; `docker-compose.yml`
+  `TRUSTTUNNEL_CLIENT_VERSION`, `PSIPHON_VERSION`, `SNI_SPOOF_VERSION`,
+  `CADDY_VERSION`). These are the single source; `docker-compose.yml`
   passes them as build args / image tags with matching `${VAR:-default}` fallbacks
-  (kept in sync by the same test), and the values track the MoaV server's
-  `.env.example`. Pulled images can be swapped wholesale with `IMAGE_SINGBOX`,
+  (kept in sync by the same test). Shared components stay wire-compatible with
+  the MoaV server's `.env.example` but are bumped on the client's own schedule
+  (see `docs/devdocs/` for the latest dependency audit). Pulled images can be
+  swapped wholesale with `IMAGE_SINGBOX`,
   `IMAGE_TOR`, `IMAGE_CADDY`.
+
+### Automated update PRs (Renovate)
+
+[`.github/renovate.json`](../.github/renovate.json) opens dependency PRs
+against `dev`. Nothing is automerged; every PR goes through normal review.
+
+| Group | What | When |
+|---|---|---|
+| protocol components | the `_VERSION` pins above, updated in `.env.example`, the compose `${VAR:-default}` fallbacks and the sidecar Dockerfile `ARG` defaults in the same PR, so `tests/version-sync-test.sh` keeps passing | weekly, Monday 00-05 UTC |
+| runtime images | `CADDY_VERSION` | weekly |
+| base images | Dockerfile `FROM` tags (golang, node, nginx, alpine) | weekly |
+| web-ui npm | minor and patch updates to `web-ui/package.json` + lockfile | weekly |
+| github actions | SHA-pinned actions (with a version comment), `golangci-lint` and Node versions set in CI | monthly, on the 1st |
+| image digest refresh | same tag rebuilt upstream, including the tagless Tor image pinned by digest | monthly |
+| web-ui lockfile maintenance | lockfile refresh within existing ranges | monthly |
+
+Major updates are never batched: each gets its own PR with a `major` label.
+Debian codename tags (`bookworm-slim`) are not tracked; moving to a new Debian
+release is a deliberate change. Go modules (`proxy-core/go.mod`) are not
+tracked yet. A merged pin bump reaches existing installs through
+`moav-client update`, which re-syncs `.env` (below).
 
 Change a component version and rebuild just that piece:
 `moav-client up` (or `docker compose up -d --build`).
+
+`.env` is a copy made at install time, so `moav-client update` re-syncs its
+`*_VERSION` lines with the pulled release's `.env.example` (it lists the changes
+and asks first). Use `moav-client update --keep-pins` to hold a version of your
+own, and `moav-client sync-pins` to run only the re-sync.
 
 ## Ports — `.env` is the source, `config.yaml` is the base
 

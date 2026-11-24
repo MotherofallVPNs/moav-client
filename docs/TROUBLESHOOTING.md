@@ -21,8 +21,24 @@ through a chosen endpoint). Start there.
   means the tunnel carried bytes end-to-end. If a specific destination fails,
   use **Diagnostics** to TCP/DNS-test it *through* that endpoint.
 
+### A `domain` / `domain_suffix` rule isn't matching
+- Domain rules match the hostname the client sends. A client that resolves
+  names itself sends only an IP: use `socks5h://` (remote DNS), not
+  `socks5://`. HTTP CONNECT clients send the hostname already.
+- Rules are first-match-wins, so an earlier `port` or `protocol` rule can
+  take the connection before the domain rule is reached.
+- A trailing dot (`example.com.`) is ignored when matching, so it is not the
+  cause.
+- See [PLUGINS.md](PLUGINS.md#what-the-rules-see) for what each client sends.
+
 ### A `geoip:` rule isn't blocking/matching
-- geoip matches **IP-literal** destinations only — hostnames aren't resolved.
+- A hostname is tested against geoip only if no `domain*`, `port` or
+  `protocol` rule matched it first (name rules win), and only via proxy-core's
+  local DNS answer. If that lookup fails, the log shows
+  `route: local lookup of <name> … failed` and the connection takes the
+  default proxy route. `.ir` names are still kept direct in that case by the
+  shipped `domain_suffix: ir → direct` rule, which needs no lookup (see
+  [PLUGINS.md](PLUGINS.md#why-ir-names-also-have-a-name-rule)).
 - If `geoip/<cc>.txt` is missing, the rule is inert and proxy-core logs a
   one-time `WARN … rules matching geoip:<cc> are INERT`. Generate the list:
   `scripts/update-geoip.sh <cc>`.

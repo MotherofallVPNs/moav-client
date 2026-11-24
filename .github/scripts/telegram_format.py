@@ -19,18 +19,69 @@ HEADER_EMOJI = "🛡️"  # release header icon — change here (or set to "" fo
 
 
 def esc(s: str) -> str:
-    return html.escape(s or "", quote=False)
+    return html.escape(s or "", quote=True)
 
 
-def demarkdown(s: str) -> str:
-    """Light-touch: strip markdown that renders as literal noise in HTML mode."""
-    s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)         # [text](url) -> text
-    s = re.sub(r"^```[a-zA-Z0-9]*[ \t]*$", "", s, flags=re.M)  # code-fence lines
-    s = re.sub(r"^#{1,6}[ \t]*", "", s, flags=re.M)        # # headers -> plain
-    s = re.sub(r"^[ \t]*[-*_]{3,}[ \t]*$", "", s, flags=re.M)  # --- hr rules
-    s = s.replace("**", "").replace("`", "")               # bold / code spans
-    s = re.sub(r"\n{3,}", "\n\n", s)                       # collapse blank runs
+def _inline(s: str) -> str:
+    """Escape one line, then map inline markdown to the Telegram HTML subset:
+    links, `code`, **bold**, *italic*. Order matters — links first so a URL
+    can't be chewed by the emphasis passes."""
+    s = esc(s)
+    # [text](url): keep a real link only for absolute URLs — a repo-relative
+    # href (docs/…, CHANGELOG.md) can't resolve in Telegram, so drop it to text.
+    s = re.sub(
+        r"\[([^\]]+)\]\(([^)]+)\)",
+        lambda m: (f'<a href="{m.group(2)}">{m.group(1)}</a>'
+                   if re.match(r"^(https?|tg|mailto):", m.group(2)) else m.group(1)),
+        s,
+    )
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)                    # `code`
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", s)                    # **bold**
+    s = re.sub(r"(?<![\*\w])\*([^*\n]+)\*(?!\*)", r"<i>\1</i>", s)     # *italic*
     return s
+
+
+def to_html(md: str) -> str:
+    """Convert a GitHub-flavoured release body into Telegram HTML: headings ->
+    bold, bullets -> •, fenced code -> <pre>, tables -> compact ' · ' lines,
+    blockquotes -> <blockquote>, plus inline formatting. Telegram HTML has no
+    tables/lists/headings, so those are flattened."""
+    out, code, in_code = [], [], False
+    for line in (md or "").split("\n"):
+        if re.match(r"^\s*```", line):
+            if in_code:
+                out.append("<pre>" + esc("\n".join(code)) + "</pre>")
+                code, in_code = [], False
+            else:
+                in_code = True
+            continue
+        if in_code:
+            code.append(line)
+            continue
+        if re.match(r"^\s*([-*_])(\s*\1){2,}\s*$", line):   # --- horizontal rule
+            continue
+        m = re.match(r"^\s*#{1,6}\s+(.*)$", line)           # heading -> bold
+        if m:
+            out += ["", "<b>" + _inline(m.group(1)) + "</b>"]
+            continue
+        if re.match(r"^\s*\|.*\|\s*$", line):               # table row
+            if re.match(r"^\s*\|[\s:|-]+\|\s*$", line):     # |---| separator
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            out.append("• " + " · ".join(_inline(c) for c in cells if c))
+            continue
+        m = re.match(r"^\s*[-*]\s+(.*)$", line)             # bullet -> •
+        if m:
+            out.append("• " + _inline(m.group(1)))
+            continue
+        m = re.match(r"^\s*>\s?(.*)$", line)                # blockquote
+        if m:
+            out.append("<blockquote>" + _inline(m.group(1)) + "</blockquote>")
+            continue
+        out.append(_inline(line))
+    if in_code and code:
+        out.append("<pre>" + esc("\n".join(code)) + "</pre>")
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
 def trim(s: str, limit: int = MAX_BODY) -> str:
@@ -53,19 +104,28 @@ def link(url: str, text: str) -> str:
 def release() -> str:
     name = os.environ.get("REL_NAME") or os.environ.get("REL_TAG") or "New release"
     url = os.environ.get("REL_URL", "")
-    body = trim(demarkdown(os.environ.get("REL_BODY", "")))
     head = f"{HEADER_EMOJI} " if HEADER_EMOJI else ""
     # Both repos post to the same channel — prefix the product so a release is
     # unambiguous. PRODUCT env wins; else the repo short-name. Skip if the
     # release name already leads with it (avoids "MoaV MoaV v1.9.1").
     product = os.environ.get("PRODUCT") or os.environ.get("REPO", "").split("/")[-1]
     label = name if (product and name.lower().startswith(product.lower())) else f"{product} {name}".strip()
-    out = [f"{head}<b>{esc(label)}</b> is out"]
-    if body:
-        out += ["", esc(body)]
-    out += ["", f"📦 {link(url, 'Release notes & downloads')}",
-            f"🌐 {link('https://moav.sh', 'moav.sh')}"]
-    return "\n".join(out)
+
+    header = f"{head}<b>{esc(label)}</b> is out"
+    footer = "\n".join([
+        "<b>Install</b>",
+        "<pre>curl -fsSL moav.sh/client-install.sh | bash</pre>",
+        "",
+        f"📦 {link(url, 'Release notes')}   ·   🌐 {link('https://moav.sh', 'moav.sh')}"
+        f"   ·   📚 {link('https://moav.sh/docs/client/', 'Docs')}",
+    ])
+    # Budget the notes so header + body + footer fit Telegram's 4096-char cap.
+    # Trim the raw markdown (÷1.3 to leave room for tag expansion) THEN convert,
+    # so the emitted HTML is always well-formed (Telegram 400s on unbalanced tags).
+    room = 4096 - len(header) - len(footer) - 12
+    body = to_html(trim(os.environ.get("REL_BODY", ""), int(room / 1.3)))
+    parts = [header] + (["", body] if body else []) + ["", footer]
+    return "\n".join(parts)
 
 
 def issue() -> str:

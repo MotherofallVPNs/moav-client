@@ -45,9 +45,7 @@ func ParseWireGuardConf(rawText, nameHint string) (Endpoint, error) {
 			case "PrivateKey":
 				cfg["private_key"] = val
 			case "Address":
-				for _, a := range splitCSV(val) {
-					address = append(address, a)
-				}
+				address = append(address, splitCSV(val)...)
 			case "DNS":
 				cfg["dns"] = val
 			case "MTU":
@@ -63,9 +61,7 @@ func ParseWireGuardConf(rawText, nameHint string) (Endpoint, error) {
 			case "PresharedKey":
 				cfg["psk"] = val
 			case "AllowedIPs":
-				for _, a := range splitCSV(val) {
-					allowedIPs = append(allowedIPs, a)
-				}
+				allowedIPs = append(allowedIPs, splitCSV(val)...)
 			case "Endpoint":
 				endpointHost = val
 			case "PersistentKeepalive":

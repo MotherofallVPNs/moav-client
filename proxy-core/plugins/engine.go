@@ -129,20 +129,48 @@ func (e *Engine) SetRules(rules []Rule) {
 // Evaluate returns the Decision for a connection to host:port with the given
 // protocol hint (e.g. "tcp", "udp"). Returns DecisionProxy when no rule matches.
 func (e *Engine) Evaluate(host string, port int, protocolHint string) Decision {
+	d, _, _ := e.MatchFirst([]string{host}, port, protocolHint)
+	return d
+}
+
+// MatchFirst walks the rules in order and returns the action of the first
+// enabled rule that matches any of hosts, plus the hosts that rule matched.
+// ok is false (and d is DecisionProxy) when no rule matches. Several hosts let
+// a resolved name's addresses be checked together without reordering rules.
+func (e *Engine) MatchFirst(hosts []string, port int, protocolHint string) (d Decision, matched []string, ok bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	for _, r := range e.rules {
 		if !r.Enabled {
 			continue
 		}
-		if matchExpr(r.Match, host, port, protocolHint) {
+		for _, h := range hosts {
+			if matchExpr(r.Match, h, port, protocolHint) {
+				matched = append(matched, h)
+			}
+		}
+		if len(matched) > 0 {
 			// Explicit rules always win, including `direct` — block_direct
 			// only stops the balancer's *involuntary* direct fallback (when
 			// every endpoint is down), not a deliberate `direct` rule.
-			return r.Action
+			return r.Action, matched, true
 		}
 	}
-	return DecisionProxy
+	return DecisionProxy, nil, false
+}
+
+// HasIPRules reports whether any enabled rule matches on an IP address only
+// (ip_cidr, geoip, ip_list). Listeners resolve a hostname for classification
+// only when it does.
+func (e *Engine) HasIPRules() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for _, r := range e.rules {
+		if r.Enabled && isIPMatch(r.Match.Type) {
+			return true
+		}
+	}
+	return false
 }
 
 // genRuleID produces a short stable id from the match content + index.

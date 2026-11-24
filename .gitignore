@@ -2,6 +2,8 @@ config.yaml
 proxy-core/proxy-core
 web-ui/node_modules/
 web-ui/dist/
+web-ui/coverage/
+web-ui/.vitest/
 *.local
 data/
 .env

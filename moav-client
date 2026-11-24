@@ -97,6 +97,8 @@ usage() {
 
   ${BLD}Maintenance${CR}
     update [-b <branch>]       git pull (optionally switch branch) + rebuild
+                               (re-syncs .env version pins; --keep-pins to skip)
+    sync-pins                  re-sync .env component version pins with this release
     uninstall [--wipe]         remove the stack (--wipe also deletes config/data)
     open                       open the dashboard in a browser
     version                    print version, commit & links
@@ -114,6 +116,8 @@ compose() { MOAV_VERSION="${MOAV_VERSION:-$(cat "$ROOT/VERSION" 2>/dev/null)}" d
 # n/no. Falls back to yes when there's no TTY (non-interactive runs proceed).
 confirm_yes() {
   local ans
+  # No terminal (cron, CI, piped): proceed without the "/dev/tty" error noise.
+  { : </dev/tty; } 2>/dev/null || return 0
   # No 2>/dev/null — `read -p` writes the prompt to stderr, so redirecting it
   # would hide the question. </dev/tty alone is enough.
   read -r -p "$1 [Y/n] " ans </dev/tty || return 0
@@ -321,16 +325,64 @@ cmd_open() {
   fi
 }
 
+# Component pins (*_VERSION in .env) are copied from .env.example once, at
+# install. Re-sync them so a release's version bumps reach an existing install.
+sync_env_pins() {
+  local mode="${1:-ask}" ex="$ROOT/.env.example" envf="$ROOT/.env"
+  [[ -f "$ex" && -f "$envf" ]] || return 0
+  local key new cur keys=() vals=() i
+  while IFS='=' read -r key new; do
+    [[ "$new" =~ ^[A-Za-z0-9._+-]+$ ]] || continue
+    grep -qE "^${key}=" "$envf" 2>/dev/null || continue   # unset: compose default applies
+    cur=$(env_val "$key")
+    [[ "$cur" == "$new" ]] && continue
+    keys+=("$key"); vals+=("$new")
+    printf '  %-28s %s%s%s → %s%s%s\n' "$key" "$DIM" "${cur:-<empty>}" "$CR" "$GRN" "$new" "$CR"
+  done < <(grep -E '^[A-Z0-9_]+_VERSION=' "$ex")
+  if (( ${#keys[@]} == 0 )); then
+    echo "${GRN}✓ .env component pins match this release${CR}"; return 0
+  fi
+  if [[ "$mode" == "keep" ]]; then
+    echo "${YLW}! not synced: the ${#keys[@]} pin(s) above stay as set in .env${CR}"; return 0
+  fi
+  if [[ "$mode" == "ask" ]] && ! confirm_yes "update these pin(s) in .env to this release's versions?"; then
+    echo "${YLW}! kept your .env pins — run 'moav-client sync-pins' to apply them later${CR}"; return 0
+  fi
+  for i in "${!keys[@]}"; do set_env_kv "${keys[$i]}" "${vals[$i]}"; done
+  echo "${GRN}✓ updated ${#keys[@]} component pin(s) in .env${CR} ${DIM}(takes effect on the next rebuild)${CR}"
+}
+
+cmd_sync_pins() {
+  local mode=ask
+  while (( $# > 0 )); do
+    case "$1" in
+      -y|--yes) mode=yes ;;
+      --keep-pins|--check) mode=keep ;;
+      -h|--help)
+        echo "usage: moav-client sync-pins [--yes | --check]"
+        echo "  Sets the *_VERSION pins in .env to the values in .env.example."
+        echo "  --yes     apply without asking      --check   only list differences"
+        return 0 ;;
+      *) echo "${RED}unknown option: $1${CR}  (try: moav-client sync-pins --help)"; return 1 ;;
+    esac
+    shift
+  done
+  [[ -f "$ROOT/.env" ]] || { echo "${YLW}no .env in $ROOT — nothing to sync${CR}"; return 0; }
+  sync_env_pins "$mode"
+}
+
 # Update the install: optionally switch branch (-b/--branch, like `moav`), pull,
 # then rebuild + recreate the whole stack (including xray + enabled sidecars).
 cmd_update() {
-  local target_branch=""
+  local target_branch="" pins_mode=ask
   while (( $# > 0 )); do
     case "$1" in
       -b|--branch) target_branch="${2:?-b needs a branch name}"; shift 2 ;;
+      --keep-pins) pins_mode=keep; shift ;;
       -h|--help)
-        echo "usage: moav-client update [-b <branch>]"
+        echo "usage: moav-client update [-b <branch>] [--keep-pins]"
         echo "  -b, --branch   switch to and pull this branch (e.g. main, dev)"
+        echo "  --keep-pins    don't re-sync the *_VERSION pins in .env with this release"
         return 0 ;;
       *) echo "${RED}unknown option: $1${CR}  (try: moav-client update -b <branch>)"; return 1 ;;
     esac
@@ -377,6 +429,10 @@ cmd_update() {
   else
     echo "${GRN}✓ ${sha} → ${after} (branch: ${branch})${CR}"
   fi
+
+  # Runs even when already up to date, so an install that updated before this
+  # sync existed (and still carries old pins) is repaired too.
+  sync_env_pins "$pins_mode"
 
   # Ask before the (multi-minute) rebuild. Default yes; pulled code only takes
   # effect once the images are rebuilt and the containers recreated.
@@ -549,6 +605,7 @@ case "${1:-help}" in
   expose)       shift; cmd_expose "$@" ;;
   open)         cmd_open ;;
   update)       shift; cmd_update "$@" ;;
+  sync-pins)    shift; cmd_sync_pins "$@" ;;
   uninstall)    shift; cmd_uninstall "$@" ;;
   version)      cmd_version ;;
   help|--help|-h|"") usage ;;

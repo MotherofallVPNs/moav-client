@@ -12,13 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ["1.25"]
+        go: ["1.27"]
     defaults:
       run:
         working-directory: proxy-core
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: ${{ matrix.go }}
           cache-dependency-path: proxy-core/go.sum
@@ -33,14 +33,13 @@ jobs:
           GOOS=windows GOARCH=amd64 go build ./...
           GOOS=darwin  GOARCH=arm64 go build ./...
 
-      - name: golangci-lint (warn-only)
-        # Non-blocking to start (like the shellcheck step) — surfaces findings
-        # without gating on pre-existing style. Flip to blocking once the
-        # backlog is clean.
-        continue-on-error: true
-        uses: golangci/golangci-lint-action@v6
+      - name: golangci-lint
+        # Blocking: any finding fails the job. Exceptions live in
+        # proxy-core/.golangci.yml, each with its reason.
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          # Pinned: must be built with a Go >= the go.mod version, or it exits 3.
+          version: v2.15.0
           working-directory: proxy-core
 
       - name: go test (race + coverage)
@@ -57,7 +56,7 @@ jobs:
 
       - name: upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: go-coverage
           path: proxy-core/cover.out
@@ -70,14 +69,18 @@ jobs:
       run:
         working-directory: web-ui
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: web-ui/package-lock.json
 
       - run: npm ci
+
+      - name: oxlint
+        # Blocking: errors and warnings both fail (--deny-warnings).
+        run: npm run lint
 
       - name: vitest (unit tests)
         run: npm test
@@ -89,7 +92,7 @@ jobs:
     name: scripts (shellcheck + syntax)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: bash -n syntax check
         run: |
@@ -99,6 +102,9 @@ jobs:
 
       - name: version drift gate (single source of truth)
         run: bash tests/version-sync-test.sh
+
+      - name: update re-syncs .env pins
+        run: bash tests/update-pins-test.sh
 
       - name: shellcheck (warn-only)
         # We don't fail the build on shellcheck — it's noisy on heredocs —
@@ -112,7 +118,7 @@ jobs:
     name: docker compose validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: docker compose config
         run: |
@@ -120,3 +126,6 @@ jobs:
           # variable interpolation resolves (values are irrelevant here).
           [ -f .env ] || cp .env.example .env 2>/dev/null || true
           docker compose config >/dev/null && echo "docker-compose.yml is valid"
+
+      - name: trusttunnel sidecar smoke (pinned client accepts the generated config)
+        run: bash tests/trusttunnel-sidecar-test.sh
