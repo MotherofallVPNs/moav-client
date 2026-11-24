@@ -217,6 +217,11 @@ All notable changes to moav-client are documented here. Format loosely follows
   the TypeScript compiler API, which TypeScript 7 does not ship.
 
 ### Security
+- **TrustTunnel client download is SHA256-pinned.** The sidecar build
+  fetched the client tarball from the GitHub release with no integrity check.
+  The per-arch SHA256s of the 1.3.0 linux-x86_64, linux-aarch64 and
+  linux-armv7 tarballs are now pinned in `sidecars/trusttunnel/Dockerfile`, and
+  a mismatch, or a version without pinned digests, fails the build.
 - **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).
   Under the Go 1.25 toolchain, govulncheck reported 11 standard-library
   vulnerabilities reachable from proxy-core code, among them the HTTP CONNECT
