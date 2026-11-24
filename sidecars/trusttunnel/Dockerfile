@@ -42,13 +42,11 @@ EXPOSE 5600/tcp
 # refuses a non-loopback bind without auth). socat republishes it on
 # 0.0.0.0:5600 for proxy-core to reach over moav-net. socat runs in the
 # background; the client is the foreground process so a crash restarts the
-# container.
+# container. Wait for client.toml like the singbox/xray/amneziawg sidecars:
+# on a cold `compose up` this container starts before proxy-core writes it.
 ENTRYPOINT ["/bin/sh","-c","\
-if [ -s /etc/trusttunnel/client.toml ]; then \
-  echo '[trusttunnel] launching client (SOCKS5 via socat :5600 -> :5601)'; \
-  socat TCP-LISTEN:5600,fork,reuseaddr TCP:127.0.0.1:5601 & \
-  exec /usr/local/bin/trusttunnel_client --config /etc/trusttunnel/client.toml; \
-else \
-  echo '[trusttunnel] no client.toml — set sidecars.trusttunnel.config.source_path in config.yaml'; \
-  exec sleep infinity; \
-fi"]
+echo '[trusttunnel] waiting for /etc/trusttunnel/client.toml (written by moav-client from sidecars.trusttunnel.config.source_path) ...'; \
+while [ ! -s /etc/trusttunnel/client.toml ]; do sleep 1; done; \
+echo '[trusttunnel] config detected, launching client (SOCKS5 via socat :5600 -> :5601)'; \
+socat TCP-LISTEN:5600,fork,reuseaddr TCP:127.0.0.1:5601 & \
+exec /usr/local/bin/trusttunnel_client --config /etc/trusttunnel/client.toml"]

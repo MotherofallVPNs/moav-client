@@ -92,14 +92,28 @@ else
   bad "invalid config was not rejected (exit '$code')"
 fi
 
-# --- no config: idle, do not crash-loop ---------------------------------------
-idle=$(start idle "$TMP/empty"); NAMES+=("$idle")
+# --- cold start: wait for client.toml, then launch without a restart --------
+idle=$(start late "$TMP/empty"); NAMES+=("$idle")
 sleep 2
 if [ "$(docker inspect -f '{{.State.Running}}' "$idle" 2>/dev/null)" = "true" ] \
-   && docker logs "$idle" 2>&1 | grep -q 'no client.toml'; then
-  ok "no client.toml: container idles"
+   && docker logs "$idle" 2>&1 | grep -q 'waiting for /etc/trusttunnel/client.toml'; then
+  ok "no client.toml yet: container waits"
 else
-  bad "no client.toml: container did not idle"
+  bad "no client.toml yet: container did not wait"
+fi
+cp "$GOLDEN" "$TMP/empty/client.toml.tmp" && chmod a+r "$TMP/empty/client.toml.tmp"
+mv "$TMP/empty/client.toml.tmp" "$TMP/empty/client.toml"
+reply=""
+for _ in $(seq 1 20); do
+  reply=$(socks_greeting "$idle" 5600)
+  [ "$reply" = "0500" ] && break
+  sleep 1
+done
+restarts=$(docker inspect -f '{{.RestartCount}}' "$idle" 2>/dev/null)
+if [ "$reply" = "0500" ] && [ "$restarts" = "0" ]; then
+  ok "config written after start: client launches on its own"
+else
+  bad "config written after start: no SOCKS5 reply (got '${reply}', restarts ${restarts})"
 fi
 
 echo ""
