@@ -144,6 +144,11 @@ Security and correctness release, paired with MoaV 2.5.0. proxy-core moves to Go
   the version ranges at build time.
 
 ### Fixed
+- **TrustTunnel starts on its own after a cold `compose up`.** The sidecar
+  looked for its `client.toml` once at start and idled forever when proxy-core
+  had not written it yet, so TrustTunnel stayed down until a manual restart. It
+  now waits for the file and then launches, like the sing-box, Xray and
+  AmneziaWG sidecars. The sidecar smoke test covers it.
 - **Domain rules now match on the SOCKS5 port.** ([#53](https://github.com/MotherofallVPNs/moav-client/pull/53)) The SOCKS5 listener resolved a
   hostname on the proxy-core host before the rules ran, so the rule engine and
   the torrent blocker only ever saw an IP: `domain`, `domain_suffix` and
