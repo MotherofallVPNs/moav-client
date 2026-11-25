@@ -149,6 +149,15 @@ Security and correctness release, paired with MoaV 2.5.0. proxy-core moves to Go
   the version ranges at build time.
 
 ### Fixed
+- **Live e2e tested the wrong server and leaked credentials** (`.github/workflows/e2e.yml`,
+  `tests/e2e-client.sh`). A `sub_url` dispatch input was shadowed by the standing
+  bundle secret, and inputs were echoed unmasked in the public run log. Inputs
+  are now masked and replace the secrets as a set. The harness accepts a
+  `moav://` URI or `moav user sub` output, finds v2 bundle WireGuard/AmneziaWG
+  confs (`moav-<server>-wg.conf` / `-awg.conf`) and dials AmneziaWG through its
+  sidecar, uploads a credential-free endpoint summary instead of raw
+  `/api/endpoints`, and captures (redacted) compose logs before teardown. See
+  [docs/devdocs/E2E-TESTING.md](docs/devdocs/E2E-TESTING.md).
 - **TrustTunnel starts on its own after a cold `compose up`.** The sidecar
   looked for its `client.toml` once at start and idled forever when proxy-core
   had not written it yet, so TrustTunnel stayed down until a manual restart. It
@@ -292,6 +301,69 @@ Security and correctness release, paired with MoaV 2.5.0. proxy-core moves to Go
   The web-ui had no linter; it gains `npm run lint` (oxlint, warnings denied)
   as a blocking CI step. ESLint was not an option: `typescript-eslint` needs
   the TypeScript compiler API, which TypeScript 7 does not ship.
+
+### Security
+- **TrustTunnel client download is SHA256-pinned.** The sidecar build
+  fetched the client tarball from the GitHub release with no integrity check.
+  The per-arch SHA256s of the 1.3.0 linux-x86_64, linux-aarch64 and
+  linux-armv7 tarballs are now pinned in `sidecars/trusttunnel/Dockerfile`, and
+  a mismatch, or a version without pinned digests, fails the build.
+- **proxy-core builds with Go 1.27** (was 1.25, end of life since 2026-08-19).
+  Under the Go 1.25 toolchain, govulncheck reported 11 standard-library
+  vulnerabilities reachable from proxy-core code, among them the HTTP CONNECT
+  desync (CVE-2026-94439), the `MaxBytesReader` header race (CVE-2026-97054)
+  and the `crypto/x509` distrust of compromised intermediates (CVE-2026-111943)
+  on the subscription fetch. `go.mod` now requires Go 1.27 with a `go1.27.4`
+  toolchain floor, the build image is `golang:1.27-alpine` (which also refreshes
+  the CA bundle copied into the scratch image), and `golang.org/x/net` moves to
+  v0.63.0. govulncheck finds no vulnerabilities in the new build.
+- **MPTCP is off on the Go listeners.** Go 1.24+ opens MPTCP listeners by
+  default, and the public exploit for Linux kernel CVE-2026-98432 needs one. It
+  matters most when the proxy ports are exposed to the LAN or publicly.
+  proxy-core pins `godebug multipathtcp=0` in `go.mod`, so it also holds when
+  the binary runs outside Docker (a test guards the directive), and compose sets
+  `GODEBUG=multipathtcp=0` for the xray, caddy, psiphon and sni-spoof
+  containers. A patched kernel is still the real fix; this removes the known
+  exploit path.
+- **Xray-core sidecar updated to v26.11.9** (was v26.7.28, which upstream marks
+  as a pre-release). The range includes two emergency security releases: Xray
+  now verifies TLS against its own root CA set with the compromised roots
+  removed (v26.10.10, v26.10.21) and disables MPTCP on its listeners
+  (v26.10.31), plus XHTTP and mux race fixes. The default `chrome` uTLS
+  fingerprint becomes Chrome 155, which reaches every xhttp endpoint with no
+  config change because the generator already emits `fingerprint: chrome`. The
+  source-compile fallback moves to `golang:1.27-alpine` (Xray needs Go 1.27
+  since v26.9.8) and the runtime stage to `alpine:3.24` (3.21 went end of life
+  on 2026-11-01). The generated `xray.json` passes `xray run -test` on the new
+  binary unchanged.
+- **sing-box sidecar updated to 1.14.4** (was 1.13.19), matching the MoaV
+  server. 1.14.4 is built with Go 1.26.10, which carries the `crypto/x509`
+  distrust of compromised intermediates (CVE-2026-111943); 1.13.19 was built
+  with Go 1.25.12 and the 1.13 line is no longer released. No generator change
+  was needed: its output for every supported protocol passes the real 1.14.4
+  `sing-box check`. Note that since 1.14 Hysteria2 parrots Chrome's QUIC
+  handshake, and Chrome does not offer Ed25519, so a third-party Hysteria2
+  server with an Ed25519 certificate will fail to connect (MoaV servers use
+  ACME certificates and are not affected).
+- **Dashboard runtime image moves to `nginx:1.30-alpine`** (was
+  `nginx:1.27-alpine`). nginx 1.27 has been end of life since 2025-06 and that
+  tag was last built in 2025-04, so every dashboard image missed 19 months of
+  nginx and Alpine fixes (OpenSSL, busybox, and the `apache2-utils` that writes
+  the basic-auth file), including the resolver use-after-free CVE-2026-123634
+  on the `resolver` + variable `proxy_pass` path this config uses. The server
+  block and the entrypoint hooks are unchanged.
+- **web-ui dev toolchain: lockfile refreshed for the fixable advisories.** vite
+  8.2.2 to 8.3.8 (dev-server file disclosure and cross-origin script
+  execution), undici 8.10.0 to 8.13.1, brace-expansion and source-map-js, all
+  inside the existing `package.json` ranges. `npm audit` drops from 11 findings
+  to 7; the rest need the vitest major and are handled separately. None of
+  these packages ship in the dashboard bundle.
+- **web-ui test runner moves to vitest 4.1.12** (was 3.2.7), with
+  `@vitest/coverage-v8` to match. The vitest 3 line has no fix for the two
+  critical advisories in its tree (tinypool prototype pollution leading to code
+  execution, `@vitest/mocker` path traversal) or for the glob and minimatch
+  findings under the coverage provider. No test or config change was needed.
+  Together with the lockfile refresh above, `npm audit` is clean (0 findings).
 
 ## [1.4.0] — 2026-08-23
 

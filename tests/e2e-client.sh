@@ -17,8 +17,11 @@
 #   MOAV_TEST_BUNDLE=/path/to/bundle.zip  MOAV_TEST_EXIT_IP=…  bash tests/e2e-client.sh
 #
 # Env:
-#   MOAV_TEST_SUB_URL   a moav:// / subscription URL to import (or…)
+#   MOAV_TEST_SUB_URL   an http(s) subscription URL, a moav:// URI, or pasted
+#                       subscription content (`moav user sub <user>`) (or…)
 #   MOAV_TEST_BUNDLE    …a path to a MoaV bundle .zip to import instead
+#                       (`moav user base64 <user> | base64 -d > bundle.zip`).
+#                       Wins when both are set.
 #   MOAV_TEST_EXIT_IP   the server's expected egress IP (the assertion). If
 #                       unset, we only assert the fetch is proxied (IP != runner)
 #   API                 API base (default http://127.0.0.1:8088)
@@ -31,6 +34,9 @@ API="${API:-http://127.0.0.1:8088}"
 SOCKS="${SOCKS:-127.0.0.1:1080}"
 EXIT_IP="${MOAV_TEST_EXIT_IP:-}"
 ART="${ART_DIR:-.}"; mkdir -p "$ART"
+# /api/endpoints carries every credential in the bundle (RawURI, uuid, keys),
+# and $ART is uploaded as a CI artifact. Keep the raw copy outside it.
+RAW=$(mktemp); trap 'rm -f "$RAW"' EXIT
 
 log()  { printf '\033[0;34m[e2e]\033[0m %s\n' "$*"; }
 fail() { printf '\033[0;31m[e2e] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -52,6 +58,36 @@ mask() {
   fi
 }
 
+# Mask the host of a host:port / [v6]:port address, keeping the port.
+mask_addr() {
+  local a="$1" h p
+  h="${a%:*}"; p="${a##*:}"; h="${h#[}"; h="${h%]}"
+  # a bare single-label host is a compose service (a sidecar), not the server
+  if [[ "$h" != *.* && "$h" != *:* ]]; then printf '%s' "$a"; return; fi
+  printf '%s:%s' "$(mask "$h")" "$p"
+}
+
+# Write the uploadable endpoint summary: protocol, port, status, latency only.
+snapshot() {
+  jq '{endpoints: [.endpoints[] | {Protocol: (if .Protocol == "sidecar" then .ID else .Protocol end), Port: ((.Address // "") | sub("^.*:"; "")),
+        IPv6: ((.Address // "") | startswith("[")), Status, LatencyMs}]}' \
+    "$RAW" > "$ART/endpoints.json" 2>/dev/null || true
+}
+
+# Scrub server hosts and bundle credentials from text on stdin.
+redact() {
+  local script; script=$(mktemp)
+  {
+    jq -r '.endpoints[] | (.Address // "" | sub(":[0-9]+$"; "") | ltrimstr("[") | rtrimstr("]")),
+           (.Config // {} | to_entries[]
+             | select(.key | test("uuid|pass|key|auth|pbk|sid|path|host|sni")) | .value)' "$RAW" 2>/dev/null
+    printf '%s\n' "$EXIT_IP" "${MOAV_TEST_SUB_URL:-}"
+  } | awk 'length($0) > 3' | sort -u | while IFS= read -r v; do
+    printf 's|%s|<redacted>|g\n' "$(printf '%s' "$v" | sed 's/[][\.*^$|]/\\&/g')"
+  done > "$script"
+  sed -f "$script"; rm -f "$script"
+}
+
 [[ -n "${MOAV_TEST_SUB_URL:-}" || -n "${MOAV_TEST_BUNDLE:-}" ]] \
   || fail "provide MOAV_TEST_SUB_URL or MOAV_TEST_BUNDLE (a server bundle to connect through)"
 
@@ -61,7 +97,8 @@ mask() {
 # NOT a bundle .zip — so we unzip the bundle and reference the files inside.
 cp config.yaml.example config.yaml
 if [[ -n "${MOAV_TEST_BUNDLE:-}" ]]; then
-  mkdir -p data/e2e-bundle
+  [[ -z "${MOAV_TEST_SUB_URL:-}" ]] || log "both MOAV_TEST_BUNDLE and MOAV_TEST_SUB_URL set — using the bundle"
+  rm -rf data/e2e-bundle; mkdir -p data/e2e-bundle
   if command -v unzip >/dev/null 2>&1; then
     unzip -o -q "$MOAV_TEST_BUNDLE" -d data/e2e-bundle
   elif command -v python3 >/dev/null 2>&1; then
@@ -91,17 +128,36 @@ if [[ -n "${MOAV_TEST_BUNDLE:-}" ]]; then
   fi
   bdir=$(dirname "$sub")
   # WireGuard / AmneziaWG come as their own .conf files (one endpoint each).
+  # v2 bundles name them moav-<server>-wg.conf / -awg.conf; older ones used the
+  # bare names. Same suffix match as the importer (proxy-core/bundles).
   wg=""
-  for f in wireguard.conf amneziawg.conf; do
-    [[ -f "$bdir/$f" ]] && wg="${wg}\"$bdir/$f\", "
+  for f in "$bdir"/wireguard.conf "$bdir"/*-wg.conf "$bdir"/amneziawg.conf "$bdir"/*-awg.conf; do
+    [[ -f "$f" ]] && wg="${wg}\"$f\", "
   done
   log "using bundle: $sub + [${wg%, }]"
   sed -i.bak "s|^  file: \"\".*|  file: \"$sub\"|" config.yaml
   sed -i.bak "s|^  wireguard_files: \[\].*|  wireguard_files: [${wg%, }]|" config.yaml
+  # sing-box has no AmneziaWG outbound, so that conf is only dialable through
+  # its sidecar: enable it when the bundle ships one (E2E_NO_SIDECARS=1 skips).
+  awg=$(find "$bdir" -maxdepth 1 -type f \( -name amneziawg.conf -o -name '*-awg.conf' \) | head -1)
+  if [[ -n "$awg" && -z "${E2E_NO_SIDECARS:-}" ]]; then
+    sed -i.bak "/^  amneziawg:/,/source_path:/ { s|enabled: false|enabled: true|; s|source_path: \"\".*|source_path: \"$awg\"|; }" config.yaml
+    export COMPOSE_PROFILES=amneziawg
+    log "enabling the amneziawg sidecar"
+  fi
+  rm -f config.yaml.bak
+elif [[ "$MOAV_TEST_SUB_URL" =~ ^https?:// ]]; then
+  log "using subscription URL from MOAV_TEST_SUB_URL"
+  esc=$(printf '%s' "$MOAV_TEST_SUB_URL" | sed 's/[&|\\]/\\&/g')
+  sed -i.bak "s|^  url: \"\".*|  url: \"${esc}\"|" config.yaml
   rm -f config.yaml.bak
 else
-  log "using subscription URL from MOAV_TEST_SUB_URL"
-  sed -i.bak "s|^  url: \"\".*|  url: \"${MOAV_TEST_SUB_URL}\"|" config.yaml
+  # subscription.url is fetched over HTTP, so a moav:// URI or pasted content
+  # (base64 or plain URI list, e.g. `moav user sub`) has to go in as a file.
+  log "MOAV_TEST_SUB_URL is not an http(s) URL — importing it as subscription content"
+  mkdir -p data/e2e-sub
+  printf '%s\n' "$MOAV_TEST_SUB_URL" > data/e2e-sub/subscription.txt
+  sed -i.bak 's|^  file: "".*|  file: "data/e2e-sub/subscription.txt"|' config.yaml
   rm -f config.yaml.bak
 fi
 
@@ -118,7 +174,18 @@ sed -i.bak 's|^  block_direct: false|  block_direct: true|' config.yaml && rm -f
 log "bringing the client stack up…"
 ${COMPOSE_UP:-docker compose up -d --build}
 
-cleanup() { log "tearing down…"; docker compose down -v 2>/dev/null || true; }
+# Logs are captured here, before the stack goes down: by the time a later
+# workflow step runs there are no containers left to read them from.
+cleanup() {
+  local rc=$?
+  if [[ $rc -ne 0 || -n "${E2E_KEEP_LOGS:-}" ]]; then
+    docker compose logs --no-color 2>&1 | redact > "$ART/compose-logs.txt" || true
+    docker compose ps -a > "$ART/compose-ps.txt" 2>&1 || true
+  fi
+  log "tearing down…"; docker compose down -v 2>/dev/null || true
+  # The extracted bundle is live credentials — don't leave it on the runner.
+  rm -rf "$RAW" data/e2e-bundle data/e2e-sub 2>/dev/null || true
+}
 trap cleanup EXIT
 
 # --- 3. wait for the API + parsed endpoints ---------------------------------
@@ -132,20 +199,22 @@ done
 log "waiting for endpoints to be parsed from the bundle…"
 n=0
 for i in $(seq 1 30); do
-  curl -fsS "$API/api/endpoints" -o "$ART/endpoints.json" 2>/dev/null || true
-  n=$(jq '.endpoints | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
+  curl -fsS "$API/api/endpoints" -o "$RAW" 2>/dev/null || true
+  n=$(jq '.endpoints | length' "$RAW" 2>/dev/null || echo 0)
   [[ "${n:-0}" -ge 1 ]] && break
   sleep 2
 done
 [[ "${n:-0}" -ge 1 ]] || fail "no endpoints parsed from the provided bundle"
 log "parsed $n endpoint(s):"
-jq -r '.endpoints[] | "\(.Protocol)\t\(.ID)"' "$ART/endpoints.json" 2>/dev/null \
-  | while IFS=$'\t' read -r proto id; do printf '  %s\t%s\n' "$proto" "$(mask "$id")"; done || true
+snapshot
+jq -r '.endpoints[] | "\(if .Protocol == "sidecar" then .ID else .Protocol end)\t\(.Address)"' "$RAW" 2>/dev/null \
+  | while IFS=$'\t' read -r proto addr; do printf '  %s\t%s\n' "$proto" "$(mask_addr "$addr")"; done || true
 
 # --- 4. probe (async) then poll endpoints for status ------------------------
 # POST /api/probe returns 202 immediately and probes in a goroutine; results
-# land as each endpoint's status. Poll until ≥1 is "ok" (tunnels take a moment;
-# DNS-tunnel protocols are the slowest).
+# land as each endpoint's status. Poll until ≥1 is "ok" and every endpoint has
+# a verdict, so the per-protocol table below is complete (tunnels take a
+# moment; DNS-tunnel protocols are the slowest).
 log "triggering probe + waiting for an endpoint to validate…"
 oks=0
 for i in $(seq 1 40); do
@@ -153,15 +222,22 @@ for i in $(seq 1 40); do
   # listening fails every endpoint within milliseconds.
   (( i % 5 == 1 )) && { curl -fsS -X POST "$API/api/probe" >/dev/null 2>&1 || true; }
   sleep 3
-  curl -fsS "$API/api/endpoints" -o "$ART/endpoints.json" 2>/dev/null || true
-  oks=$(jq '[.endpoints[] | select(.Status == "ok")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
-  settled=$(jq '[.endpoints[] | select(.Status != "unknown")] | length' "$ART/endpoints.json" 2>/dev/null || echo 0)
-  [[ "${oks:-0}" -ge 1 ]] && break
+  curl -fsS "$API/api/endpoints" -o "$RAW" 2>/dev/null || true
+  oks=$(jq '[.endpoints[] | select(.Status == "ok")] | length' "$RAW" 2>/dev/null || echo 0)
+  settled=$(jq '[.endpoints[] | select(.Status != "unknown")] | length' "$RAW" 2>/dev/null || echo 0)
+  # Not before the second probe pass has landed (~30s): the first one races
+  # xray/sidecar startup and reports "connection refused" for healthy endpoints.
+  [[ "${oks:-0}" -ge 1 && "${settled:-0}" -ge "${n:-1}" && $i -ge 10 ]] && break
+  # one is ok but stragglers never settled → don't hold the run for them
+  [[ "${oks:-0}" -ge 1 && $i -ge 20 ]] && break
   # every endpoint reported a (non-ok) verdict across 3+ probe passes → stop waiting
   [[ "${settled:-0}" -ge "${n:-1}" && $i -ge 15 ]] && break
 done
 log "probe result: $oks/$n endpoint(s) ok"
-jq -r '.endpoints[] | "  \(.Protocol)\t\(.Status)\t\(.LatencyMs)ms"' "$ART/endpoints.json" 2>/dev/null || true
+snapshot
+jq -r '.endpoints[] | "\(if .Protocol == "sidecar" then .ID else .Protocol end)\t\(.Address)\t\(.Status)\t\(.LatencyMs)ms"' "$RAW" 2>/dev/null \
+  | while IFS=$'\t' read -r proto addr st ms; do
+      printf '  %s\t%s\t%s\t%s\n' "$proto" "$(mask_addr "$addr")" "$st" "$ms"; done || true
 [[ "${oks:-0}" -ge 1 ]] || fail "no endpoint validated (0 ok) — server down, bundle stale, or a client-side gap"
 
 # --- 5. exit-IP: a fetch through :1080 must egress from the SERVER -----------
