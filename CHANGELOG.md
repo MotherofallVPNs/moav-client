@@ -5,6 +5,14 @@ All notable changes to moav-client are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- **`/api/stats` no longer races with live traffic.** `Stats.Snapshot` copied
+  each endpoint's counters with a plain struct copy while the tunnels updated
+  them with `sync/atomic`, a data race the detector caught intermittently in CI
+  (`balancer.go:319`, `countingConn.Write`). Snapshot now reads every counter
+  atomically. On 64-bit builds the old read was only ever stale; on 32-bit
+  (armv7) it could return a torn byte or dial counter.
+
 ## [1.5.0] — 2026-11-23
 
 Security and correctness release, paired with MoaV 2.5.0. proxy-core moves to Go 1.27 with MPTCP turned off on every Go listener (CVE-2026-98432), the Xray and sing-box sidecars pick up their upstream security releases, and routing now classifies hostnames before dialling, so in-country names go direct and never expose a MoaV exit server's IP. The TrustTunnel sidecar moves to client 1.3.0 to pair with endpoint 1.3.1, nothing in the stack floats any more, and Renovate tracks dependencies. Some existing installs have to act: read the section below before updating.

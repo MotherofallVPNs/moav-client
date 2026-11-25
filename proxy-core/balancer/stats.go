@@ -88,7 +88,19 @@ func (s *Stats) Snapshot() []EndpointStat {
 	defer s.mu.RUnlock()
 	out := make([]EndpointStat, 0, len(s.m))
 	for _, e := range s.m {
-		out = append(out, *e)
+		// The counters are written with sync/atomic and no lock, so a plain
+		// struct copy races with live tunnels. LastError is guarded by s.mu.
+		out = append(out, EndpointStat{
+			ID:            e.ID,
+			Dials:         atomic.LoadInt64(&e.Dials),
+			DialErrors:    atomic.LoadInt64(&e.DialErrors),
+			Failovers:     atomic.LoadInt64(&e.Failovers),
+			BytesUp:       atomic.LoadInt64(&e.BytesUp),
+			BytesDown:     atomic.LoadInt64(&e.BytesDown),
+			LastDialUnix:  atomic.LoadInt64(&e.LastDialUnix),
+			LastErrorUnix: atomic.LoadInt64(&e.LastErrorUnix),
+			LastError:     e.LastError,
+		})
 	}
 	return out
 }
