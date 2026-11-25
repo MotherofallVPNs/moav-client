@@ -2,6 +2,9 @@ package balancer
 
 import (
 	"errors"
+	"io"
+	"net"
+	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -281,5 +284,95 @@ func TestFlowsSnapshotConcurrentWithEnd(t *testing.T) {
 		if fl.Result == "open" || fl.ClosedUnix == 0 || fl.BytesUp != 1 || fl.BytesDown != 2 {
 			t.Fatalf("flow %d not settled: %+v", fl.ID, fl)
 		}
+	}
+}
+
+// /api/stats copies the counters while tunnels count bytes and dials land;
+// run with -race. Before the fix, Snapshot copied each EndpointStat whole
+// while countingConn.Read/Write updated it with sync/atomic.
+func TestStatsSnapshotConcurrentWithTraffic(t *testing.T) {
+	const writes = 500
+	b := New(StrategyLatency)
+	local, remote := net.Pipe()
+	defer remote.Close()
+	conn := &countingConn{Conn: local, id: "a", stats: b.Stats(), flow: b.Flows().Begin("c", "d", "a", "p")}
+
+	stop := make(chan struct{})
+	var readers, peers sync.WaitGroup
+	readers.Add(1)
+	go func() {
+		defer readers.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				for _, st := range b.Stats().Snapshot() {
+					_ = st.LastError + strconv.FormatInt(st.Dials+st.DialErrors+st.Failovers+st.BytesUp+st.BytesDown+st.LastDialUnix+st.LastErrorUnix, 10)
+				}
+			}
+		}
+	}()
+	// The far end echoes, so Write (up) and Read (down) both count.
+	peers.Add(2)
+	go func() {
+		defer peers.Done()
+		_, _ = io.Copy(remote, remote)
+	}()
+	go func() {
+		defer peers.Done()
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+
+	for i := 0; i < writes; i++ {
+		if _, err := conn.Write([]byte("x")); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+		b.Stats().RecordDial("a", errors.New("boom"))
+		b.Stats().RecordFailover("a")
+	}
+	// Closing our end stops the echo; closing the far end then stops the reader.
+	_ = conn.Close()
+	_ = remote.Close()
+	peers.Wait()
+	close(stop)
+	readers.Wait()
+
+	snap := b.Stats().Snapshot()
+	if len(snap) != 1 {
+		t.Fatalf("Snapshot len = %d, want 1", len(snap))
+	}
+	st := snap[0]
+	if st.ID != "a" || st.Dials != writes || st.DialErrors != writes || st.Failovers != writes || st.BytesUp != writes {
+		t.Fatalf("counters wrong: %+v", st)
+	}
+	// net.Pipe is unbuffered: only the last echo can be cut off by Close.
+	if st.BytesDown < writes-1 || st.BytesDown > writes {
+		t.Fatalf("bytes down = %d, want %d or %d", st.BytesDown, writes-1, writes)
+	}
+	if st.LastError != "boom" || st.LastErrorUnix == 0 || st.LastDialUnix == 0 {
+		t.Fatalf("error/time fields not set: %+v", st)
+	}
+}
+
+// Snapshot copies EndpointStat field by field, so a field added to the struct
+// but not to Snapshot would silently read as zero in /api/stats.
+func TestStatsSnapshotCopiesEveryField(t *testing.T) {
+	s := NewStats()
+	e := s.entry("a")
+	v := reflect.ValueOf(e).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		switch f := v.Field(i); f.Kind() {
+		case reflect.Int64:
+			f.SetInt(int64(i + 1))
+		case reflect.String:
+			f.SetString("f" + strconv.Itoa(i))
+		default:
+			t.Fatalf("EndpointStat.%s: unhandled kind %s, extend this test", v.Type().Field(i).Name, f.Kind())
+		}
+	}
+	snap := s.Snapshot()
+	if len(snap) != 1 || snap[0] != *e {
+		t.Fatalf("Snapshot = %+v, want %+v", snap, *e)
 	}
 }
